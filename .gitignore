@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.secrets/
+credentials/
+*service-account*.json
+*credentials*.json
+google_token.json
+
+# Runtime
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+outputs/
+uploads/
+*.bak
+*.bak.*
+/tmp/
+
+# Data (too large / runtime)
+data/*.db
+data/*.sqlite
+data/*.sqlite-journal
+geofabrik/
+geofabrik.restore/
+logs/
+backups/
+monitoring/
+
+# OS
+.DS_Store
+Thumbs.db

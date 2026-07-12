@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KMZ ke Excel Koordinat - EVA</title>
+  <style>
+    :root {
+      --brand: #2ecc88;
+      --brand-dark: #0f7a4f;
+      --brand-soft: #ecfdf5;
+      --ink: #0f172a;
+      --ink-soft: #64748b;
+      --line: #e5e7eb;
+      --bg: #f8fafc;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body { background: var(--bg); color: var(--ink); font-family: Inter, system-ui, -apple-system, sans-serif; margin: 0; }
+    .cx-page { max-width: 920px; margin: 0 auto; padding: 1.5rem 1.25rem 2.5rem; display: grid; gap: 1rem; }
+
+    .cx-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .cx-header h1 { margin: 0; font-size: 1.4rem; font-weight: 750; letter-spacing: -.02em; }
+    .cx-header p { margin: .2rem 0 0; color: var(--ink-soft); font-size: .85rem; }
+    .cx-back { color: var(--brand-dark); text-decoration: none; font-size: .82rem; font-weight: 700; padding: .45rem .8rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; white-space: nowrap; }
+    .cx-back:hover { background: var(--brand-soft); border-color: var(--brand); }
+
+    .cx-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; display: grid; gap: 1.1rem; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+
+    .cx-drop { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 1.75rem; text-align: center; cursor: pointer; transition: all .15s; background: #fcfdfe; }
+    .cx-drop:hover, .cx-drop.dragging { background: var(--brand-soft); border-color: var(--brand); }
+    .cx-drop .ic { width: 38px; height: 38px; margin: 0 auto .5rem; color: var(--brand-dark); }
+    .cx-drop strong { display: block; font-size: .95rem; font-weight: 700; }
+    .cx-drop span { font-size: .8rem; color: var(--ink-soft); }
+
+    .cx-filelist { display: grid; gap: .4rem; }
+    .cx-fileitem { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .55rem .75rem; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: .84rem; }
+    .cx-fileitem .fn { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+    .cx-fileitem .fn svg { color: var(--brand-dark); flex: 0 0 auto; }
+    .cx-fileitem .fn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cx-rm { background: none; border: none; color: #ef4444; cursor: pointer; font-size: .78rem; font-weight: 600; padding: .2rem .4rem; border-radius: 6px; }
+    .cx-rm:hover { background: #fef2f2; }
+
+    .cx-label { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); margin: 0 0 .55rem; }
+
+    .cx-summary { display: grid; gap: .65rem; }
+    .cx-sfile { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .cx-sfile h4 { margin: 0; padding: .55rem .8rem; background: #f1f5f9; font-size: .82rem; font-weight: 700; }
+    .cx-chips { display: flex; flex-wrap: wrap; gap: .45rem; padding: .7rem .8rem; }
+    .cx-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .76rem; padding: .3rem .6rem; border-radius: 999px; background: var(--brand-soft); border: 1px solid #bbf7d0; color: #065f46; }
+    .cx-chip b { font-weight: 800; font-size: .82rem; }
+    .cx-chip.fdt { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+    .cx-chip.hp { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+    .cx-chip.pole { background: #f5f3ff; border-color: #ddd6fe; color: #5b21b6; }
+
+    .cx-cats { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .cx-cat { display: flex; align-items: center; gap: .45rem; font-size: .84rem; font-weight: 600; padding: .5rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; cursor: pointer; user-select: none; transition: all .12s; }
+    .cx-cat input { accent-color: var(--brand-dark); width: 15px; height: 15px; }
+    .cx-cat:has(input:checked) { background: var(--brand-soft); border-color: var(--brand); color: #065f46; }
+
+    .cx-actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; padding-top: .25rem; }
+    .btn { border-radius: 10px; padding: .6rem 1.1rem; font-size: .85rem; font-weight: 700; cursor: pointer; border: 1px solid transparent; }
+    .btn-primary { background: var(--brand); color: #06301f; border-color: var(--brand-dark); }
+    .btn-primary:hover:not(:disabled) { background: #27b97a; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+    .btn-ghost:hover { background: #f8fafc; }
+    .cx-status { font-size: .82rem; color: var(--ink-soft); }
+    .cx-status.err { color: #dc2626; }
+    .cx-status.ok { color: var(--brand-dark); font-weight: 600; }
+    .cx-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: var(--brand-dark); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: .4rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <main class="cx-page">
+    <header class="cx-header">
+      <div>
+        <h1>KMZ ke Excel Koordinat</h1>
+        <p>Standarisasi KMZ lalu ambil koordinat FAT, FDT, Pole, HP Cover.</p>
+      </div>
+      <a href="/" class="cx-back" id="backToEvaLink">Kembali</a>
+    </header>
+
+    <section class="cx-card">
+      <div class="cx-drop" id="dropZone">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <strong>Klik untuk pilih file KMZ/KML</strong>
+        <span>atau drag &amp; drop di sini (bisa banyak file)</span>
+        <input id="fileInput" type="file" accept=".kml,.kmz" multiple hidden>
+      </div>
+
+      <div class="cx-filelist" id="fileList"></div>
+
+      <div id="analyzeStatus" class="cx-status"></div>
+
+      <div id="summaryWrap" class="hidden">
+        <p class="cx-label">Hasil Hitung Placemark</p>
+        <div class="cx-summary" id="summary"></div>
+      </div>
+
+      <div>
+        <p class="cx-label">Kategori yang di-convert</p>
+        <div class="cx-cats">
+          <label class="cx-cat"><input type="checkbox" class="cat-cb" value="FAT" checked> FAT</label>
+          <label class="cx-cat"><input type="checkbox" class="cat-cb" value="FDT" checked> FDT</label>
+          <label class="cx-cat"><input type="checkbox" class="cat-cb" value="Pole" checked> Pole</label>
+          <label class="cx-cat"><input type="checkbox" class="cat-cb" value="HP Cover" checked> HP Cover</label>
+        </div>
+      </div>
+
+      <div class="cx-actions">
+        <button type="button" class="btn btn-primary" id="generateBtn" disabled>Generate Excel</button>
+        <button type="button" class="btn btn-ghost" id="clearBtn">Kosongkan</button>
+        <span id="status" class="cx-status"></span>
+      </div>
+    </section>
+  </main>
+<script>
+document.getElementById('backToEvaLink')?.addEventListener('click', (event) => {
+  if (window.parent && window.parent !== window) {
+    event.preventDefault();
+    window.parent.postMessage({ type: 'eva-close-coords-modal' }, window.location.origin);
+  }
+});
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileListEl = document.getElementById('fileList');
+const generateBtn = document.getElementById('generateBtn');
+const statusEl = document.getElementById('status');
+const analyzeStatusEl = document.getElementById('analyzeStatus');
+const summaryWrap = document.getElementById('summaryWrap');
+const summaryEl = document.getElementById('summary');
+let files = [];
+let analyzeToken = null;
+
+function escapeHtml(v){ return String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+const FILE_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+function renderFiles() {
+  fileListEl.innerHTML = files.map((f, i) =>
+    `<div class="cx-fileitem"><span class="fn">${FILE_SVG}<span>${escapeHtml(f.name)}</span></span><button class="cx-rm" data-rm="${i}">Hapus</button></div>`
+  ).join('');
+}
+
+function addFiles(list) {
+  let added = false;
+  for (const f of list) {
+    if (/\.(kml|kmz)$/i.test(f.name)) { files.push(f); added = true; }
+  }
+  renderFiles();
+  if (added) analyze();
+}
+
+const LABEL_ORDER = ['FAT', 'FDT', 'New Pole', 'Pole EXT TLKM', 'Pole EXT LN', 'Pole EXT MTI', 'Pole EXT MR', 'Pole EXT', 'HP Cover'];
+function chipClass(label) {
+  if (label === 'FDT') return 'fdt';
+  if (label === 'HP Cover') return 'hp';
+  if (label.startsWith('Pole') || label === 'New Pole') return 'pole';
+  return '';
+}
+
+function renderSummary(filesData) {
+  if (!filesData || !filesData.length) { summaryWrap.classList.add('hidden'); return; }
+  summaryWrap.classList.remove('hidden');
+  summaryEl.innerHTML = filesData.map(fd => {
+    const labels = (fd.summary && fd.summary.labels) || {};
+    const keys = Object.keys(labels).sort((a, b) => {
+      const ia = LABEL_ORDER.indexOf(a); const ib = LABEL_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    const chips = keys.map(k => `<span class="cx-chip ${chipClass(k)}">${escapeHtml(k)} <b>${labels[k]}</b></span>`).join('')
+      || '<span class="cx-status">Tidak ada placemark terdeteksi.</span>';
+    return `<div class="cx-sfile"><h4>${escapeHtml(fd.file)}</h4><div class="cx-chips">${chips}</div></div>`;
+  }).join('');
+}
+
+async function analyze() {
+  if (!files.length) { analyzeToken = null; generateBtn.disabled = true; summaryWrap.classList.add('hidden'); return; }
+  analyzeStatusEl.innerHTML = `<span class="cx-spinner"></span>Menghitung placemark dari ${files.length} file (standarisasi)...`;
+  generateBtn.disabled = true;
+  const fd = new FormData();
+  files.forEach(f => fd.append('kmz_files', f));
+  try {
+    const res = await fetch('/api/kmz-coords/analyze', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    analyzeToken = data.token;
+    renderSummary(data.files);
+    analyzeStatusEl.textContent = '';
+    generateBtn.disabled = false;
+  } catch (err) {
+    analyzeStatusEl.innerHTML = '';
+    analyzeStatusEl.className = 'cx-status err';
+    analyzeStatusEl.textContent = 'Error analisa: ' + err.message;
+    analyzeToken = null;
+  }
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragging'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragging'); addFiles(e.dataTransfer.files); });
+fileListEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-rm]');
+  if (btn) { files.splice(Number(btn.dataset.rm), 1); renderFiles(); analyze(); }
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  files = []; analyzeToken = null; renderFiles();
+  summaryWrap.classList.add('hidden'); statusEl.textContent = ''; statusEl.className = 'cx-status';
+  analyzeStatusEl.textContent = ''; analyzeStatusEl.className = 'cx-status';
+  generateBtn.disabled = true;
+});
+
+generateBtn.addEventListener('click', async () => {
+  if (!analyzeToken) return;
+  const categories = [...document.querySelectorAll('.cat-cb:checked')].map(cb => cb.value);
+  if (!categories.length) { statusEl.className = 'cx-status err'; statusEl.textContent = 'Pilih minimal 1 kategori.'; return; }
+  generateBtn.disabled = true;
+  statusEl.className = 'cx-status';
+  statusEl.innerHTML = '<span class="cx-spinner"></span>Membuat Excel...';
+  try {
+    const res = await fetch('/api/kmz-coords/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: analyzeToken, categories }),
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || res.statusText); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'Koordinat KMZ.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    statusEl.className = 'cx-status ok';
+    statusEl.textContent = 'Excel berhasil dibuat & diunduh.';
+    if (window.parent && window.parent.evaAssistantNotify) {
+      window.parent.evaAssistantNotify({ title: 'Koordinat Excel', message: `${files.length} file diproses`, tone: 'success' });
+    }
+  } catch (err) {
+    statusEl.className = 'cx-status err';
+    statusEl.textContent = 'Error: ' + err.message;
+  } finally {
+    generateBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
+

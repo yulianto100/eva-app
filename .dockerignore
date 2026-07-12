@@ -1,0 +1,17 @@
+.env
+.secrets/
+.git/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+uploads/
+outputs/
+backups/
+data/
+geofabrik/
+logs/
+static/downloads/
+
+tests/
+*.bak*

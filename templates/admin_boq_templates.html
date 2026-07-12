@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BOQ Templates - EVA Admin</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.ghost{background:rgba(255,255,255,.1);color:#fff}.wrap{padding:24px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:auto}table{border-collapse:collapse;width:100%;min-width:900px}th,td{border-bottom:1px solid #e2e8f0;padding:12px;text-align:left;font-size:14px}th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}form{display:inline-flex;gap:8px;align-items:center}.ok{color:#166534;font-weight:800}.bad{color:#991b1b;font-weight:800}.download{background:#0f172a;color:#fff}.upload{background:#10b981;color:#020617}input[type=file]{max-width:220px}.path{font-size:12px;color:#64748b;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>BOQ Template Manager</h1>
+      <p class="sub">6 template: Cluster/Subfeeder/Feeder × AE/UG. Upload otomatis backup template lama.</p>
+    </div>
+    <a class="btn ghost" href="/admin">Dashboard</a>
+  </header>
+  <main class="wrap">
+    <section class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Template</th>
+            <th>Status</th>
+            <th>File</th>
+            <th>Size</th>
+            <th>Updated</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><strong>{{ row.label }}</strong><div class="path">{{ row.path }}</div></td>
+            <td>{% if row.exists %}<span class="ok">Ready</span>{% else %}<span class="bad">Missing</span>{% endif %}</td>
+            <td>{{ row.name }}</td>
+            <td>{{ row.size }}</td>
+            <td>{{ row.mtime }}</td>
+            <td>
+              {% if row.exists %}<a class="btn download" href="/admin/boq-templates/{{ row.key }}/download">Download</a>{% endif %}
+              <form method="post" action="/admin/boq-templates/{{ row.key }}/upload" enctype="multipart/form-data">
+                <input type="file" name="template" accept=".xlsx" required>
+                <button class="btn upload">Replace</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
