@@ -1180,6 +1180,37 @@ def _fdt_sharing_code_from_name(value: str | None) -> str:
     return code
 
 
+def _shared_fdt_codes_for_fallback(
+    root: ET.Element,
+    initial_fdt_placemarks: Sequence[FdtPlacemarkRef],
+) -> list[str]:
+    """Resolve fallback FDT codes without treating unrelated HP codes as FDTs.
+
+    Prefer placemarks already classified as FDT by source folder context. Only
+    scan the whole KMZ for sharing codes when those actual FDT placemarks are
+    missing or placeholders (for legacy FDT-sharing files with HH-coded names).
+    """
+    actual_codes: list[str] = []
+    for placemark in initial_fdt_placemarks:
+        code = _fdt_sharing_code_from_name(placemark.current_name)
+        if code and code not in actual_codes:
+            actual_codes.append(code)
+    if actual_codes:
+        return actual_codes
+
+    sharing_codes: list[str] = []
+    for placemark in root.iter():
+        if local_name(placemark.tag) != "Placemark":
+            continue
+        name = normalize_text(direct_child_text_by_name(placemark, "name")).upper()
+        if ".HH" not in name and "HANDHOLE" not in name:
+            continue
+        code = _fdt_sharing_code_from_name(name)
+        if code and code not in sharing_codes:
+            sharing_codes.append(code)
+    return sharing_codes
+
+
 def _fdt_sharing_records_from_codes(codes: Sequence[str], site_name: str) -> list[FdtCodingRecord]:
     seen: list[str] = []
     for code in codes:
@@ -1414,6 +1445,9 @@ LEGACY_FAT_FDT_NAME_PATTERN = re.compile(r"\bFDT\s*[-_ ]*(?P<fdt>\d+)\s*[._ -]+(
 
 def looks_like_fdt_placemark(placemark: ET.Element, folder_stack: Sequence[str]) -> bool:
     if not placemark_has_point(placemark):
+        return False
+    normalized_stack = [normalize_folder_name(folder) for folder in folder_stack]
+    if any(folder == "HOMEPASS" for folder in normalized_stack):
         return False
     if nearest_standard_folder(folder_stack) == "FAT":
         return False
@@ -7033,13 +7067,7 @@ def standardize_kmz_file(
     wrapper_changes: list[dict] = []
     using_default_coding = False
     if not matched_records:
-        sharing_codes: list[str] = []
-        for pm in root.iter():
-            if local_name(pm.tag) != "Placemark":
-                continue
-            code = _fdt_sharing_code_from_name(direct_child_text_by_name(pm, "name"))
-            if code and code not in sharing_codes:
-                sharing_codes.append(code)
+        sharing_codes = _shared_fdt_codes_for_fallback(root, initial_fdt_placemarks)
         sharing_records = _fdt_sharing_records_from_codes(sharing_codes, project_folder_name)
         matched_records = sharing_records or default_fdt_coding_records(initial_fdt_placemarks, project_folder_name)
         matched_from = matched_from or project_folder_name
