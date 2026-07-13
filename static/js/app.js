@@ -6402,7 +6402,13 @@ function clusterAction(action) {
         if (d.found && d.donation.permit_rt_rw) {
           const fillPermit = () => {
             const permitInput = document.getElementById("astriBoqPermitRtRw");
-            if (permitInput) { permitInput.value = d.donation.permit_rt_rw; return; }
+            if (permitInput) {
+              permitInput.value = d.donation.permit_rt_rw;
+              // Re-trigger auto description so PR desc includes donation line
+              const clusterContent = document.getElementById("astriClusterContent");
+              if (clusterContent) refreshAutoDescription("cluster", clusterContent);
+              return;
+            }
             setTimeout(fillPermit, 200);
           };
           fillPermit();

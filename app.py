@@ -2499,6 +2499,9 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
             ("work_order[permit_rt_rw]", permit_rt_rw),
             ("permit_rt_rw", permit_rt_rw),
         ])
+    else:
+        LOGGER.warning("Close WO missing permit_rt_rw - empty value. won=%s pr_description_len=%s", won_val, len(pr_description or ""))
+    LOGGER.warning("Close WO request url=%s permit_rt_rw=%r data_keys=%s", f"{ASTRI_BASE_URL}/process/work-order/update", permit_rt_rw, [k for k,_ in close_data[:6]])
     try:
         close_response = record["session"].post(
             f"{ASTRI_BASE_URL}/process/work-order/update",
