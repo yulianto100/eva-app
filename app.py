@@ -2522,7 +2522,7 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
         skipped_no_price = False
         if not ok and isinstance(body, dict):
             err_str = str(body)
-            if "error_vendor_price_not_found" in err_str or "vendor_price" in err_str:
+            if "error_vendor_price_not_found" in err_str or "vendor_price" in err_str or "error_third_party_exception" in err_str or "third_party" in err_str:
                 skipped_no_price = True
         inserted.append({
             "equipment_name": parsed.get("equipment_name"),
