@@ -1526,7 +1526,7 @@ def _idr(value: str) -> str:
     return f"{n:,}".replace(",", ".")
 
 
-def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit_rt_rw: str = "") -> str:
+def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit_rt_rw: str = "", pph_pct: float = 0.0) -> str:
     scope = (scope or "cluster").lower()
     match = match or {}
     items = items or []
@@ -1566,7 +1566,8 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
     if permit_rt_rw:
         if not hp:
             lines.append("")
-        lines.append(f"Donation Approve : IDR {_idr(permit_rt_rw)}")
+        donasi_label = "(include PPh 4%)" if pph_pct > 0 else "(Inhouse)"
+        lines.append(f"Donation Approve : IDR {_idr(permit_rt_rw)} {donasi_label}")
     lines += ["", material_note]
     return "\n".join(lines).strip()
 
@@ -1575,11 +1576,49 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
 def api_astri_boq_auto_description():
     payload = request.get_json(silent=True) or {}
     try:
+        pph_pct = float(payload.get("match", {}).get("pph_pct", 0) or 0)
+        # Fallback: if pph_pct==0 but vendor known, look up PPH DB directly
+        if pph_pct == 0:
+            match = payload.get("match") or {}
+            vendor_name = match.get("vendor_label") or match.get("vendor_name") or ""
+            if vendor_name:
+                import sqlite3 as _sqlite3, re as _re
+                db_path = os.path.join(os.path.dirname(__file__), "data", "pph_vendor.db")
+                if os.path.exists(db_path):
+                    conn = _sqlite3.connect(db_path)
+                    cur = conn.cursor()
+                    cur.execute("SELECT vendor, pph_vendor FROM pph_vendor")
+                    all_v = cur.fetchall()
+                    conn.close()
+                    def _norm(x):
+                        return _re.sub(r"[^a-z0-9]", "", (x or "").lower())
+                    vn = _norm(vendor_name)
+                    for v, pph in all_v:
+                        if _norm(v) == vn:
+                            try:
+                                pph_pct = float(str(pph).replace(",",".").replace("%","").strip()) / 100.0
+                            except ValueError:
+                                pass
+                            break
+                    if pph_pct == 0:
+                        keywords_norm = [k for k in _re.findall(r"[a-z0-9]+", vendor_name.lower()) if len(k) >= 3]
+                        best = None
+                        for v, pph in all_v:
+                            vnorm = _norm(v)
+                            if any(k in vnorm for k in keywords_norm):
+                                if best is None or len(v) > len(best[0]):
+                                    best = (v, pph)
+                        if best and best[1]:
+                            try:
+                                pph_pct = float(str(best[1]).replace(",",".").replace("%","").strip()) / 100.0
+                            except ValueError:
+                                pass
         description = build_auto_pr_description(
             payload.get("scope") or "cluster",
             payload.get("match") or {},
             payload.get("items") or [],
             payload.get("permit_rt_rw") or "",
+            pph_pct=pph_pct,
         )
         return jsonify({"description": description})
     except Exception as exc:
@@ -2260,6 +2299,28 @@ def api_astri_boq_submit(job_id: str):
 
 
 
+@app.route("/api/astri/boq/submit", methods=["POST"])
+def api_astri_boq_submit_nojob():
+    try:
+        record = require_astri_session()
+        payload = request.get_json(silent=True) or {}
+        match = payload.get("match") or {}
+        if not match.get("cluster_code") or not match.get("work_order_number"):
+            return jsonify({"error": "Data match ASTRI tidak lengkap."}), 400
+        match["matched"] = True
+        create_boq = astri_create_boq_link(record, match)
+        items = payload.get("items") or []
+        if not items:
+            return jsonify({"error": "Tidak ada item BOQ."}), 400
+        if not create_boq.get("url"):
+            return jsonify({"error": create_boq.get("error", "Link BOQ ASTRI tidak tersedia."), "match": match, "create_boq": create_boq}), 400
+        result = submit_astri_boq_items(record, create_boq, items, payload.get("pr_description", ""), is_subfeeder=False, permit_rt_rw=payload.get("permit_rt_rw", ""))
+        return jsonify({"match": match, "create_boq": create_boq, **result})
+    except Exception as exc:
+        LOGGER.exception("ASTRI BOQ submit no-job failed")
+        return jsonify({"error": str(exc)}), 400
+
+
 def extract_astri_form_fields(form_html: str) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = []
     for tag in re.findall(r'<(?:input|textarea|select)\b[^>]*>(?:.*?</textarea>)?', form_html, flags=re.I | re.S):
@@ -2309,8 +2370,8 @@ def submit_astri_boq_items(record: dict, create_boq: dict, items: list[dict], pr
             if pr_description:
                 parse_data.append(("work_order_progress[detail]", "[#PR_DESCRIPTION] " + pr_description))
             if permit_rt_rw:
-                parse_data.append(("work_order[permit_rt_rw]", permit_rt_rw))
-                parse_data.append(("permit_rt_rw", permit_rt_rw))
+                parse_data.append(("work_order[permit]", permit_rt_rw))
+                parse_data.append(("permit", permit_rt_rw))
             parse_data.append(("__create_boq_url", create_boq.get("url", "")))
             return _submit_astri_parsed(record, parse_data, items, pr_description, vendor_from_url, is_subfeeder, permit_rt_rw, plant_from_url)
     except Exception:
@@ -2353,8 +2414,8 @@ def submit_astri_boq_items(record: dict, create_boq: dict, items: list[dict], pr
     if pr_description:
         parse_data.append(("work_order_progress[detail]", "[#PR_DESCRIPTION] " + pr_description))
     if permit_rt_rw:
-        parse_data.append(("work_order[permit_rt_rw]", permit_rt_rw))
-        parse_data.append(("permit_rt_rw", permit_rt_rw))
+        parse_data.append(("work_order[permit]", permit_rt_rw))
+        parse_data.append(("permit", permit_rt_rw))
     parse_data.append(("__create_boq_url", create_boq.get("url", "")))
     return _submit_astri_parsed(record, parse_data, items, pr_description, vendor_from_url, is_subfeeder, permit_rt_rw, plant_from_url)
 
@@ -2496,8 +2557,8 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
     ])
     if permit_rt_rw:
         close_data.extend([
-            ("work_order[permit_rt_rw]", permit_rt_rw),
-            ("permit_rt_rw", permit_rt_rw),
+            ("work_order[permit]", permit_rt_rw),
+            ("permit", permit_rt_rw),
         ])
     else:
         LOGGER.warning("Close WO missing permit_rt_rw - empty value. won=%s pr_description_len=%s", won_val, len(pr_description or ""))
@@ -2526,9 +2587,9 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
 
 @app.route("/api/astri/donation")
 def api_astri_donation():
+    code = request.args.get("cluster_code", "")
     try:
         record = require_astri_session()
-        code = request.args.get("cluster_code", "")
         if not code:
             return jsonify({"found": False, "donation": None})
         params = {"filter[global]": code}
@@ -2590,7 +2651,7 @@ def api_astri_donation():
                 elif nominal_num > 0:
                     # If vendor PPH is not registered, still pass RT/RW permit using
                     # ASTRI donation nominal. Previously this stayed empty, so cluster
-                    # close/update did not send work_order[permit_rt_rw].
+                    # close/update did not send work_order[permit].
                     permit_rt_rw = str(int(nominal_num))
                 item = {
                     "wo": clean[1] if len(clean) > 1 else "",
@@ -2612,7 +2673,7 @@ def api_astri_donation():
         return jsonify({"found": False, "donation": None})
     except Exception as exc:
         LOGGER.exception("ASTRI donation fetch failed")
-        return jsonify({"error": str(exc), "found": False}), 400
+        return jsonify({"found": False, "donation": None})
 
 
 @app.route("/api/astri/subfeeder/schedule/form")

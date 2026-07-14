@@ -6400,6 +6400,10 @@ function clusterAction(action) {
           donationInfo.classList.remove("hidden");
         }
         if (d.found && d.donation.permit_rt_rw) {
+          if (typeof d.donation.pph_pct === "number") {
+            if (!state.astriMatch) state.astriMatch = {};
+            state.astriMatch.pph_pct = d.donation.pph_pct;
+          }
           const fillPermit = () => {
             const permitInput = document.getElementById("astriBoqPermitRtRw");
             if (permitInput) {
