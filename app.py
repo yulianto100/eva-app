@@ -633,7 +633,7 @@ def search_astri_clusters_v3(record: dict, query_raw: str, status: str = "") -> 
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/cluster/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_label]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
@@ -713,7 +713,7 @@ def search_astri_subfeeders(record: dict, query_raw: str, status: str = "") -> l
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/subfeeder/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_label]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
@@ -787,7 +787,7 @@ def search_astri_feeders(record: dict, query_raw: str, status: str = "") -> list
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/feeder/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_label]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
