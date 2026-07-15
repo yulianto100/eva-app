@@ -690,10 +690,22 @@ def _default_source_for_record(db_path: Path, record: dict) -> tuple[str, str]:
 
     return DEFAULT_SOURCES[0].spreadsheet_id, sheet_name or olt_initial
 
+
+def _find_case_insensitive_sheet(spreadsheet, sheet_name: str) -> str | None:
+    """Find sheet by case-insensitive comparison."""
+    normalized = normalize_text(sheet_name).upper()
+    for ws in spreadsheet.worksheets():
+        if normalize_text(ws.title).upper() == normalized:
+            return ws.title
+    return None
+
 def _ensure_worksheet(spreadsheet, sheet_name: str) -> gspread.Worksheet:
     try:
         return spreadsheet.worksheet(sheet_name)
     except gspread.exceptions.WorksheetNotFound:
+        actual_title = _find_case_insensitive_sheet(spreadsheet, sheet_name)
+        if actual_title:
+            return spreadsheet.worksheet(actual_title)
         worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=12)
         worksheet.update(
             "A1:G1",
@@ -738,20 +750,33 @@ def sync_outbound_create_record(record_id: int, db_path: str | Path | None = Non
             logger.warning("Outbound sync create: record %d tidak punya target spreadsheet/sheet.", record_id)
             return False
 
-        gs_client = _build_gspread_client()
-        spreadsheet = gs_client.open_by_key(spreadsheet_id)
-        worksheet = _ensure_worksheet(spreadsheet, sheet_name)
-        layout = _find_header_layout_for_sheet(worksheet)
-        if not layout:
-            logger.warning("Outbound sync create: header tidak ditemukan di sheet '%s'.", sheet_name)
-            return False
+        last_exc = None
+        for _attempt in range(3):
+            try:
+                gs_client = _build_gspread_client()
+                spreadsheet = gs_client.open_by_key(spreadsheet_id)
+                worksheet = _ensure_worksheet(spreadsheet, sheet_name)
+                layout = _find_header_layout_for_sheet(worksheet)
+                if not layout:
+                    logger.warning("Outbound sync create: header tidak ditemukan di sheet '%s'.", sheet_name)
+                    return False
 
-        header_row, columns = layout
-        data_row = _next_append_row(worksheet, header_row, columns)
-        record = fdt_coding_db.set_record_source_metadata(db_path, record_id, spreadsheet_id, sheet_name, data_row) or record
-        _outbound_update_row(worksheet, header_row, columns, data_row, record)
-        logger.info("Outbound sync create: record %d -> sheet '%s' row %d.", record_id, sheet_name, data_row)
-        return True
+                header_row, columns = layout
+                data_row = _next_append_row(worksheet, header_row, columns)
+                record = fdt_coding_db.set_record_source_metadata(db_path, record_id, spreadsheet_id, sheet_name, data_row) or record
+                _outbound_update_row(worksheet, header_row, columns, data_row, record)
+                logger.info("Outbound sync create: record %d -> sheet '%s' row %d.", record_id, sheet_name, data_row)
+                return True
+            except Exception as exc:
+                last_exc = exc
+                if _is_google_quota_error(exc) and _attempt < 2:
+                    wait = 15 * (_attempt + 1)
+                    logger.warning("Outbound sync create: record %d quota, retry %d/3 tunggu %ds", record_id, _attempt + 1, wait)
+                    time.sleep(wait)
+                else:
+                    break
+        # All retries exhausted — re-raise for outer except
+        raise last_exc
     except Exception as exc:
         logger.error("Outbound sync create: record %d gagal: %s", record_id, exc)
         return False
@@ -759,12 +784,24 @@ def sync_outbound_create_record(record_id: int, db_path: str | Path | None = Non
 def sync_outbound_create_records(record_ids: Sequence[int], db_path: str | Path | None = None) -> dict[int, bool]:
     results: dict[int, bool] = {}
     with _outbound_create_lock:
-        for record_id in record_ids:
+        for _idx, record_id in enumerate(record_ids):
             try:
                 normalized_id = int(record_id)
             except (TypeError, ValueError):
                 continue
+            if _idx > 0:
+                time.sleep(5)
             results[normalized_id] = sync_outbound_create_record(normalized_id, db_path=db_path)
+    return results
+
+
+def sync_outbound_delete_records(record_snapshots: dict, db_path: str | Path | None = None) -> dict:
+    """Batch delete with delay between records to avoid 429 quota."""
+    results: dict = {}
+    for _idx, (record_id, snapshot) in enumerate(record_snapshots.items()):
+        if _idx > 0:
+            time.sleep(5)
+        results[record_id] = sync_outbound_delete_record(record_id, db_path=db_path, record_snapshot=snapshot)
     return results
 
 def sync_outbound_update_record(record_id: int, db_path: str | Path | None = None) -> bool:
@@ -844,7 +881,7 @@ def _clear_record_rows(worksheet: gspread.Worksheet, columns: dict[str, int], re
     if preferred_row > 0 and preferred_row <= len(values):
         preferred_values = values[preferred_row - 1]
         if _record_matches_sheet_row(preferred_values, columns, record):
-            worksheet.batch_clear([f"A{preferred_row}:ZZ{preferred_row}"])
+            worksheet.delete_rows(preferred_row)
             return [preferred_row]
         logger.warning(
             "Outbound sync delete: source_row %d content mismatch for record %s, will search exact single match instead.",
@@ -858,7 +895,7 @@ def _clear_record_rows(worksheet: gspread.Worksheet, columns: dict[str, int], re
         if _record_matches_sheet_row(row, columns, record)
     ]
     if len(matches) == 1:
-        worksheet.batch_clear([f"A{matches[0]}:ZZ{matches[0]}"])
+        worksheet.delete_rows(matches[0])
         return matches
     if len(matches) > 1:
         logger.error(
@@ -884,22 +921,37 @@ def sync_outbound_delete_record(record_id: int, db_path: str | Path | None = Non
         if not spreadsheet_id or not sheet_name or source_row < 1:
             return False
 
-        gs_client = _build_gspread_client()
-        worksheet = gs_client.open_by_key(spreadsheet_id).worksheet(sheet_name)
+        last_exc = None
+        for _attempt in range(3):
+            try:
+                gs_client = _build_gspread_client()
+                spreadsheet = gs_client.open_by_key(spreadsheet_id)
+                ws_title = _find_case_insensitive_sheet(spreadsheet, sheet_name) or sheet_name
+                worksheet = spreadsheet.worksheet(ws_title)
 
-        layout = _find_header_layout_for_sheet(worksheet)
-        if not layout:
-            return False
+                layout = _find_header_layout_for_sheet(worksheet)
+                if not layout:
+                    return False
 
-        header_row, columns = layout
-        data_row = source_row
-        preferred_row = data_row if data_row > header_row else 0
-        cleared_rows = _clear_record_rows(worksheet, columns, record, preferred_row=preferred_row)
-        if not cleared_rows:
-            return False
+                header_row, columns = layout
+                data_row = source_row
+                preferred_row = data_row if data_row > header_row else 0
+                cleared_rows = _clear_record_rows(worksheet, columns, record, preferred_row=preferred_row)
+                if not cleared_rows:
+                    return False
 
-        logger.info("Outbound sync: record %d deleted -> sheet '%s' rows %s cleared.", record_id, sheet_name, cleared_rows)
-        return True
+                logger.info("Outbound sync: record %d deleted -> sheet '%s' rows %s deleted.", record_id, ws_title, cleared_rows)
+                return True
+            except Exception as exc:
+                last_exc = exc
+                if _is_google_quota_error(exc) and _attempt < 2:
+                    wait = 15 * (_attempt + 1)
+                    logger.warning("Outbound delete: record %d quota, retry %d/3 tunggu %ds", record_id, _attempt + 1, wait)
+                    time.sleep(wait)
+                else:
+                    break
+        # All retries exhausted — re-raise for outer except
+        raise last_exc
 
     except Exception as exc:
         logger.error("Outbound sync: delete record %d gagal: %s", record_id, exc)

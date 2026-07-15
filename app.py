@@ -915,6 +915,10 @@ def fetch_unverified_astri_documents(record: dict, match: dict) -> dict[str, dic
     all_docs = fetch_astri_requirement_documents(record, match)
     return {k: v for k, v in all_docs.items() if not v.get("verified")}
 
+def fetch_verified_astri_documents(record: dict, match: dict) -> dict[str, dict]:
+    all_docs = fetch_astri_requirement_documents(record, match)
+    return {k: v for k, v in all_docs.items() if v.get("verified")}
+
 def set_astri_document_verification(record: dict, match: dict, type_name: str, uuid_value: str, is_verified: bool) -> dict:
     response = record["session"].post(
         f"{ASTRI_BASE_URL}/process/material/verification-status/change",
@@ -1092,6 +1096,9 @@ def api_astri_subfeeder_unverify():
         docs = fetch_astri_subfeeder_requirement_documents(record, match)
         results = []
         for type_name, doc in docs.items():
+            if is_astri_boundary_document(type_name):
+                results.append({"target": type_name, "type_name": type_name, "ok": True, "skipped": True, "note": "Boundary tidak di-unverify."})
+                continue
             if not doc.get("verified"):
                 results.append({"target": type_name, "type_name": type_name, "ok": True, "note": "Sudah unverified sebelumnya."})
                 continue
@@ -1857,25 +1864,37 @@ def api_astri_latest_documents_download():
         docs = fetch_astri_latest_documents(record, match, is_subfeeder=is_subfeeder, is_feeder=is_feeder)
         if not docs:
             return jsonify({"error": "Tidak ada file ASTRI yang bisa didownload."}), 404
-        bundle = io.BytesIO()
-        with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
-            for doc in docs:
-                response = record["session"].get(
-                    f"{ASTRI_BASE_URL}/download/rfs-document",
-                    params={"uuid": doc["uuid"]},
-                    timeout=120,
-                )
-                response.raise_for_status()
-                filename = secure_filename(doc.get("filename") or f"{doc.get('type_name', 'document')}.bin") or f"{doc.get('type_name', 'document')}.bin"
-                archive.writestr(filename, response.content)
-        bundle.seek(0)
-        return send_file(
-            bundle,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=astri_bundle_download_name(match, is_subfeeder=is_subfeeder),
-            max_age=0,
-        )
+        import tempfile
+        tmpdir = tempfile.mkdtemp(prefix="astri_dl_")
+        zip_path = os.path.join(tmpdir, "bundle.zip")
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for doc in docs:
+                    response = record["session"].get(
+                        f"{ASTRI_BASE_URL}/download/rfs-document",
+                        params={"uuid": doc["uuid"]},
+                        timeout=120,
+                        stream=True,
+                    )
+                    response.raise_for_status()
+                    filename = secure_filename(doc.get("filename") or f"{doc.get('type_name', 'document')}.bin") or f"{doc.get('type_name', 'document')}.bin"
+                    dl_path = os.path.join(tmpdir, filename)
+                    with open(dl_path, "wb") as dlf:
+                        for chunk in response.iter_content(chunk_size=65536):
+                            if chunk:
+                                dlf.write(chunk)
+                    archive.write(dl_path, filename)
+                    os.remove(dl_path)
+            return send_file(
+                zip_path,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=astri_bundle_download_name(match, is_subfeeder=is_subfeeder),
+                max_age=0,
+            )
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
     except Exception as exc:
         LOGGER.exception("ASTRI latest documents download failed")
         return jsonify({"error": str(exc)}), 400
@@ -2118,6 +2137,9 @@ def api_astri_feeder_unverify():
         docs = fetch_astri_feeder_requirement_documents(record, match)
         results = []
         for type_name, doc in docs.items():
+            if is_astri_boundary_document(type_name):
+                results.append({"target": type_name, "type_name": type_name, "ok": True, "skipped": True, "note": "Boundary tidak di-unverify."})
+                continue
             if not doc.get("verified"):
                 results.append({"target": type_name, "type_name": type_name, "ok": True, "note": "Sudah unverified sebelumnya."})
                 continue
@@ -2143,6 +2165,9 @@ def api_astri_cluster_unverify():
             docs = fetch_verified_astri_documents(record, match)
             results = []
             for type_name, doc in docs.items():
+                if is_astri_boundary_document(type_name):
+                    results.append({"target": type_name, "type_name": type_name, "ok": True, "skipped": True, "note": "Boundary tidak di-unverify."})
+                    continue
                 result = unverify_astri_document(record, match, type_name, doc["uuid"])
                 result["target"] = type_name
                 results.append(result)
@@ -2232,6 +2257,9 @@ def api_astri_unverify(job_id: str):
         docs = fetch_astri_requirement_documents(record, match)
         results = []
         for type_name, doc in docs.items():
+            if is_astri_boundary_document(type_name):
+                results.append({"target": type_name, "type_name": type_name, "ok": True, "skipped": True, "note": "Boundary tidak di-unverify."})
+                continue
             if not doc.get("verified"):
                 results.append({"target": type_name, "type_name": type_name, "ok": True, "note": "Sudah unverified sebelumnya."})
                 continue
@@ -2461,6 +2489,9 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
         if is_subfeeder:
             data.setdefault("subcont_vendor_name", "")
             data.setdefault("area_plant_code", "")
+        if permit_rt_rw:
+            data["permit"] = permit_rt_rw
+            data["work_order[permit]"] = permit_rt_rw
         LOGGER.warning("Insert/v2 data=%s", data)
         response = record["session"].post(insert_url, data=data, timeout=120)
         ok = response.status_code in {200, 201, 302, 303}
@@ -2560,6 +2591,11 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
             ("work_order[permit]", permit_rt_rw),
             ("permit", permit_rt_rw),
         ])
+        if plant_from_url:
+            close_data.extend([
+                ("work_order[area_plant_code]", plant_from_url),
+                ("area_plant_code", plant_from_url),
+            ])
     else:
         LOGGER.warning("Close WO missing permit_rt_rw - empty value. won=%s pr_description_len=%s", won_val, len(pr_description or ""))
     LOGGER.warning("Close WO request url=%s permit_rt_rw=%r data_keys=%s", f"{ASTRI_BASE_URL}/process/work-order/update", permit_rt_rw, [k for k,_ in close_data[:6]])
@@ -2912,9 +2948,24 @@ def api_astri_route_list():
 def api_astri_olt_list():
     try:
         record = require_astri_session()
-        area = request.args.get("area", "").strip()
+        raw_area = request.args.get("area", "").strip()
+        LOGGER.info("OLT list request: raw area=%r", raw_area)
+        # Try multiple area name formats — ASTRI dropdown may use "OLT ARE JAKARTA BARAT"
+        # or other formats, but /olt/list filter expects just area name
+        area = raw_area
+        # Strip common prefixes
+        for prefix in ["OLT ARE ", "AREA ", "OLT AREA ", "WILAYAH "]:
+            if area.upper().startswith(prefix):
+                area = area[len(prefix):].strip()
+                break
+        if area != raw_area:
+            LOGGER.info("OLT list: stripped prefix, area=%r (was %r)", area, raw_area)
         if not area:
-            return jsonify({"data": []})
+            # Perhaps the select value is empty but text has area name — just try raw
+            if raw_area:
+                area = raw_area
+            else:
+                return jsonify({"data": []})
         response = record["session"].get(
             f"{ASTRI_BASE_URL}/olt/list",
             params={"filter[area]": area, "length": -1},
@@ -6452,6 +6503,22 @@ def _bg_sync_delete_record(record_id: int, record_snapshot: dict | None = None) 
     except Exception:
         LOGGER.exception("Background outbound sync delete record %d gagal dijadwalkan.", record_id)
 
+def _bg_sync_delete_records(record_snapshots: dict) -> None:
+    """Sequential batch delete with delay to avoid 429 quota."""
+    if not OUTBOUND_SYNC_ENABLED or not record_snapshots:
+        return
+    try:
+        threading.Thread(
+            target=fdt_sync_service.sync_outbound_delete_records,
+            args=(dict(record_snapshots),),
+            daemon=True,
+        ).start()
+    except Exception:
+        LOGGER.exception("Background outbound sync batch delete gagal dijadwalkan.")
+
+
+
+
 INBOUND_SYNC_ENABLED = os.getenv("INBOUND_SYNC_ENABLED", "true").lower() in {"1", "true", "yes"}
 if INBOUND_SYNC_ENABLED:
     try:
@@ -6615,8 +6682,7 @@ def api_fdt_coding_bulk_delete_records():
         ids = payload.get("ids") or []
         snapshots = {int(record_id): fdt_coding_db.get_record(Config.FDT_CODING_DB_PATH, int(record_id)) for record_id in ids}
         deleted = fdt_coding_db.delete_records(Config.FDT_CODING_DB_PATH, ids)
-        for record_id in ids:
-            _bg_sync_delete_record(int(record_id), snapshots.get(int(record_id)))
+        _bg_sync_delete_records(snapshots)
         return jsonify({"deleted": deleted})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400

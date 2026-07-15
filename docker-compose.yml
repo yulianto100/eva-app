@@ -8,7 +8,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
         reservations:
           memory: 64M
     restart: unless-stopped
@@ -92,9 +92,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
         reservations:
-          memory: 256M
+          memory: 512M
     restart: unless-stopped
   worker:
     build: .
@@ -159,7 +159,7 @@ services:
         limits:
           memory: 2G
         reservations:
-          memory: 512M
+          memory: 1G
     restart: unless-stopped
   searxng:
     image: searxng/searxng:latest
@@ -171,7 +171,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
         reservations:
           memory: 128M
     restart: unless-stopped
