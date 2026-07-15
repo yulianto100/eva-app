@@ -633,7 +633,7 @@ def search_astri_clusters_v3(record: dict, query_raw: str, status: str = "") -> 
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/cluster/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": 100},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
@@ -713,7 +713,7 @@ def search_astri_subfeeders(record: dict, query_raw: str, status: str = "") -> l
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/subfeeder/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": 100},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
@@ -787,7 +787,7 @@ def search_astri_feeders(record: dict, query_raw: str, status: str = "") -> list
         try:
             response = record["session"].get(
                 f"{ASTRI_BASE_URL}/material/feeder/drm/list/v3",
-                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": 100},
+                params={**({"filter[global]": query_raw} if query_raw else {}), **({"filter[latest_status_name]": status} if status else {}), "page": page, "limit": -1},
                 timeout=60,
             )
             response.raise_for_status()
@@ -1342,12 +1342,19 @@ def extract_astri_approve_schedule_form(page_html: str) -> dict:
 
 
 def astri_create_boq_link(record: dict, match: dict) -> dict:
-    response = record["session"].get(f"{ASTRI_BASE_URL}/material/cluster/drm/list/v3", timeout=60)
+    code = match.get("cluster_code", "").strip()
+    if not code:
+        return {"enabled": False, "error": "No cluster_code in match."}
+    response = record["session"].get(
+        f"{ASTRI_BASE_URL}/material/cluster/drm/list/v3",
+        params={"limit": -1},
+        timeout=120,
+    )
     response.raise_for_status()
-    pattern = r'<a[^>]+/material/cluster/boq-drm/insert[^>]*' + re.escape(match["cluster_code"]) + r'[^>]*>.*?</a>'
+    pattern = r'<a[^>]+/material/cluster/boq-drm/insert[^>]*' + re.escape(code) + r'[^>]*>.*?</a>'
     found = re.search(pattern, response.text, flags=re.I | re.S)
     if not found:
-        return {"enabled": False, "error": "Create BOQ link tidak ditemukan di ASTRI."}
+        return {"enabled": False, "error": f"BOQ link untuk {code} tidak ditemukan di ASTRI."}
     tag = found.group(0)
     href_match = re.search(r'href=("|\')([^"\']+)\1', tag, flags=re.I)
     href = html.unescape(href_match.group(2)) if href_match else ""
@@ -1384,7 +1391,11 @@ def fetch_astri_subfeeder_requirement_page(record: dict, match: dict) -> str:
     return response.text
 
 def astri_create_feeder_boq_link(record: dict, match: dict) -> dict:
-    response = record["session"].get(f"{ASTRI_BASE_URL}/material/feeder/drm/list/v3", timeout=60)
+    response = record["session"].get(
+        f"{ASTRI_BASE_URL}/material/feeder/drm/list/v3",
+        params={"limit": -1},
+        timeout=120,
+    )
     response.raise_for_status()
     pattern = r'<a[^>]+/material/feeder/boq-drm/insert[^>]*' + re.escape(match["cluster_code"]) + r'[^>]*>.*?</a>'
     found = re.search(pattern, response.text, flags=re.I | re.S)
@@ -2950,16 +2961,14 @@ def api_astri_olt_list():
         record = require_astri_session()
         raw_area = request.args.get("area", "").strip()
         LOGGER.info("OLT list request: raw area=%r", raw_area)
-        # Try multiple area name formats — ASTRI dropdown may use "OLT ARE JAKARTA BARAT"
-        # or other formats, but /olt/list filter expects just area name
-        area = raw_area
-        # Strip common prefixes
+        # Normalize: underscores to spaces, uppercase, strip common prefixes
+        area = raw_area.replace("_", " ").upper().strip()
         for prefix in ["OLT ARE ", "AREA ", "OLT AREA ", "WILAYAH "]:
-            if area.upper().startswith(prefix):
+            if area.startswith(prefix):
                 area = area[len(prefix):].strip()
                 break
         if area != raw_area:
-            LOGGER.info("OLT list: stripped prefix, area=%r (was %r)", area, raw_area)
+            LOGGER.info("OLT list: normalized area=%r (was %r)", area, raw_area)
         if not area:
             # Perhaps the select value is empty but text has area name — just try raw
             if raw_area:
