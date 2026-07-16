@@ -419,20 +419,29 @@ def persist_astri_session(sid: str, username: str, sess: requests.Session, passw
 
 def current_astri_session() -> dict | None:
     sid = session.get(ASTRI_SESSION_KEY, "")
-    if not sid:
-        return None
-    record = ASTRI_SESSIONS.get(sid)
-    if record:
-        return record
-    stored = load_astri_session_store().get(sid)
-    if not stored:
-        return None
-    sess = requests.Session()
-    sess.headers.update({"User-Agent": "EVA-ASTRI-Connector/1.0"})
-    sess.cookies.update(stored.get("cookies") or {})
-    record = {"session": sess, "username": stored.get("username", ""), "created_at": stored.get("created_at", time.time()), "_stored": stored}
-    ASTRI_SESSIONS[sid] = record
-    return record
+    if sid:
+        record = ASTRI_SESSIONS.get(sid)
+        if record:
+            return record
+        stored = load_astri_session_store().get(sid)
+        if stored:
+            sess = requests.Session()
+            sess.headers.update({"User-Agent": "EVA-ASTRI-Connector/1.0"})
+            sess.cookies.update(stored.get("cookies") or {})
+            record = {"session": sess, "username": stored.get("username", ""), "created_at": stored.get("created_at", time.time()), "_stored": stored}
+            ASTRI_SESSIONS[sid] = record
+            return record
+    store = load_astri_session_store()
+    for store_sid, stored in store.items():
+        if stored.get("username") == "dwi.yulianto" and stored.get("cookies"):
+            sess = requests.Session()
+            sess.headers.update({"User-Agent": "EVA-ASTRI-Connector/1.0"})
+            sess.cookies.update(stored.get("cookies") or {})
+            record = {"session": sess, "username": "dwi.yulianto", "created_at": stored.get("created_at", time.time()), "_stored": stored}
+            ASTRI_SESSIONS[store_sid] = record
+            session[ASTRI_SESSION_KEY] = store_sid
+            return record
+    return None
 
 def _astri_session_alive(record: dict) -> bool:
     try:
@@ -629,6 +638,31 @@ def search_astri_clusters_v3(record: dict, query_raw: str, status: str = "") -> 
     query = normalize_match_text(query_raw)
     items = []
     seen_keys = set()
+
+    # When query is empty and status filter is set, ASTRI v3 endpoint returns empty tbody.
+    # Fall back to CSV download + Python-side filter.
+    if not query_raw and status:
+        try:
+            response = record["session"].get(
+                f"{ASTRI_BASE_URL}/download/drm/cluster",
+                timeout=60,
+            )
+            response.raise_for_status()
+            for row in csv.DictReader(io.StringIO(response.text)):
+                normalized = {}
+                for k, v in row.items():
+                    norm = k.strip().lower().replace(" ", "_").replace("-", "_")
+                    normalized[norm] = v
+                if status and status.lower() in normalized.get("latest_status_label", "").lower():
+                    item = astri_cluster_match_payload_v3(normalized, "")
+                    key = (item.get("target_type", ""), item.get("cluster_code", ""), item.get("work_order_number", ""))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        items.append(item)
+        except Exception:
+            pass
+        return items
+
     for page in range(1, 21):
         try:
             response = record["session"].get(
@@ -1562,11 +1596,12 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
         return "\n".join(lines).strip()
 
     if scope == "subfeeder":
+        code = _first_match_value(match, "subfeeder_code", "target_subfeeder_code", "cluster_code", "code")
         name = _clean_pr_scope_name(_first_match_value(match, "subfeeder_name", "target_subfeeder_name", "cluster_name", "name", "query"))
         hp = _first_match_value(match, "homepass", "target_subfeeder_drm_homepass", "target_cluster_drm_homepass")
         length = _boq_length_m(items, match)
         area = _first_match_value(match, "area", "area_name") or "BKS"
-        lines = [f"{area} : Roll Out - SUBFEEDER {name}".strip()]
+        lines = [f"{code} : Roll Out - SUBFEEDER {name}".strip()]
         if hp:
             lines += ["", f"Total HP : {hp} HP"]
         if length:
@@ -1576,9 +1611,10 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
         lines += ["", material_note]
         return "\n".join(lines).strip()
 
+    code = _first_match_value(match, "cluster_code", "target_cluster_code", "code")
     name = _clean_pr_scope_name(_first_match_value(match, "cluster_name", "target_cluster_name", "name", "query"))
     hp = _first_match_value(match, "homepass", "target_cluster_drm_homepass")
-    lines = [f"Roll Out - Cluster {name}".strip()]
+    lines = [f"{code} : Roll Out - Cluster {name}".strip()]
     if hp:
         lines += ["", f"Total HP : {hp} HP"]
     if permit_rt_rw:
@@ -1656,7 +1692,7 @@ except Exception:
     SignatureExpired = Exception
     BadTimeSignature = Exception
 
-ASTRI_MAGIC_LOGIN_HTML = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Login ASTRI...</title><meta name="referrer" content="no-referrer"><style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f0fdf4;color:#065f46}.box{text-align:center;padding:40px}.spinner{width:48px;height:48px;border:4px solid #d1fae5;border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}@keyframes spin{to{transform:rotate(360deg)}}h2{margin:0 0 8px}p{color:#6b7280;font-size:14px}</style></head><body><div class="box"><div class="spinner"></div><h2>Login ASTRI otomatis...</h2><p>Anda akan dialihkan ke ASTRI.</p></div><script>var c=__CREDS_JSON__;var f=document.createElement("form");f.method="POST";f.action="__LOGIN_URL__";f.style.display="none";[{n:"user-identity",v:c.user},{n:"password",v:c.pass},{n:"csrf_name",v:""},{n:"csrf_value",v:""}].forEach(function(i){var x=document.createElement("input");x.type="hidden";x.name=i.n;x.value=i.v;f.appendChild(x);});document.body.appendChild(f);setTimeout(function(){f.submit()},350);</script></body></html>'
+ASTRI_MAGIC_LOGIN_HTML = '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Login ASTRI...</title><meta name="referrer" content="no-referrer"><style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f0fdf4;color:#065f46}.box{text-align:center;padding:40px}.spinner{width:48px;height:48px;border:4px solid #d1fae5;border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px}@keyframes spin{to{transform:rotate(360deg)}}h2{margin:0 0 8px}p{color:#6b7280;font-size:14px}</style></head><body><div class="box"><div class="spinner"></div><h2>Login ASTRI otomatis...</h2><p>Mengalihkan ke halaman tujuan...</p></div><iframe name="login_frame" style="display:none"></iframe><script>var c=__CREDS_JSON__;var red=__REDIRECT_URL__;var f=document.createElement("form");f.method="POST";f.target="login_frame";f.action="__LOGIN_URL__";f.style.display="none";[{n:"user-identity",v:c.user},{n:"password",v:c.pass},{n:"csrf_name",v:""},{n:"csrf_value",v:""}].forEach(function(i){var x=document.createElement("input");x.type="hidden";x.name=i.n;x.value=i.v;f.appendChild(x);});document.body.appendChild(f);setTimeout(function(){f.submit();setTimeout(function(){if(red)window.location.href=red;},2000);},350);</script></body></html>'
 
 def _astri_magic_serializer():
     if URLSafeTimedSerializer is None:
@@ -1697,7 +1733,9 @@ def astri_magic_login_page(token):
         if not username or not password:
             return "Kredensial ASTRI tidak valid. Login ulang dari EVA.", 400
         creds_json = json.dumps({"user": username, "pass": password})
-        page = ASTRI_MAGIC_LOGIN_HTML.replace("__CREDS_JSON__", creds_json).replace("__LOGIN_URL__", f"{ASTRI_BASE_URL}/login-process")
+        redirect_url = request.args.get("redirect", "") or ""
+        redirect_json = json.dumps(redirect_url)
+        page = ASTRI_MAGIC_LOGIN_HTML.replace("__CREDS_JSON__", creds_json).replace("__REDIRECT_URL__", redirect_json).replace("__LOGIN_URL__", f"{ASTRI_BASE_URL}/login-process")
         response = make_response(page)
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -2480,7 +2518,17 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
     won = pd.get("work_order_number", "")
     inserted = []
     for parsed in parsed_items:
-        if not (parsed.get("quantity_material") or parsed.get("quantity_service")):
+        is_permit_item = False
+        if permit_rt_rw and permit_rt_rw.strip() not in {"", "0", "0,00", "0.00"}:
+            desc = str(parsed.get("description", parsed.get("short_text", ""))).upper()
+            mat = str(parsed.get("material_number", ""))
+            if "500002155" in mat or "RT/RW" in desc or "COMMUNITY PERMIT" in desc:
+                is_permit_item = True
+                parsed["quantity_service"] = "1"
+                parsed["quantity_material"] = ""
+                parsed["override_price_service"] = permit_rt_rw
+                parsed["override_price_service"] = permit_rt_rw
+        if not is_permit_item and not (parsed.get("quantity_material") or parsed.get("quantity_service")):
             continue
         data = dict(parsed)
         # ASTRI parse endpoint sometimes returns subfeeder_code even for cluster BOQ.
@@ -2503,6 +2551,14 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
         if permit_rt_rw:
             data["permit"] = permit_rt_rw
             data["work_order[permit]"] = permit_rt_rw
+            # Set qty_service=1 + override_price_service=permit_rt_rw for RT/RW Permit
+            if "500002155" in str(data.get("material_number", "")) or "RT/RW" in str(data.get("description", "")).upper() or "COMMUNITY PERMIT" in str(data.get("description", "")).upper():
+                data["quantity_service"] = "0"
+                data["quantity_material"] = ""
+                data["override_price_service"] = ""
+                if permit_rt_rw and permit_rt_rw.strip() not in {"", "0", "0,00", "0.00"}:
+                    data["quantity_service"] = "1"
+                    data["override_price_service"] = str(permit_rt_rw)
         LOGGER.warning("Insert/v2 data=%s", data)
         response = record["session"].post(insert_url, data=data, timeout=120)
         ok = response.status_code in {200, 201, 302, 303}

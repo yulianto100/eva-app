@@ -4736,7 +4736,8 @@ if (!bar || !message || state.errorScope !== "job") return;
           alert(data.error || "Gagal generate login ASTRI. Pastikan sudah login ASTRI di EVA.");
           return;
         }
-        window.open("/astri/magic-login/" + data.token, "_blank");
+        var redirectUrl = state.astriMatch?.requirement_url || "";
+        window.open("/astri/magic-login/" + data.token + "?redirect=" + encodeURIComponent(redirectUrl), "_blank");
       } catch (err) {
         alert("Error: " + (err.message || "Gagal koneksi ke server."));
       } finally {
@@ -5751,7 +5752,7 @@ function ensureAstriPanel() {
     });
     document.getElementById("astriStatusFilter")?.addEventListener("change", () => {
       state.astriStatusFilterValue = document.getElementById("astriStatusFilter")?.value || "";
-      renderAstriFilteredResults();
+      searchAstriTargets();
     });
   }
   refreshAstriPanelButtonStyles();
@@ -6382,10 +6383,12 @@ function clusterAction(action) {
   resultEl.textContent = "";
   modal.classList.remove("hidden");
   if (action === "addboq") {
+    state.astriPendingDonation = null;
     openAstriBoqPreviewFor("cluster");
     const code = state.astriMatch?.cluster_code || "";
     if (code) {
       fetch(`/api/astri/donation?cluster_code=${encodeURIComponent(code)}`).then(r => r.json()).then(d => {
+        if (d.found) state.astriPendingDonation = { cluster_code: code, ...d.donation };
         if (d.found && donationInfo) {
           donationInfo.innerHTML = `
             <span class="font-semibold text-indigo-800">Donasi:</span>
@@ -6643,7 +6646,9 @@ async function openAstriBoqPreviewFor(type) {
         </div>
         ${isSubfeeder ? '' : `<label class="text-xs font-bold text-zinc-700">Permit RT/RW
           <input id="astriBoqPermitRtRw" type="text" class="mt-1 w-full ${astriInput}" placeholder="Isi permit RT/RW jika ada">
-        </label>`}
+        </label>
+        <!-- Plant Code auto -->
+          <input id="astriBoqPlantCode" type="hidden" value="${escapeHtml(payload.match?.area_plant_code || '')}">`}
       </div>
       <div class="mb-3 flex justify-end">
         <button id="astriBoqSubmitButton" type="button" class="rounded-lg ${submitBtnClass} px-4 py-2 text-xs font-bold text-white">Submit Add BOQ</button>
@@ -6682,6 +6687,15 @@ async function openAstriBoqPreviewFor(type) {
     content.querySelector("#astriBoqManualFileInput")?.addEventListener("change", onAstriBoqManualFileUpload);
     state.astriBoqItems = payload.items || [];
     state.astriBoqMatch = payload.match || state.astriMatch || {};
+    // Fill permit RT/RW + plant code from pending donation lookup (post-render, avoids race with innerHTML rebuild)
+    if (!isSubfeeder && state.astriPendingDonation && state.astriPendingDonation.cluster_code === (state.astriMatch?.cluster_code || "")) {
+      const permitInput = content.querySelector("#astriBoqPermitRtRw");
+      if (permitInput && state.astriPendingDonation.permit_rt_rw) permitInput.value = state.astriPendingDonation.permit_rt_rw;
+      const plantInput = content.querySelector("#astriBoqPlantCode");
+      const donationPlant = state.astriPendingDonation.area_plant_code || state.astriBoqMatch?.area_plant_code || "";
+      if (plantInput && donationPlant) plantInput.value = donationPlant;
+      if (typeof state.astriPendingDonation.pph_pct === "number") state.astriMatch.pph_pct = state.astriPendingDonation.pph_pct;
+    }
     // Fetch auto PR description — reusable
     refreshAutoDescription(type, content);
   } catch (error) {

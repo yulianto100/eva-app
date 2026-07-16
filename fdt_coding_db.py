@@ -412,7 +412,7 @@ def list_records(db_path: str | Path, olt_initial: str = "", query: str = "", li
             f"""
             SELECT * FROM fdt_coding_records
             {where}
-            ORDER BY created_at DESC, id ASC
+            ORDER BY COALESCE(fdt_order, 9999), id ASC
             LIMIT ? OFFSET ?
             """,
             params,
@@ -679,9 +679,11 @@ def update_records(db_path: str | Path, record_ids: Iterable[int], payload: dict
         now = utc_now()
         updated: list[dict] = []
         multiple = len(rows) > 1
-        for index, row in enumerate(rows, start=1):
-            fdt_order = int(row["fdt_order"] or index)
-            fdt_id = fdt_ids[index - 1] if index <= len(fdt_ids) else format_excel_identifier(row["fdt_id"])
+        # Sort rows by fdt_order so fdt_ids assigned correctly per FDT sequence
+        rows_sorted = sorted(rows, key=lambda r: int(r.get("fdt_order") or 999))
+        for idx, row in enumerate(rows_sorted, start=1):
+            fdt_order = int(row.get("fdt_order") or idx)
+            fdt_id = fdt_ids[idx - 1] if idx <= len(fdt_ids) else format_excel_identifier(row["fdt_id"])
             data = normalize_record_payload({
                 **dict(row),
                 **payload,

@@ -161,6 +161,71 @@ services:
         reservations:
           memory: 1G
     restart: unless-stopped
+  worker2:
+    build: .
+    container_name: eva-worker2
+    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=2
+    env_file: .env
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: /run/secrets/eva_secret_key
+      DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CONVERSION_QUEUE_ENABLED: 'true'
+      CONVERSION_MAX_CONCURRENT_JOBS: "2"
+      JOB_SLOT_TTL_SECONDS: '1800'
+      JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
+      JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
+      JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
+      JOB_STALE_CHECK_INTERVAL_SECONDS: ${JOB_STALE_CHECK_INTERVAL_SECONDS:-300}
+      HPDB_AUTO_GEOCODE_ENABLED: ${HPDB_AUTO_GEOCODE_ENABLED:-true}
+      ALERT_ENABLED: 'false'
+      ALERT_WEBHOOK_URL: ''
+      ALERT_TELEGRAM_CHAT_ID: ''
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      MAX_BATCH_UPLOAD_MB: ${MAX_BATCH_UPLOAD_MB:-5000}
+      CLEANUP_MAX_AGE_HOURS: ${CLEANUP_MAX_AGE_HOURS:-12}
+      ASTRI_DOWNLOAD_MAX_AGE_HOURS: ${ASTRI_DOWNLOAD_MAX_AGE_HOURS:-12}
+      JOB_MAX_AGE_HOURS: ${JOB_MAX_AGE_HOURS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      SEARXNG_URL: http://searxng:8080
+      RFS_SPREADSHEET_ID: ${RFS_SPREADSHEET_ID:-1DRCnUofaVEkqjKniljy4FPu-sG1BeHGteS-sCISOkyQ}
+      RFS_DATA_SHEET_NAME: ${RFS_DATA_SHEET_NAME:-RFS_DATA}
+      RFS_TARGET_SHEET_NAME: ${RFS_TARGET_SHEET_NAME:-RFS_TARGET}
+      RFS_SUMMARY_SHEET_NAME: ${RFS_SUMMARY_SHEET_NAME:-RFS_SUMMARY}
+      RFS_YTD_SHEET_NAME: ${RFS_YTD_SHEET_NAME:-RFS_YTD}
+      RFS_BASE_INCENTIVE_IDR: ${RFS_BASE_INCENTIVE_IDR:-2000000}
+      RFS_DIFFICULTY_BY_REGION: ${RFS_DIFFICULTY_BY_REGION:-Bekasi:1.25,Jakarta Selatan:1.25,Sukabumi:1.0}
+    volumes:
+    - ./uploads:/app/uploads
+    - ./outputs:/app/outputs
+    - ./backups:/app/backups
+    - ./data:/app/data
+    - ./geofabrik:/app/geofabrik
+    - ./.secrets:/app/.secrets:ro
+    secrets:
+    - eva_secret_key
+    depends_on:
+    - redis
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null | grep -q pong
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+
   searxng:
     image: searxng/searxng:latest
     container_name: eva-searxng
