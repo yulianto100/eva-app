@@ -743,6 +743,31 @@ def search_astri_subfeeders(record: dict, query_raw: str, status: str = "") -> l
     query = normalize_match_text(query_raw)
     items = []
     seen_keys = set()
+
+    # When query is empty and status filter is set, ASTRI v3 returns empty tbody.
+    # Fall back to CSV download + Python-side filter (same as cluster fix).
+    if not query_raw and status:
+        try:
+            response = record["session"].get(
+                f"{ASTRI_BASE_URL}/download/drm/subfeeder",
+                timeout=60,
+            )
+            response.raise_for_status()
+            for row in csv.DictReader(io.StringIO(response.text)):
+                normalized = {}
+                for k, v in row.items():
+                    norm = k.strip().lower().replace(" ", "_").replace("-", "_")
+                    normalized[norm] = v
+                if status and status.lower() in normalized.get("latest_status_label", "").lower():
+                    item = astri_subfeeder_match_payload(normalized, "")
+                    key = (item.get("target_type", ""), item.get("cluster_code", ""), item.get("work_order_number", ""))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        items.append(item)
+        except Exception:
+            pass
+        return items[:100]
+
     for page in range(1, 21):
         try:
             response = record["session"].get(
@@ -817,6 +842,31 @@ def search_astri_feeders(record: dict, query_raw: str, status: str = "") -> list
     query = normalize_match_text(query_raw)
     items = []
     seen_keys = set()
+
+    # When query is empty and status filter is set, ASTRI v3 returns empty tbody.
+    # Fall back to CSV download + Python-side filter (same as cluster fix).
+    if not query_raw and status:
+        try:
+            response = record["session"].get(
+                f"{ASTRI_BASE_URL}/download/drm/feeder",
+                timeout=60,
+            )
+            response.raise_for_status()
+            for row in csv.DictReader(io.StringIO(response.text)):
+                normalized = {}
+                for k, v in row.items():
+                    norm = k.strip().lower().replace(" ", "_").replace("-", "_")
+                    normalized[norm] = v
+                if status and status.lower() in normalized.get("latest_status_label", "").lower():
+                    item = astri_feeder_match_payload(normalized, "")
+                    key = (item.get("target_type", ""), item.get("cluster_code", ""), item.get("work_order_number", ""))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        items.append(item)
+        except Exception:
+            pass
+        return items[:100]
+
     for page in range(1, 21):
         try:
             response = record["session"].get(
@@ -4608,6 +4658,157 @@ def status_counts(jobs: list[dict]) -> dict[str, int]:
     return counts
 
 
+
+def _get_astri_session_from_store() -> "requests.Session | None":
+    """Get ASTRI session from persistent store without Flask request context."""
+    try:
+        store = load_astri_session_store()
+        if not store:
+            return None
+        best_entry = None
+        for sid, entry in store.items():
+            if entry.get("username") == "dwi.yulianto":
+                if best_entry is None or entry.get("created_at", 0) > best_entry.get("created_at", 0):
+                    best_entry = entry
+        if not best_entry:
+            return None
+        sess = requests.Session()
+        cookies = best_entry.get("cookies", {})
+        if cookies:
+            sess.cookies.update(cookies)
+        try:
+            r = sess.get(f"{ASTRI_BASE_URL}/user", timeout=15, allow_redirects=False)
+            if r.status_code == 401 or "login" in r.url.lower():
+                return None
+        except Exception:
+            return None
+        return sess
+    except Exception:
+        return None
+
+
+def _inject_boq_permit_from_astri(boq_output_path: str, cluster_code: str, scope_type: str, network_type: str) -> None:
+    """Inject RT/RW Permit values from ASTRI donation into BOQ Excel.
+    Skips silently if no ASTRI session or no donation found.
+    """
+    try:
+        sess = _get_astri_session_from_store()
+        if not sess:
+            LOGGER.info("BOQ permit inject: no ASTRI session, skipping.")
+            return
+
+        # Fetch donation
+        params = {"filter[global]": cluster_code}
+        page = sess.get(f"{ASTRI_BASE_URL}/propose-donation/list", params=params, timeout=60)
+        page.raise_for_status()
+        donation_rows = re.findall(r"<tr[^>]*>(.*?)</tr>", page.text, flags=re.S | re.I)
+
+        donation_nominal = 0.0
+        vendor_name = ""
+        for row in donation_rows:
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.S | re.I)
+            if len(cells) < 14:
+                continue
+            clean = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+            if clean[4] == cluster_code:
+                nominal_str = clean[14] if len(clean) > 14 else ""
+                vendor_name = clean[3] if len(clean) > 3 else ""
+                try:
+                    donation_nominal = float(nominal_str.replace(".", "").replace(",", "."))
+                except (ValueError, AttributeError):
+                    donation_nominal = 0.0
+                break
+
+        if donation_nominal <= 0:
+            LOGGER.info("BOQ permit inject: no donation for %s, skipping.", cluster_code)
+            return
+
+        # Calculate PPH
+        pph_pct = 0.0
+        if vendor_name:
+            db_path = os.path.join(os.path.dirname(__file__), "data", "pph_vendor.db")
+            if os.path.exists(db_path):
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(db_path)
+                cur = conn.cursor()
+                def _norm(x):
+                    return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+                vendor_norm = _norm(vendor_name)
+                cur.execute("SELECT vendor, pph_vendor FROM pph_vendor")
+                rows_db = cur.fetchall()
+                row_pph = None
+                for v, pph in rows_db:
+                    if _norm(v) == vendor_norm:
+                        row_pph = (pph,)
+                        break
+                if not row_pph:
+                    keywords_norm = [k for k in re.findall(r"[a-z0-9]+", vendor_name.lower()) if len(k) >= 3]
+                    best = None
+                    for v, pph in rows_db:
+                        vnorm = _norm(v)
+                        if any(k in vnorm for k in keywords_norm):
+                            if best is None or len(v) > len(best[0]):
+                                best = (v, pph)
+                    row_pph = (best[1],) if best else None
+                if row_pph and row_pph[0]:
+                    pph_str = str(row_pph[0]).replace(",", ".").replace("%", "").strip()
+                    try:
+                        pph_pct = float(pph_str) / 100.0
+                    except ValueError:
+                        pph_pct = 0.0
+                conn.close()
+
+        permit_rt_rw = int(donation_nominal / (1 - pph_pct)) if pph_pct > 0 else int(donation_nominal)
+
+        # Open BOQ and inject
+        from openpyxl import load_workbook
+        boq_path = Path(boq_output_path)
+        if not boq_path.exists():
+            LOGGER.warning("BOQ permit inject: file not found %s", boq_path)
+            return
+
+        wb = load_workbook(boq_path)
+
+        # Find the NRO sheet (cluster only)
+        nro_sheet = None
+        if "BoQ NRO Cluster" in wb.sheetnames:
+            nro_sheet = wb["BoQ NRO Cluster"]
+        if not nro_sheet:
+            LOGGER.info("BOQ permit inject: no NRO Cluster sheet found, skipping.")
+            return
+
+        # Find RT/RW Permit row
+        permit_row = None
+        for row_num in range(1, nro_sheet.max_row + 1):
+            desc = nro_sheet.cell(row_num, 2).value
+            if desc and "RT/RW Permit" in str(desc):
+                permit_row = row_num
+                break
+        if not permit_row:
+            LOGGER.info("BOQ permit inject: RT/RW Permit row not found, skipping.")
+            return
+
+        # Set values: E=Service Qty=1, G=Service Price=permit_rt_rw
+        nro_sheet.cell(permit_row, 5).value = 1  # Column E
+        nro_sheet.cell(permit_row, 7).value = permit_rt_rw  # Column G
+
+        # Also update Summary PO Permit sheet if exists
+        if "Summary PO Permit" in wb.sheetnames:
+            summary_ws = wb["Summary PO Permit"]
+            summary_ws["B2"] = donation_nominal
+            pph_display = round(pph_pct * 100, 2)
+            summary_ws["A3"] = f"(Permit + PPh {pph_display}%)"
+            summary_ws["B3"] = f"=B2+(B2*{pph_display}%)"
+
+        wb.save(boq_path)
+        LOGGER.warning(
+            "BOQ permit inject OK: %s | donation=%s vendor=%s pph=%s%% permit_rt_rw=%s",
+            cluster_code, donation_nominal, vendor_name, pph_pct * 100, permit_rt_rw
+        )
+    except Exception:
+        LOGGER.exception("BOQ permit inject failed for %s", cluster_code)
+
+
 def run_conversion_job(job_id: str, raise_on_error: bool = False) -> None:
     job = get_job(job_id)
     if not job:
@@ -4862,6 +5063,29 @@ def run_conversion_job(job_id: str, raise_on_error: bool = False) -> None:
                 boq_nro_preview=boq_result.get("nro_preview", {"columns": [], "rows": []}),
                 boq_warnings=boq_result.get("warnings", []),
             )
+        # Inject RT/RW Permit from ASTRI donation into BOQ
+        try:
+            _cluster_code = ""
+            try:
+                _cname = boq_nro_metadata.get("cluster_name", "")
+                _parts = _cname.split(" - ", 1)
+                _cluster_code = _parts[0].strip() if _parts else _cname.split()[0] if _cname else ""
+            except Exception:
+                pass
+            if not _cluster_code:
+                try:
+                    _cluster_code = (job.get("apd_astri_match") or {}).get("cluster_code", "")
+                except Exception:
+                    pass
+            if _cluster_code and not is_feeder_like_scope(scope_type):
+                _inject_boq_permit_from_astri(
+                    job.get("boq_output_path", ""),
+                    _cluster_code,
+                    scope_type,
+                    network_type,
+                )
+        except Exception:
+            LOGGER.exception("BOQ permit injection step failed")
 
         if mode_has_astri(output_mode):
             ensure_not_cancelled()

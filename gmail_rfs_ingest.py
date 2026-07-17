@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 # Behind nginx/Cloudflare proxy Flask may receive http internally; public callback stays HTTPS.
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
+sys.path.insert(0, "/opt/eva")
 import rfs_sheets
 from config import Config
 
@@ -29,7 +30,7 @@ STATE_FILE = Path(os.getenv("GMAIL_RFS_STATE_FILE", Config.BASE_DIR / "data" / "
 REDIRECT_URI = os.getenv("GMAIL_OAUTH_REDIRECT_URI", "https://eva-mrdesign.my.id/oauth/gmail/callback")
 SEARCH_QUERY = os.getenv("GMAIL_RFS_QUERY", 'from:planning@morarepublic.co.id subject:"New RFS"')
 TARGET_REGIONS = ["BEKASI", "SUKABUMI", "JAKARTA SELATAN", "KARAWANG"]
-SUBJECT_RE = re.compile(r"New\s+RFS\s+(BEKASI|SUKABUMI|JAKARTA\s+SELATAN|KARAWANG)\s*-\s*(.+?)\s*:\s*(\d+)\s*HP", re.I)
+SUBJECT_RE = re.compile(r"(?:\[New\s+RFS[^\]]*\]\s*-\s*)?New\s+RFS\s+(BEKASI|SUKABUMI|JAKARTA\s+SELATAN|KARAWANG)\s*-\s*(.+?)\s*:\s*(\d+)\s*(?:HP|HOUSEHOLD)", re.I)
 
 
 def _clean(value: Any) -> str:

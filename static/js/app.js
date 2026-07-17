@@ -6297,6 +6297,7 @@ async function openAstriScheduleForm() {
         }
       };
       feederAreaEl.addEventListener("change", () => loadRoutes(feederAreaEl.value));
+      if (feederAreaEl.value) loadRoutes(feederAreaEl.value);
     }
 
     // Cascading dropdown: OLT Area → OLT Select (via ASTRI AJAX proxy)
@@ -6332,6 +6333,7 @@ async function openAstriScheduleForm() {
         }
       };
       oltAreaEl.addEventListener("change", () => loadOlts(oltAreaEl.value));
+      if (oltAreaEl.value) loadOlts(oltAreaEl.value);
     }
     if (result) result.textContent = "Form Approve Schedule siap.";
   } catch (error) {
