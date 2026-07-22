@@ -5734,6 +5734,78 @@ def standardize_fdt_placemarks(
     return changes, warnings
 
 
+def create_missing_slack_hanger_from_fdt(
+    root: ET.Element,
+    namespace: str,
+    fdt_placemarks: Sequence[FdtPlacemarkRef],
+    changes: list[dict],
+) -> int:
+    """Clone each FDT point into SLACK HANGER for every LINE served by that FDT.
+
+    FDT placemarks stay in the top-level FDT folder. Their slack-hanger clones
+    are placed only in the matching LINE X - FDT N / SLACK HANGER folder.
+    Existing slack points at identical coordinates are preserved and prevent a
+    duplicate clone on repeat standardization.
+    """
+    import copy
+
+    def point_key(placemark: ET.Element) -> str:
+        point = placemark_point_coordinate(placemark)
+        if point is None:
+            return ""
+        return f"{point[0]:.8f},{point[1]:.8f}"
+
+    line_folders: dict[int, list[tuple[str, ET.Element]]] = {}
+    fdt_order_pattern = re.compile(r"\bFDT\s*[-_ ]*(\d+)\b", re.IGNORECASE)
+
+    def walk(element: ET.Element) -> None:
+        for child in list(element):
+            tag_name = local_name(child.tag)
+            if tag_name == "Folder":
+                folder_name = normalize_text(direct_child_text_by_name(child, "name") or "")
+                line_match = LINE_ORDER_PATTERN.match(folder_name)
+                if line_match and line_match.group(1).upper() == "A":
+                    fdt_order_match = fdt_order_pattern.search(folder_name)
+                    fdt_order = int(fdt_order_match.group(1)) if fdt_order_match else 1
+                    line_folders.setdefault(fdt_order, []).append((folder_name, child))
+                walk(child)
+            elif tag_name in {"Document", "kml"}:
+                walk(child)
+
+    walk(root)
+    created = 0
+    for fdt_ref in fdt_placemarks:
+        source = fdt_ref.element
+        source_key = point_key(source)
+        if not source_key:
+            continue
+        fdt_order = max(1, int(fdt_ref.source_order or 1))
+        for line_name, line_folder in line_folders.get(fdt_order, []):
+            slack_folder = direct_child_folder_by_name(line_folder, "SLACK HANGER")
+            if slack_folder is None:
+                slack_folder = ensure_folder(line_folder, namespace, "SLACK HANGER")
+            existing_keys = {
+                point_key(child)
+                for child in list(slack_folder)
+                if local_name(child.tag) == "Placemark" and placemark_has_point(child)
+            }
+            if source_key in existing_keys:
+                continue
+            cloned = copy.deepcopy(source)
+            name_element = ensure_direct_child(cloned, "name", namespace)
+            name_element.text = "SLACK HANGER"
+            slack_folder.append(cloned)
+            created += 1
+            changes.append({
+                "type": "slack_hanger_from_fdt",
+                "from": "FDT",
+                "to": " / ".join([line_name, "SLACK HANGER"]),
+                "fdt_order": fdt_order,
+                "reason": "FDT point cloned as SLACK HANGER in its parent LINE",
+            })
+    return created
+
+
 def collect_fat_counts_by_fdt(element: ET.Element, folder_stack: list[str]) -> Counter[int]:
     counts: Counter[int] = Counter()
     for child in list(element):
@@ -7111,6 +7183,7 @@ def standardize_kmz_file(
         _rehome_raw_fdt_boundary_cover(root, namespace)
         _enforce_one_boundary_polygon_per_fat(root, namespace)
         create_missing_slack_hanger_from_fat(root, namespace, organizer_changes)
+        create_missing_slack_hanger_from_fdt(root, namespace, fdt_placemarks, organizer_changes)
     standardize_slack_hanger_placemark_names(root, [], namespace, name_changes)
     fdt_changes, warnings = standardize_fdt_placemarks(fdt_placemarks, matched_records, namespace)
     fat_name_changes: list[dict] = []
