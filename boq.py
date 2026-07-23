@@ -1131,6 +1131,9 @@ def parse_fdt_folder(
     if not count_valid_placemarks_in_folder(placemark):
         return
 
+    if re.match(r"^EXT\.", str(name or "").strip(), re.IGNORECASE):
+        pipeline_log(context.logger, "INFO", f"Skip EXT FDT from BOQ: {name}")
+        return
     pipeline_log(context.logger, "INFO", f"Found FDT placemark: {name}")
     suffix_number = extract_fdt_suffix_number(name)
     if suffix_number is None:

@@ -2601,7 +2601,7 @@ function renderBoqPreview() {
       <td>${escapeHtml(row.cable_type || "-")}</td>
       <td>${escapeHtml(row.quantity ?? "-")}</td>
       <td>${escapeHtml(row.unit || "-")}</td>
-      <td>${escapeHtml(row.supplier || "Tidak ada di ASTRI")}</td>
+      <td>${escapeHtml(row.supplier || "")}</td>
       <td>${escapeHtml(row.target_cell || "-")}</td>
       <td class="boq-reason-cell">${escapeHtml(warningReason(row) || "-")}</td>
     </tr>
@@ -6264,9 +6264,62 @@ async function openAstriScheduleForm() {
       content.innerHTML = `<form id="eva-astri-approve-schedule-form" class="grid gap-3 md:grid-cols-2">${fieldHtml}<div class="col-span-full mt-2 flex justify-end gap-2"><button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button><button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button></div></form>`;
       document.getElementById("eva-astri-approve-schedule-form")?.addEventListener("submit", submitAstriScheduleForm);
     }
+    // Search textbox for large ASTRI OLT/Feeder lists. Keeps original select as
+    // submitted field, while text input matches option text/code case-insensitively.
+    const makeScheduleAutocomplete = (selectEl, label) => {
+      if (!selectEl || selectEl.dataset.scheduleAutocomplete === "1") return;
+      selectEl.dataset.scheduleAutocomplete = "1";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = `Cari ${label}: kode atau nama...`;
+      input.autocomplete = "off";
+      input.className = `mt-1 w-full ${astriInput}`;
+      // Original label/grid cell stays intact. Results are anchored below input.
+      const fieldContainer = selectEl.closest("label") || selectEl.parentElement;
+      fieldContainer.style.position = "relative";
+      const menu = document.createElement("div");
+      menu.className = "hidden absolute bottom-full left-0 right-0 z-50 mb-1 max-h-64 overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-xl";
+      selectEl.style.display = "none";
+      fieldContainer.insertBefore(input, selectEl);
+      fieldContainer.appendChild(menu);
+      const options = () => [...selectEl.options].filter(o => o.value && !o.disabled);
+      const render = () => {
+        const query = input.value.trim().toLowerCase();
+        const matches = options().filter(o => o.text.trim().toLowerCase().includes(query));
+        menu.innerHTML = "";
+        matches.slice(0, 100).forEach((o) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "block w-full px-3 py-2 text-left text-sm font-medium text-zinc-800 hover:bg-emerald-50 hover:text-emerald-800";
+          row.textContent = o.text.trim();
+          row.addEventListener("click", () => {
+            selectEl.value = o.value;
+            input.value = o.text.trim();
+            menu.classList.add("hidden");
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+          menu.appendChild(row);
+        });
+        menu.classList.toggle("hidden", !matches.length);
+      };
+      input.addEventListener("focus", render);
+      input.addEventListener("input", render);
+      input.addEventListener("blur", () => setTimeout(() => menu.classList.add("hidden"), 150));
+      selectEl._refreshScheduleAutocomplete = () => {
+        const selected = selectEl.selectedOptions?.[0];
+        if (selected?.value) input.value = selected.text.trim();
+        else input.value = "";
+        menu.classList.add("hidden");
+      };
+      selectEl._refreshScheduleAutocomplete();
+    };
+
     // Cascading dropdown: Feeder Area → Route Select (via ASTRI AJAX proxy)
-    const feederAreaEl = document.getElementById("approve-drm-schedule-feeder-area-select");
-    const routeEl = document.getElementById("route-select");
+    const feederAreaEl = document.getElementById("approve-drm-schedule-feeder-area-select")
+      || document.querySelector("select[name*=feeder_area i]");
+    const routeEl = document.getElementById("route-select")
+      || document.querySelector("select[id*=route i], select[name*=route i]")
+      || [...document.querySelectorAll("select")].find(el => [...el.options].some(o => /Select Feeder/i.test(o.text)));
     if (feederAreaEl && routeEl) {
       const originalRouteValue = routeEl.value;
       const loadRoutes = async (area) => {
@@ -6292,17 +6345,22 @@ async function openAstriScheduleForm() {
             na.value = ""; na.text = "Tidak ada route untuk area ini"; na.disabled = true;
             routeEl.appendChild(na);
           }
+          routeEl._refreshScheduleAutocomplete?.();
         } catch (e) {
           routeEl.innerHTML = `<option disabled selected value="">Error: ${e.message}</option>`;
         }
       };
       feederAreaEl.addEventListener("change", () => loadRoutes(feederAreaEl.value));
+      makeScheduleAutocomplete(routeEl, "Feeder");
       if (feederAreaEl.value) loadRoutes(feederAreaEl.value);
     }
 
     // Cascading dropdown: OLT Area → OLT Select (via ASTRI AJAX proxy)
-    const oltAreaEl = document.getElementById("approve-drm-schedule-olt-area-select");
-    const oltEl = document.getElementById("olt-select");
+    const oltAreaEl = document.getElementById("approve-drm-schedule-olt-area-select")
+      || document.querySelector("select[name*=olt_area i]");
+    const oltEl = document.getElementById("olt-select")
+      || document.querySelector("select[id*=olt i], select[name=olt i]")
+      || [...document.querySelectorAll("select")].find(el => [...el.options].some(o => /Select OLT/i.test(o.text)));
     if (oltAreaEl && oltEl) {
       const originalOltValue = oltEl.value;
       const loadOlts = async (area) => {
@@ -6328,11 +6386,13 @@ async function openAstriScheduleForm() {
             na.value = ""; na.text = "Tidak ada OLT untuk area ini"; na.disabled = true;
             oltEl.appendChild(na);
           }
+          oltEl._refreshScheduleAutocomplete?.();
         } catch (e) {
           oltEl.innerHTML = `<option disabled selected value="">Error: ${e.message}</option>`;
         }
       };
       oltAreaEl.addEventListener("change", () => loadOlts(oltAreaEl.value));
+      makeScheduleAutocomplete(oltEl, "OLT");
       if (oltAreaEl.value) loadOlts(oltAreaEl.value);
     }
     if (result) result.textContent = "Form Approve Schedule siap.";
@@ -6390,7 +6450,11 @@ function clusterAction(action) {
     const code = state.astriMatch?.cluster_code || "";
     if (code) {
       fetch(`/api/astri/donation?cluster_code=${encodeURIComponent(code)}`).then(r => r.json()).then(d => {
-        if (d.found) state.astriPendingDonation = { cluster_code: code, ...d.donation };
+        if (d.found) {
+          // Donation vendor is only donation metadata. Never overwrite the
+          // matched project vendor, because BOQ supplier map needs that vendor.
+          state.astriPendingDonation = { cluster_code: code, ...d.donation };
+        }
         if (d.found && donationInfo) {
           donationInfo.innerHTML = `
             <span class="font-semibold text-indigo-800">Donasi:</span>
@@ -6412,7 +6476,7 @@ function clusterAction(action) {
           const fillPermit = () => {
             const permitInput = document.getElementById("astriBoqPermitRtRw");
             if (permitInput) {
-              permitInput.value = d.donation.permit_rt_rw;
+              permitInput.value = "0";
               // Re-trigger auto description so PR desc includes donation line
               const clusterContent = document.getElementById("astriClusterContent");
               if (clusterContent) refreshAutoDescription("cluster", clusterContent);
@@ -6581,7 +6645,7 @@ async function refreshAutoDescription(type, content) {
     const match = state.astriBoqMatch || state.astriMatch || {};
     const adResp = await fetch("/api/astri/boq/auto-description", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ scope, match, items: state.astriBoqItems || [], permit_rt_rw: content.querySelector("#astriBoqPermitRtRw")?.value || "" })
+      body: JSON.stringify({ scope, match, items: state.astriBoqItems || [], permit_rt_rw: content.querySelector("#astriBoqPermitRtRw")?.value || "", donation_nominal: state.astriPendingDonation?.nominal || "", donation_vendor: state.astriPendingDonation?.vendor || "" })
     }).then(r => r.json());
     autoEl.textContent = adResp.description || "(auto kosong)";
   } catch(e) {
@@ -6622,7 +6686,7 @@ async function openAstriBoqPreviewFor(type) {
       <tr class="border-b border-zinc-100">
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
-        <td class="px-2 py-1">${escapeHtml(item.supplier || "Tidak ada di ASTRI")}</td>
+        <td class="px-2 py-1">${escapeHtml(item.supplier || "")}</td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-mat w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.material_qty || 0))}"></td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-svc w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.service_qty || 0))}"></td>
         <td class="px-2 py-1">${escapeHtml(item.unit || "")}</td>
@@ -6693,7 +6757,7 @@ async function openAstriBoqPreviewFor(type) {
     // Fill permit RT/RW + plant code from pending donation lookup (post-render, avoids race with innerHTML rebuild)
     if (!isSubfeeder && state.astriPendingDonation && state.astriPendingDonation.cluster_code === (state.astriMatch?.cluster_code || "")) {
       const permitInput = content.querySelector("#astriBoqPermitRtRw");
-      if (permitInput && state.astriPendingDonation.permit_rt_rw) permitInput.value = state.astriPendingDonation.permit_rt_rw;
+      if (permitInput && state.astriPendingDonation) permitInput.value = "0";
       const plantInput = content.querySelector("#astriBoqPlantCode");
       const donationPlant = state.astriPendingDonation.area_plant_code || state.astriBoqMatch?.area_plant_code || "";
       if (plantInput && donationPlant) plantInput.value = donationPlant;
@@ -6778,7 +6842,7 @@ async function onAstriBoqManualFileUpload(event) {
       <tr class="border-b border-zinc-100">
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
-        <td class="px-2 py-1">${escapeHtml(item.supplier || "Tidak ada di ASTRI")}</td>
+        <td class="px-2 py-1">${escapeHtml(item.supplier || "")}</td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-mat w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.material_qty || 0))}"></td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-svc w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.service_qty || 0))}"></td>
         <td class="px-2 py-1">${escapeHtml(item.unit || "")}</td>

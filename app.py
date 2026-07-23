@@ -1425,6 +1425,25 @@ def extract_astri_approve_schedule_form(page_html: str) -> dict:
 
 
 
+def get_astri_plant_code(area: str, supplied_code: str = "") -> str:
+    """Return ASTRI area plant code; supplied live ASTRI value wins."""
+    if str(supplied_code or "").strip():
+        return str(supplied_code).strip()
+    normalized_area = re.sub(r"\s+", " ", str(area or "").strip().upper())
+    if not normalized_area:
+        return ""
+    db_path = Path(__file__).resolve().parent / "data" / "astri_plant_codes.db"
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT plant_code FROM area_plant_codes WHERE area_normalized = ?", (normalized_area,)
+            ).fetchone()
+        return str(row[0]).strip() if row and row[0] else ""
+    except Exception as exc:
+        LOGGER.warning("ASTRI plant-code lookup failed area=%s: %s", normalized_area, exc)
+        return ""
+
+
 def astri_create_boq_link(record: dict, match: dict) -> dict:
     """Build ASTRI insert URL directly from selected ASTRI match.
 
@@ -1444,7 +1463,10 @@ def astri_create_boq_link(record: dict, match: dict) -> dict:
     vendor = re.sub(r"[^a-z0-9]+", "_", vendor.lower()).strip("_")
     wo = str(match.get("work_order_number") or match.get("wo") or "").strip()
     area = str(match.get("area") or match.get("cluster_area") or match.get("osp_route_area") or "").strip()
-    plant = str(match.get("area_plant_code") or match.get("cluster_area_plant_code") or match.get("osp_route_area_plant_code") or "").strip()
+    plant = get_astri_plant_code(
+        area,
+        match.get("area_plant_code") or match.get("cluster_area_plant_code") or match.get("osp_route_area_plant_code") or "",
+    )
     subcont = str(match.get("assigned_subcont_vendor_name") or "").strip()
 
     if scope == "feeder":
@@ -1673,6 +1695,10 @@ def _boq_length_m(items: list[dict], match: dict) -> str:
     return raw
 
 
+def _is_internal_team_vendor(value) -> bool:
+    return str(value or "").strip().lower().replace("_", " ") in {"internal team", "internalteam"}
+
+
 def _internal_boq_items(items: list[dict]) -> list[str]:
     out = []
     for item in items or []:
@@ -1699,11 +1725,12 @@ def _idr(value: str) -> str:
     return f"{n:,}".replace(",", ".")
 
 
-def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit_rt_rw: str = "", pph_pct: float = 0.0) -> str:
+def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit_rt_rw: str = "", pph_pct: float = 0.0, donation_nominal: str = "", donation_vendor: str = "") -> str:
     scope = (scope or "cluster").lower()
     match = match or {}
     items = items or []
     internal = _internal_boq_items(items)
+    donation_inhouse = _is_internal_team_vendor(donation_vendor or match.get("donation_vendor"))
     material_note = "\n".join(["Exclude", *internal]) if internal else "All Material Provide By Vendor"
 
     if scope == "feeder":
@@ -1738,11 +1765,13 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
     lines = [f"{code} : Roll Out - Cluster {name}".strip()]
     if hp:
         lines += ["", f"Total HP : {hp} HP"]
-    if permit_rt_rw:
+    if donation_nominal or permit_rt_rw:
         if not hp:
             lines.append("")
-        donasi_label = f"(include PPh {pph_pct*100:.2f}%)" if pph_pct > 0 else "(Inhouse)"
-        lines.append(f"Donation Approve : IDR {_idr(permit_rt_rw)} {donasi_label}")
+        donation_amount = donation_nominal or permit_rt_rw
+        pph_text = f"{pph_pct * 100:g}%"
+        donasi_label = "(Inhouse)" if donation_inhouse else (f"(include PPh {pph_text})" if pph_pct > 0 else "(Inhouse)")
+        lines.append(f"Donation Approve : IDR {_idr(donation_amount)} {donasi_label}")
     lines += ["", material_note]
     return "\n".join(lines).strip()
 
@@ -1797,6 +1826,8 @@ def api_astri_boq_auto_description():
             payload.get("items") or [],
             payload.get("permit_rt_rw") or "",
             pph_pct=pph_pct,
+            donation_nominal=payload.get("donation_nominal") or "",
+            donation_vendor=payload.get("donation_vendor") or "",
         )
         return jsonify({"description": description})
     except Exception as exc:
@@ -2682,7 +2713,10 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
             data.setdefault("cluster_code", cc)
         if won:
             data.setdefault("work_order_number", won)
-        if vendor_from_url and not data.get("vendor_name"):
+        # Parsed payload can carry empty/internal vendor for one material while
+        # the project BOQ form has the valid assigned vendor. Use form vendor for
+        # every row; prevents ASTRI getVendorName() null/type-error.
+        if vendor_from_url:
             data["vendor_name"] = vendor_from_url
         if plant_from_url:
             data["area_plant_code"] = plant_from_url
@@ -2713,7 +2747,7 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
             err_msg = str(body)
             if "vendor_price_id" in err_msg or "error_pdo_exception" in err_msg or "error_third_party_exception" in err_msg:
                 current_vendor = data.get("vendor_name", "")
-                alt_vendor = vendor_from_url if current_vendor == "internal" else "internal"
+                alt_vendor = ""
                 if alt_vendor and alt_vendor != current_vendor:
                     data["vendor_name"] = alt_vendor
                     LOGGER.warning("Retry Insert/v2 with vendor=%s (was %s)", alt_vendor, current_vendor)
@@ -2729,8 +2763,10 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
         if not ok and isinstance(body, dict):
             err_msg = str(body)
             if "error_vendor_price_not_found" in err_msg or "vendor_price" in err_msg:
-                data["vendor_name"] = ""  # Clear vendor so ASTRI skips price lookup
-                data["vendor_price_id"] = ""  # MySQL converts '' → 0, bypasses NOT NULL
+                # Keep valid project vendor. Clearing this causes ASTRI
+                # getVendorName(): Return value must be of type string, null returned.
+                data["vendor_name"] = vendor_from_url or data.get("vendor_name") or "fiberhome"
+                data["vendor_price_id"] = ""
                 data["override_price_material"] = "0"
                 data["override_price_service"] = "0"
                 data["use_drm_price"] = "true"
@@ -2890,12 +2926,13 @@ def api_astri_donation():
                             except ValueError:
                                 pph_pct = 0.0
                         conn.close()
-                if nominal_num > 0 and pph_pct > 0:
+                # INTERNAL TEAM is inhouse donation. Do not inject donation
+                # nominal into ASTRI work_order[permit] or permit BOQ line.
+                if _is_internal_team_vendor(vendor_name):
+                    permit_rt_rw = "0"
+                elif nominal_num > 0 and pph_pct > 0:
                     permit_rt_rw = str(int(nominal_num / (1 - pph_pct)))
                 elif nominal_num > 0:
-                    # If vendor PPH is not registered, still pass RT/RW permit using
-                    # ASTRI donation nominal. Previously this stayed empty, so cluster
-                    # close/update did not send work_order[permit].
                     permit_rt_rw = str(int(nominal_num))
                 item = {
                     "wo": clean[1] if len(clean) > 1 else "",
@@ -3208,7 +3245,13 @@ def api_astri_subfeeder_boq_upload_manual(job_id: str):
 def api_astri_route_list():
     try:
         record = require_astri_session()
-        area = request.args.get("area", "").strip()
+        raw_area = request.args.get("area", "").strip()
+        area = raw_area.replace("_", " ").upper().strip()
+        for prefix in ["FEEDER AREA ", "AREA ", "WILAYAH "]:
+            if area.startswith(prefix):
+                area = area[len(prefix):].strip()
+                break
+        LOGGER.info("Route list: normalized area=%r (was %r)", area, raw_area)
         if not area:
             return jsonify({"data": []})
         response = record["session"].get(
