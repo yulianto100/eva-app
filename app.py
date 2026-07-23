@@ -1426,25 +1426,84 @@ def extract_astri_approve_schedule_form(page_html: str) -> dict:
 
 
 def astri_create_boq_link(record: dict, match: dict) -> dict:
-    code = match.get("cluster_code", "").strip()
-    if not code:
-        return {"enabled": False, "error": "No cluster_code in match."}
-    response = record["session"].get(
-        f"{ASTRI_BASE_URL}/material/cluster/drm/list/v3",
-        params={"limit": -1},
-        timeout=120,
-    )
-    response.raise_for_status()
-    pattern = r'<a[^>]+/material/cluster/boq-drm/insert[^>]*' + re.escape(code) + r'[^>]*>.*?</a>'
-    found = re.search(pattern, response.text, flags=re.I | re.S)
-    if not found:
-        return {"enabled": False, "error": f"BOQ link untuk {code} tidak ditemukan di ASTRI."}
-    tag = found.group(0)
-    href_match = re.search(r'href=("|\')([^"\']+)\1', tag, flags=re.I)
-    href = html.unescape(href_match.group(2)) if href_match else ""
-    enabled = "disabled" not in tag.lower()
-    return {"enabled": enabled, "href": href, "url": f"{ASTRI_BASE_URL}{href}" if href.startswith("/") else href}
+    """Build ASTRI insert URL directly from selected ASTRI match.
 
+    Do not scrape DRM list buttons: list visibility is unrelated to whether ASTRI's
+    BOQ insert form is accessible, and scopes use different endpoints/parameters.
+    """
+    from urllib.parse import urlencode
+
+    scope = str(match.get("scope") or match.get("boq_scope") or "cluster").lower()
+    code = str(match.get("feeder_code") if scope == "feeder" else match.get("cluster_code") or "").strip()
+    if not code:
+        return {"enabled": False, "error": "Kode ASTRI kosong."}
+
+    vendor = str(match.get("vendor_label") or match.get("assigned_vendor_name") or match.get("vendor_name") or "").strip()
+    # ASTRI insert endpoint requires vendor slug, e.g. indo_tunas_makmur;
+    # display name "Indo Tunas Makmur" makes ASTRI return internal for every BOQ row.
+    vendor = re.sub(r"[^a-z0-9]+", "_", vendor.lower()).strip("_")
+    wo = str(match.get("work_order_number") or match.get("wo") or "").strip()
+    area = str(match.get("area") or match.get("cluster_area") or match.get("osp_route_area") or "").strip()
+    plant = str(match.get("area_plant_code") or match.get("cluster_area_plant_code") or match.get("osp_route_area_plant_code") or "").strip()
+    subcont = str(match.get("assigned_subcont_vendor_name") or "").strip()
+
+    if scope == "feeder":
+        path = "/material/feeder/boq-drm/insert"
+        params = {
+            "feeder_code": code,
+            "assigned_vendor_name": vendor,
+            "osp_route_area": area,
+            "work_order_number": wo,
+            "assigned_subcont_vendor_name": subcont,
+            "osp_route_area_plant_code": plant,
+        }
+    elif scope == "subfeeder":
+        path = "/material/subfeeder/boq-drm/insert"
+        params = {
+            "cluster_code": code,
+            "assigned_vendor_name": vendor,
+            "cluster_area": area,
+            "work_order_number": wo,
+            "assigned_subcont_vendor_name": subcont,
+            "cluster_area_plant_code": plant,
+        }
+    else:
+        path = "/material/cluster/boq-drm/insert"
+        params = {
+            "cluster_code": code,
+            "assigned_vendor_name": vendor,
+            "cluster_area": area,
+            "work_order_number": wo,
+            "drm_homepass": str(match.get("homepass") or match.get("drm_homepass") or ""),
+            "drm_net_type": str(match.get("net_type") or match.get("drm_net_type") or ""),
+            "assigned_subcont_vendor_name": subcont,
+            "cluster_area_plant_code": plant,
+        }
+    url = f"{ASTRI_BASE_URL}{path}?{urlencode(params)}"
+    return {"enabled": True, "url": url, "scope": scope}
+
+
+
+def fetch_astri_boq_supplier_map(record: dict, match: dict) -> dict[str, dict]:
+    create_boq = astri_create_boq_link(record, match)
+    url = create_boq.get("url") or ""
+    if not url:
+        return {}
+    page = record["session"].get(url, timeout=60)
+    page.raise_for_status()
+    mapping: dict[str, dict] = {}
+    for found in re.finditer(
+        r'name="boq\[(\d+)\]\[vendor_name\]"[^>]*value="([^"]*)"',
+        page.text,
+        flags=re.I,
+    ):
+        code = found.group(1).strip()
+        supplier = html.unescape(found.group(2)).strip()
+        mapping[code] = {
+            "supplier": supplier,
+            "supplier_kind": "Internal" if supplier.lower() in {"internal", "material"} else ("Vendor" if supplier else "-"),
+        }
+    return mapping
 
 
 def fetch_astri_feeder_requirement_page(record: dict, match: dict) -> str:
@@ -1512,11 +1571,14 @@ def astri_create_subfeeder_boq_link(record: dict, match: dict) -> dict:
 def preview_eva_boq_file(path: Path) -> list[dict]:
     from openpyxl import load_workbook
     wb = load_workbook(path, data_only=True)
-    ws = wb["BoQ NRO Cluster"] if "BoQ NRO Cluster" in wb.sheetnames else wb.active
+    sheet = "BoQ NRO Cluster" if "BoQ NRO Cluster" in wb.sheetnames else (
+        "BoQ NRO All Feeder" if "BoQ NRO All Feeder" in wb.sheetnames else wb.sheetnames[0]
+    )
+    ws = wb[sheet]
     rows = []
     for row in range(7, ws.max_row + 1):
-        code = ws.cell(row, 14).value
-        if not code:
+        code_value = ws.cell(row, 14).value
+        if code_value is None or str(code_value).strip() == "":
             continue
         material_qty = ws.cell(row, 4).value or 0
         service_qty = ws.cell(row, 5).value or 0
@@ -1524,11 +1586,14 @@ def preview_eva_boq_file(path: Path) -> list[dict]:
             continue
         rows.append({
             "row": row,
-            "code": str(code).strip(),
+            "code": str(code_value).strip(),
             "description": str(ws.cell(row, 2).value or "").strip(),
             "unit": str(ws.cell(row, 3).value or "").strip(),
             "material_qty": material_qty,
             "service_qty": service_qty,
+            "vendor": "",
+            "supplier": "",
+            "supplier_kind": "",
         })
     return rows
 
@@ -1611,8 +1676,14 @@ def _boq_length_m(items: list[dict], match: dict) -> str:
 def _internal_boq_items(items: list[dict]) -> list[str]:
     out = []
     for item in items or []:
-        vendor = str(item.get("vendor_name", item.get("vendor", ""))).strip().lower()
-        if vendor != "internal":
+        # Supplier comes directly from ASTRI boq[CODE][vendor_name].
+        supplier = str(
+            item.get("supplier")
+            or item.get("vendor_name")
+            or item.get("vendor")
+            or ""
+        ).strip().lower()
+        if supplier not in ("internal", "internal team"):
             continue
         name = str(item.get("description") or item.get("equipment_name") or item.get("name") or item.get("code") or "").strip()
         if name and name not in out:
@@ -1670,7 +1741,7 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
     if permit_rt_rw:
         if not hp:
             lines.append("")
-        donasi_label = "(include PPh 4%)" if pph_pct > 0 else "(Inhouse)"
+        donasi_label = f"(include PPh {pph_pct*100:.2f}%)" if pph_pct > 0 else "(Inhouse)"
         lines.append(f"Donation Approve : IDR {_idr(permit_rt_rw)} {donasi_label}")
     lines += ["", material_note]
     return "\n".join(lines).strip()
@@ -1681,6 +1752,9 @@ def api_astri_boq_auto_description():
     payload = request.get_json(silent=True) or {}
     try:
         pph_pct = float(payload.get("match", {}).get("pph_pct", 0) or 0)
+        # Donation API returns percent points (e.g. 2.65); the PR formatter uses a decimal fraction.
+        if pph_pct > 1:
+            pph_pct /= 100.0
         # Fallback: if pph_pct==0 but vendor known, look up PPH DB directly
         if pph_pct == 0:
             match = payload.get("match") or {}
@@ -2395,6 +2469,23 @@ def api_astri_boq_preview(job_id: str):
         LOGGER.exception("ASTRI BOQ preview failed")
         return jsonify({"error": str(exc)}), 400
 
+@app.route("/api/astri/boq/supplier-map/<job_id>")
+def api_astri_boq_supplier_map(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job tidak ditemukan."}), 404
+    try:
+        record = require_astri_session()
+        cluster_name = request.args.get("cluster_name") or cluster_name_for_job(job)
+        match = astri_match_payload(find_astri_cluster(record, cluster_name), cluster_name)
+        if not match.get("matched"):
+            return jsonify({"error": "Cluster ASTRI tidak ditemukan.", "match": match}), 404
+        return jsonify({"match": match, "suppliers": fetch_astri_boq_supplier_map(record, match)})
+    except Exception as exc:
+        LOGGER.exception("ASTRI BOQ supplier map failed")
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/api/astri/boq/submit/<job_id>", methods=["POST"])
 def api_astri_boq_submit(job_id: str):
     job = get_job(job_id)
@@ -2980,6 +3071,27 @@ def api_astri_subfeeder_boq_submit_nojob():
         return jsonify({"error": str(exc)}), 400
 
 
+@app.route("/api/astri/boq/supplier-map")
+def api_astri_boq_supplier_map_nojob():
+    try:
+        record = require_astri_session()
+        match = {
+            "matched": True,
+            "cluster_code": request.args.get("cluster_code", "").strip(),
+            "work_order_number": request.args.get("work_order_number", "").strip(),
+            "vendor_label": request.args.get("vendor_label", "").strip(),
+            "cluster_name": request.args.get("cluster_name", "").strip(),
+            "area": request.args.get("area", "").strip(),
+            "area_plant_code": request.args.get("area_plant_code", "").strip(),
+        }
+        if not match["cluster_code"]:
+            return jsonify({"error": "cluster_code kosong."}), 400
+        return jsonify({"match": match, "suppliers": fetch_astri_boq_supplier_map(record, match)})
+    except Exception as exc:
+        LOGGER.exception("ASTRI BOQ supplier map no-job failed")
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/api/astri/boq/parse-file", methods=["POST"])
 def api_astri_boq_parse_file():
     if "file" not in request.files:
@@ -2996,7 +3108,63 @@ def api_astri_boq_parse_file():
         items = preview_eva_boq_file(tmp_path)
         if not items:
             return jsonify({"error": "Tidak bisa parse BOQ file. Format tidak sesuai.", "items": []}), 400
-        return jsonify({"items": items, "total_items": len(items), "filename": file.filename})
+
+        # Supplier is source-of-truth from ASTRI form field boq[CODE][vendor_name],
+        # never from the manually uploaded Excel workbook.
+        supplier_map = {}
+        supplier_error = ""
+        raw_match = request.form.get("astri_match", "")
+        try:
+            supplied_match = json.loads(raw_match) if raw_match else {}
+            if supplied_match.get("cluster_code") or supplied_match.get("feeder_code"):
+                record = require_astri_session()
+                supplier_map = fetch_astri_boq_supplier_map(record, supplied_match)
+                LOGGER.warning(
+                    "Manual BOQ supplier map: scope=%s code=%s feeder=%s wo=%s vendor=%s mapped=%s",
+                    supplied_match.get("scope"), supplied_match.get("cluster_code"), supplied_match.get("feeder_code"),
+                    supplied_match.get("work_order_number"), supplied_match.get("vendor_label") or supplied_match.get("assigned_vendor_name"), len(supplier_map)
+                )
+            else:
+                supplier_error = "Match ASTRI kosong."
+                LOGGER.warning("Manual BOQ supplier map skipped: empty match raw=%s", raw_match[:500])
+        except Exception as exc:
+            supplier_error = str(exc)
+            LOGGER.warning("Manual BOQ supplier map failed: %s", exc)
+
+        # Excel may deserialize material code as 500001012.0, 500001012.00,
+        # "500001012 - description", or formatted numeric text. ASTRI keys are digits only.
+        def _boq_supplier_key(value):
+            text = str(value or "").strip()
+            decimal_match = re.match(r"^(\d+)\.0+$", text)
+            if decimal_match:
+                return decimal_match.group(1)
+            return re.sub(r"\D", "", text)
+
+        normalized_supplier_map = {_boq_supplier_key(code): value for code, value in supplier_map.items()}
+        parsed_keys = []
+        mapped_count = 0
+        for item in items:
+            code = _boq_supplier_key(item.get("code"))
+            parsed_keys.append(code)
+            supplier = normalized_supplier_map.get(code) or {}
+            item["supplier"] = supplier.get("supplier") or ""
+            item["supplier_kind"] = supplier.get("supplier") or ""
+            item["supplier_found"] = bool(supplier.get("supplier"))
+            mapped_count += int(item["supplier_found"])
+
+        LOGGER.warning(
+            "Manual BOQ supplier join: parsed=%s mapped=%s parsed_sample=%s astri_sample=%s supplier_values=%s",
+            len(items), mapped_count, parsed_keys[:10], list(normalized_supplier_map)[:10],
+            {key: (normalized_supplier_map.get(key) or {}).get("supplier") for key in ["500004774", "500003890", "200000100", "500002050", "200001039", "500002053"]}
+        )
+        return jsonify({
+            "items": items,
+            "total_items": len(items),
+            "filename": file.filename,
+            "supplier_source": "ASTRI",
+            "supplier_mapped": mapped_count,
+            "supplier_error": supplier_error,
+        })
     except Exception as exc:
         return jsonify({"error": f"Gagal parse BOQ file: {exc}", "items": []}), 400
     finally:

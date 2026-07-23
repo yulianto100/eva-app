@@ -2582,13 +2582,13 @@ function renderBoqPreview() {
   const filteredRows = state.boqPreviewRows.filter((row) => statusMatchesFilter(row) && sourceMatchesFilter(row));
   renderBoqFilterIndicator(filteredRows.length, state.boqPreviewRows.length);
   if (!state.boqPreviewRows.length) {
-    els.boqPreviewBody.innerHTML = '<tr><td colspan="9" class="boq-empty-cell">Belum ada BOQ row yang bisa ditampilkan.</td></tr>';
+    els.boqPreviewBody.innerHTML = '<tr><td colspan="10" class="boq-empty-cell">Belum ada BOQ row yang bisa ditampilkan.</td></tr>';
     if (els.boqPreviewText) els.boqPreviewText.textContent = "Belum ada BOQ row yang bisa ditampilkan.";
     renderSupportPanels();
     return;
   }
   if (!filteredRows.length) {
-    els.boqPreviewBody.innerHTML = '<tr><td colspan="9" class="boq-empty-cell">Tidak ada item sesuai filter.</td></tr>';
+    els.boqPreviewBody.innerHTML = '<tr><td colspan="10" class="boq-empty-cell">Tidak ada item sesuai filter.</td></tr>';
     if (els.boqPreviewText) els.boqPreviewText.textContent = `${state.boqPreviewRows.length.toLocaleString("id-ID")} BOQ row tersedia.`;
     renderSupportPanels();
     return;
@@ -2601,8 +2601,8 @@ function renderBoqPreview() {
       <td>${escapeHtml(row.cable_type || "-")}</td>
       <td>${escapeHtml(row.quantity ?? "-")}</td>
       <td>${escapeHtml(row.unit || "-")}</td>
+      <td>${escapeHtml(row.supplier || "Tidak ada di ASTRI")}</td>
       <td>${escapeHtml(row.target_cell || "-")}</td>
-      <td><span class="boq-status-pill" data-status="${escapeHtml(row.status || "Mapped")}">${escapeHtml(row.status || "Mapped")}</span></td>
       <td class="boq-reason-cell">${escapeHtml(warningReason(row) || "-")}</td>
     </tr>
   `).join("");
@@ -6622,6 +6622,7 @@ async function openAstriBoqPreviewFor(type) {
       <tr class="border-b border-zinc-100">
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
+        <td class="px-2 py-1">${escapeHtml(item.supplier || "Tidak ada di ASTRI")}</td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-mat w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.material_qty || 0))}"></td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-svc w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.service_qty || 0))}"></td>
         <td class="px-2 py-1">${escapeHtml(item.unit || "")}</td>
@@ -6657,8 +6658,8 @@ async function openAstriBoqPreviewFor(type) {
       </div>
       <div class="overflow-x-auto rounded-lg border border-zinc-200">
         <table class="min-w-full text-xs">
-          <thead class="bg-zinc-50 text-left text-zinc-600"><tr><th class="px-2 py-2">Code</th><th class="px-2 py-2">Description</th><th class="px-2 py-2 text-right">Material</th><th class="px-2 py-2 text-right">Service</th><th class="px-2 py-2">Unit</th></tr></thead>
-          <tbody id="astriBoqTableBody">${itemRows || '<tr><td colspan="5" class="p-3 text-zinc-500">Tidak ada item BOQ terisi.</td></tr>'}</tbody>
+          <thead class="bg-zinc-50 text-left text-zinc-600"><tr><th class="px-2 py-2">Code</th><th class="px-2 py-2">Description</th><th class="px-2 py-2">Supplier</th><th class="px-2 py-2 text-right">Material</th><th class="px-2 py-2 text-right">Service</th><th class="px-2 py-2">Unit</th></tr></thead>
+          <tbody id="astriBoqTableBody">${itemRows || '<tr><td colspan="6" class="p-3 text-zinc-500">Tidak ada item BOQ terisi.</td></tr>'}</tbody>
         </table>
       </div>`;
     content.querySelector("#astriBoqSubmitButton")?.addEventListener("click", () => submitAstriBoq(state.astriBoqItems || [], type));
@@ -6706,28 +6707,78 @@ async function openAstriBoqPreviewFor(type) {
 }
 
 
+async function mergeAstriSupplierMap(items) {
+  if (!Array.isArray(items) || !items.length) return items;
+  try {
+    let url = "";
+    if (state.jobId) {
+      url = `/api/astri/boq/supplier-map/${encodeURIComponent(state.jobId)}`;
+    } else {
+      // Add BOQ modal owns its current ASTRI match. state.astriMatch can be stale/null.
+      const m = state.astriBoqMatch || state.astriMatch || {};
+      if (m.matched && m.cluster_code) {
+        const q = new URLSearchParams({
+          cluster_code: m.cluster_code || "",
+          work_order_number: m.work_order_number || "",
+          vendor_label: m.vendor_label || "",
+          cluster_name: m.cluster_name || "",
+          area: m.area || "",
+          area_plant_code: m.area_plant_code || "",
+        });
+        url = `/api/astri/boq/supplier-map?${q}`;
+      }
+    }
+    if (!url) return items;
+    const payload = await fetch(url).then(parseJsonResponse);
+    const suppliers = payload.suppliers || {};
+    if (!Object.keys(suppliers).length) return items;
+    return items.map((item) => {
+      const code = String(item.code || "").trim().replace(/\.0+$/, "");
+      const astriSupplier = suppliers[code];
+      if (!astriSupplier) return item;
+      return {
+        ...item,
+        supplier: astriSupplier.supplier || "",
+        supplier_kind: astriSupplier.supplier || "",
+        supplier_found: true,
+      };
+    });
+  } catch (error) {
+    console.warn("ASTRI supplier map gagal", error);
+    return items;
+  }
+}
+
 async function onAstriBoqManualFileUpload(event) {
   const file = event.currentTarget?.files?.[0];
   if (!file) return;
   const tbody = document.getElementById("astriBoqTableBody");
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-zinc-500">Parse BOQ file: ' + escapeHtml(file.name) + '...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-zinc-500">Parse BOQ file: ' + escapeHtml(file.name) + '...</td></tr>';
   try {
     const form = new FormData();
     form.append("file", file);
+    // Backend uses this match to fetch original ASTRI boq[CODE][vendor_name].
+    const activeAstriMatch = { ...(state.astriBoqMatch || state.astriMatch || {}) };
+    activeAstriMatch.scope = activeAstriMatch.scope || state.astriBoqScope || "cluster";
+    form.append("astri_match", JSON.stringify(activeAstriMatch));
     const payload = await fetch("/api/astri/boq/parse-file", {
       method: "POST",
       body: form,
     }).then(parseJsonResponse);
-    const items = payload.items || [];
+    let items = payload.items || [];
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-zinc-500">' + escapeHtml(payload.error || "Tidak ada item BOQ ditemukan.") + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-zinc-500">' + escapeHtml(payload.error || "Tidak ada item BOQ ditemukan.") + '</td></tr>';
       return;
+    }
+    if ((payload.supplier_mapped || 0) === 0) {
+      console.warn("ASTRI supplier map kosong", payload.supplier_error || "no error", payload);
     }
     tbody.innerHTML = items.map((item, idx) => `
       <tr class="border-b border-zinc-100">
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
+        <td class="px-2 py-1">${escapeHtml(item.supplier || "Tidak ada di ASTRI")}</td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-mat w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.material_qty || 0))}"></td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-svc w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.service_qty || 0))}"></td>
         <td class="px-2 py-1">${escapeHtml(item.unit || "")}</td>
@@ -6740,7 +6791,7 @@ async function onAstriBoqManualFileUpload(event) {
       : "cluster");
     refreshAutoDescription(boqType);
   } catch (error) {
-    tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-red-500">' + escapeHtml(error.message) + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-red-500">' + escapeHtml(error.message) + '</td></tr>';
   }
 }
 
