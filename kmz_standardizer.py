@@ -107,6 +107,7 @@ DEFAULT_EXT_PARTNER_ALIASES = {
     "MR": "MR",
     "FM": "LN",
     "TEL": "TLKM",
+    "TELK": "TLKM",
     "TELKOM": "TLKM",
     "TELECOM": "TLKM",
     "TLKOM": "TLKM",

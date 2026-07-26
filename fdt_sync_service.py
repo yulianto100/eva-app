@@ -366,7 +366,7 @@ def sync_all_incremental(
             title = ws.title
             if _should_skip_sheet(title):
                 skipped_olt = normalize_text(title).upper()
-                removed = fdt_coding_db.delete_records_by_source(db_path, source.spreadsheet_id, skipped_olt)
+                # removed = fdt_coding_db.delete_records_by_source(db_path, source.spreadsheet_id, skipped_olt)  # DISABLED: prevent data loss
                 try:
                     fdt_coding_db.delete_olt(db_path, skipped_olt, force=True)
                 except Exception:

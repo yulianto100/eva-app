@@ -6476,7 +6476,7 @@ function clusterAction(action) {
           const fillPermit = () => {
             const permitInput = document.getElementById("astriBoqPermitRtRw");
             if (permitInput) {
-              permitInput.value = "0";
+              permitInput.value = state.astriPendingDonation.permit_rt_rw;
               // Re-trigger auto description so PR desc includes donation line
               const clusterContent = document.getElementById("astriClusterContent");
               if (clusterContent) refreshAutoDescription("cluster", clusterContent);
@@ -6682,7 +6682,8 @@ async function openAstriBoqPreviewFor(type) {
     }
     renderAstriMatch(payload.match);
     const hasItems = (payload.items || []).length > 0;
-    const itemRows = (payload.items || []).map((item, idx) => `
+    let items = await mergeAstriSupplierMap(payload.items || []);
+    const itemRows = items.map((item, idx) => `
       <tr class="border-b border-zinc-100">
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
@@ -6752,12 +6753,12 @@ async function openAstriBoqPreviewFor(type) {
       }
     });
     content.querySelector("#astriBoqManualFileInput")?.addEventListener("change", onAstriBoqManualFileUpload);
-    state.astriBoqItems = payload.items || [];
+    state.astriBoqItems = items || [];
     state.astriBoqMatch = payload.match || state.astriMatch || {};
     // Fill permit RT/RW + plant code from pending donation lookup (post-render, avoids race with innerHTML rebuild)
     if (!isSubfeeder && state.astriPendingDonation && state.astriPendingDonation.cluster_code === (state.astriMatch?.cluster_code || "")) {
       const permitInput = content.querySelector("#astriBoqPermitRtRw");
-      if (permitInput && state.astriPendingDonation) permitInput.value = "0";
+      if (permitInput && state.astriPendingDonation) permitInput.value = state.astriPendingDonation.permit_rt_rw;
       const plantInput = content.querySelector("#astriBoqPlantCode");
       const donationPlant = state.astriPendingDonation.area_plant_code || state.astriBoqMatch?.area_plant_code || "";
       if (plantInput && donationPlant) plantInput.value = donationPlant;

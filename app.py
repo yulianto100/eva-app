@@ -1768,7 +1768,8 @@ def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit
     if donation_nominal or permit_rt_rw:
         if not hp:
             lines.append("")
-        donation_amount = donation_nominal or permit_rt_rw
+        # For vendor (non-inhouse) with PPh, the permit_rt_rw already includes PPh
+        donation_amount = permit_rt_rw if (pph_pct > 0 and not donation_inhouse and donation_nominal) else (donation_nominal or permit_rt_rw)
         pph_text = f"{pph_pct * 100:g}%"
         donasi_label = "(Inhouse)" if donation_inhouse else (f"(include PPh {pph_text})" if pph_pct > 0 else "(Inhouse)")
         lines.append(f"Donation Approve : IDR {_idr(donation_amount)} {donasi_label}")
@@ -2747,7 +2748,7 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
             err_msg = str(body)
             if "vendor_price_id" in err_msg or "error_pdo_exception" in err_msg or "error_third_party_exception" in err_msg:
                 current_vendor = data.get("vendor_name", "")
-                alt_vendor = ""
+                alt_vendor = "fiberhome"
                 if alt_vendor and alt_vendor != current_vendor:
                     data["vendor_name"] = alt_vendor
                     LOGGER.warning("Retry Insert/v2 with vendor=%s (was %s)", alt_vendor, current_vendor)
