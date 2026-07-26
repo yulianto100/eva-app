@@ -6781,9 +6781,11 @@ async function mergeAstriSupplierMap(items) {
     } else {
       // Add BOQ modal owns its current ASTRI match. state.astriMatch can be stale/null.
       const m = state.astriBoqMatch || state.astriMatch || {};
-      if (m.matched && m.cluster_code) {
+      if (m.matched && (m.cluster_code || m.feeder_code)) {
         const q = new URLSearchParams({
+          scope: state.astriBoqScope || m.scope || "cluster",
           cluster_code: m.cluster_code || "",
+          feeder_code: m.feeder_code || "",
           work_order_number: m.work_order_number || "",
           vendor_label: m.vendor_label || "",
           cluster_name: m.cluster_name || "",

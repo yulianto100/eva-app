@@ -32,3 +32,7 @@ monitoring/
 # OS
 .DS_Store
 Thumbs.db
+data/gmail_token.json
+data/gmail_rfs_state.json
+data/fdt_sheet_hashes.json
+data/fdt_source_revisions.json

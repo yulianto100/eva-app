@@ -3113,17 +3113,22 @@ def api_astri_subfeeder_boq_submit_nojob():
 def api_astri_boq_supplier_map_nojob():
     try:
         record = require_astri_session()
+        scope = (request.args.get("scope", "").strip() or "cluster").lower()
+        feeder_code = request.args.get("feeder_code", "").strip()
+        cluster_code = request.args.get("cluster_code", "").strip()
         match = {
             "matched": True,
-            "cluster_code": request.args.get("cluster_code", "").strip(),
+            "scope": scope,
+            "cluster_code": cluster_code or feeder_code,
+            "feeder_code": feeder_code or cluster_code,
             "work_order_number": request.args.get("work_order_number", "").strip(),
             "vendor_label": request.args.get("vendor_label", "").strip(),
             "cluster_name": request.args.get("cluster_name", "").strip(),
             "area": request.args.get("area", "").strip(),
             "area_plant_code": request.args.get("area_plant_code", "").strip(),
         }
-        if not match["cluster_code"]:
-            return jsonify({"error": "cluster_code kosong."}), 400
+        if not match["cluster_code"] and not match["feeder_code"]:
+            return jsonify({"error": "cluster_code/feeder_code kosong."}), 400
         return jsonify({"match": match, "suppliers": fetch_astri_boq_supplier_map(record, match)})
     except Exception as exc:
         LOGGER.exception("ASTRI BOQ supplier map no-job failed")
