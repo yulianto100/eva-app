@@ -1637,7 +1637,7 @@ def write_rows_by_header(worksheet, rows: Sequence[dict], date_headers: set[str]
             cell = worksheet.cell(row=row_index, column=headers[key])
             cell.value = value
             if key in date_headers and value:
-                cell.number_format = "yyyy-mm-dd"
+                cell.number_format = "dd/mm/yyyy"
 
 
 def write_cluster_sheet(workbook, rows: Sequence[dict]) -> None:

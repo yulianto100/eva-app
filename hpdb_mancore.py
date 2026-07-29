@@ -125,8 +125,10 @@ def mancore_cluster_label(cluster_name: str) -> str:
     return re.sub(r"\s+", " ", str(cluster_name or "").replace(" - FDT ", " FDT-")).strip()
 
 def mancore_city(value: str | None) -> str:
-    text = re.sub(r"\b(KAB\.?|KOTA)\b", "", str(value or ""), flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", text).strip().upper()
+    text = str(value or "").strip()
+    text = re.sub(r"^Kabupaten\s+", "Kab. ", text, flags=re.IGNORECASE)
+    text = re.sub(r"^Kota\s+", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip()
 
 def mancore_fat_address(street: str | None) -> str:
     clean = re.sub(r"\s+", " ", str(street or "").strip()).upper()
@@ -139,7 +141,7 @@ def mancore_admin_value(defaults: dict, *keys: str) -> str:
         value = str(defaults.get(key) or "").strip()
         if value:
             if key in {"city", "regency_city"}:
-                value = normalize_city_value(value)
+                return normalize_city_value(value)
             return value.upper()
     return ""
 
@@ -343,7 +345,7 @@ def write_mancore_fdt_sheet(
                         value = normalize_street_value(value)
                     cell = worksheet.cell(row=row_index, column=column, value=value)
                     if header == "RFSDate" and value:
-                        cell.number_format = "yyyy-mm-dd"
+                        cell.number_format = "dd/mm/yyyy"
             row_index += 1
     for column_index in range(8, len(headers) + 1):
         worksheet.cell(

@@ -3476,6 +3476,136 @@ function postFormDataWithProgress(url, formData, onProgress) {
   });
 }
 
+
+const locationPopupState = {
+  resolve: null,
+  reject: null,
+  value: { province: "", city: "", district: "", subdistrict: "", postal_code: "", area_name: "" },
+};
+
+async function fetchLocationJson(url) {
+  const res = await fetch(url, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`Gagal ambil data wilayah (${res.status})`);
+  return await res.json();
+}
+
+function ensureLocationPopup() {
+  if (document.getElementById('eva-location-popup')) return;
+  const wrapper = document.createElement('div');
+  wrapper.id = 'eva-location-popup';
+  wrapper.className = 'fixed inset-0 z-[9999] hidden items-center justify-center bg-emerald-100/55 p-4 backdrop-blur-sm';
+  wrapper.innerHTML = `
+    <div class="w-full max-w-3xl rounded-[24px] border border-emerald-200/80 bg-emerald-50/92 p-5 text-emerald-950 shadow-[0_24px_80px_rgba(16,185,129,0.18)] backdrop-blur-xl ring-1 ring-white/70">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div><div class="text-lg font-black tracking-tight text-emerald-950">Pilih Wilayah</div><div class="text-xs font-semibold text-emerald-700">Dipakai untuk HPDB / ASTRI</div></div>
+        <button type="button" data-location-close class="rounded-xl border border-emerald-200/80 bg-white/88 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(16,185,129,0.12)] backdrop-blur-md hover:bg-white">Tutup</button>
+      </div>
+      <div class="grid gap-3 md:grid-cols-2 text-emerald-900">
+        <label class="grid gap-1 text-xs"><span>Province</span><select data-location-field="province" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+        <label class="grid gap-1 text-xs"><span>City / Regency</span><select data-location-field="city" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+        <label class="grid gap-1 text-xs"><span>District</span><select data-location-field="district" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+        <label class="grid gap-1 text-xs"><span>Subdistrict</span><select data-location-field="subdistrict" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+        <label class="grid gap-1 text-xs"><span>Postal Code</span><select data-location-field="postal_code" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+        <label class="grid gap-1 text-xs"><span>Area Name ASTRI</span><select data-location-field="area_name" class="rounded-xl border border-emerald-200/80 bg-white px-3 py-2 text-sm font-bold text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_24px_rgba(16,185,129,0.08)] outline-none  transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-200/80"></select></label>
+      </div>
+      <div class="mt-4 flex justify-end gap-2">
+        <button type="button" data-location-cancel class="rounded-xl border border-emerald-200/80 bg-white/88 px-4 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(16,185,129,0.12)] backdrop-blur-md hover:bg-white">Batal</button>
+        <button type="button" data-location-submit class="rounded-xl border border-emerald-400/60 bg-gradient-to-b from-emerald-500/90 to-teal-600/90 px-4 py-2 text-xs font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_14px_32px_rgba(16,185,129,0.28)] hover:from-emerald-500 hover:to-teal-600">Pakai</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrapper);
+  wrapper.addEventListener('click', (event) => {
+    if (event.target === wrapper || event.target.closest('[data-location-cancel]') || event.target.closest('[data-location-close]')) closeLocationPopup(false);
+  });
+  wrapper.querySelector('[data-location-submit]')?.addEventListener('click', () => closeLocationPopup(true));
+  wrapper.addEventListener('change', handleLocationChange);
+}
+
+function locSelect(key) { return document.querySelector(`#eva-location-popup [data-location-field="${key}"]`); }
+function optValue(item, key) { return typeof item === 'string' ? item : (item?.[key] || item?.value || item?.name || item?.label || ''); }
+function normalizeLocationDisplayValue(key, value) {
+  const raw = String(value || '').trim();
+  if (key !== 'city') return raw;
+  return raw.replace(/^Kabupaten\s+/i, 'Kab. ').replace(/^Kota\s+/i, '');
+}
+
+function fillSelect(key, rows, rowKey, selected) {
+  const el = locSelect(key); if (!el) return;
+  const seen = new Set();
+  const options = ['<option value="">-- pilih --</option>'];
+  const normalizedSelected = normalizeLocationDisplayValue(key, selected);
+  rows.forEach((row) => {
+    const rawValue = String(optValue(row, rowKey) || '').trim();
+    const value = normalizeLocationDisplayValue(key, rawValue);
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    options.push(`<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`);
+  });
+  el.innerHTML = options.join('');
+  if (normalizedSelected && seen.has(normalizedSelected)) el.value = normalizedSelected;
+}
+
+async function refreshLocationDropdowns() {
+  const v = locationPopupState.value;
+  const [provinces, cities, districts, subdistricts, postals, areas] = await Promise.all([
+    fetchLocationJson('/api/regions/provinces?limit=1000'),
+    fetchLocationJson(`/api/regions/cities?limit=1000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}`),
+    fetchLocationJson(`/api/regions/districts?limit=2000${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}`),
+    fetchLocationJson(`/api/regions/subdistricts?limit=3000${v.district ? `&district=${encodeURIComponent(v.district)}` : ''}`),
+    fetchLocationJson(`/api/regions/postal-codes?limit=1000${v.subdistrict ? `&subdistrict=${encodeURIComponent(v.subdistrict)}` : ''}`),
+    fetchLocationJson('/api/astri/areas?limit=1000'),
+  ]);
+  fillSelect('province', provinces, 'province', v.province);
+  fillSelect('city', v.province ? cities : [], 'city', v.city);
+  fillSelect('district', v.city ? districts : [], 'district', v.district);
+  fillSelect('subdistrict', v.district ? subdistricts : [], 'subdistrict', v.subdistrict);
+  fillSelect('postal_code', v.subdistrict ? postals : [], 'postal_code', v.postal_code);
+  fillSelect('area_name', v.city ? areas : [], 'area_name', v.area_name);
+  const lock = {
+    city: !v.province, district: !v.city, subdistrict: !v.district, postal_code: !v.subdistrict, area_name: !v.city,
+  };
+  ['city','district','subdistrict','postal_code','area_name'].forEach((key) => {
+    const el = locSelect(key); if (!el) return;
+    el.disabled = !!lock[key];
+    el.classList.toggle('opacity-50', !!lock[key]);
+    el.classList.toggle('cursor-not-allowed', !!lock[key]);
+  });
+}
+
+async function handleLocationChange(event) {
+  const key = event.target?.dataset?.locationField; if (!key) return;
+  locationPopupState.value[key] = event.target.value;
+  if (key === 'province') Object.assign(locationPopupState.value, { city: '', district: '', subdistrict: '', postal_code: '', area_name: '' });
+  if (key === 'city') Object.assign(locationPopupState.value, { district: '', subdistrict: '', postal_code: '' });
+  if (key === 'district') Object.assign(locationPopupState.value, { subdistrict: '', postal_code: '' });
+  if (key === 'subdistrict') Object.assign(locationPopupState.value, { postal_code: '' });
+  if (['province','city','district','subdistrict'].includes(key)) await refreshLocationDropdowns();
+}
+
+async function openLocationPopup(initial = {}) {
+  ensureLocationPopup();
+  locationPopupState.value = { province: '', city: '', district: '', subdistrict: '', postal_code: '', area_name: '', ...initial };
+  const popup = document.getElementById('eva-location-popup');
+  popup.classList.remove('hidden'); popup.classList.add('flex');
+  await refreshLocationDropdowns();
+  return new Promise((resolve, reject) => { locationPopupState.resolve = resolve; locationPopupState.reject = reject; });
+}
+
+function closeLocationPopup(ok) {
+  const popup = document.getElementById('eva-location-popup'); if (!popup) return;
+  ['province','city','district','subdistrict','postal_code','area_name'].forEach((key) => { locationPopupState.value[key] = locSelect(key)?.value || ''; });
+  const values = { ...locationPopupState.value };
+  popup.classList.add('hidden'); popup.classList.remove('flex');
+  if (ok) locationPopupState.resolve?.(values); else locationPopupState.reject?.(new Error('Batal pilih wilayah.'));
+  locationPopupState.resolve = null; locationPopupState.reject = null;
+}
+
+async function promptLocationOverrides() {
+  const values = await openLocationPopup(state.locationOverrides || {});
+  state.locationOverrides = values;
+  return values;
+}
+
 async function uploadSelectedFile() {
   if (state.uploadInFlight) return;
   state.uploadInFlight = true;
@@ -3537,6 +3667,15 @@ async function uploadSelectedFile() {
       setError(message);
       return;
     }
+    let locationOverrides = {};
+    if (modeHas("dxf") || modeHas("hpdb") || modeHas("astri")) {
+      try {
+        locationOverrides = await promptLocationOverrides();
+      } catch (err) {
+        logger.warn(err.message);
+        return;
+      }
+    }
     if (modeHas("kmz") && !state.kmlFiles.length) {
       const message = "File KML/KMZ wajib diunggah untuk output KMZ Standar.";
       logger.error(message);
@@ -3594,18 +3733,48 @@ async function uploadSelectedFile() {
     formData.append("scope_type", state.scopeType);
     formData.append("filename_warning_accepted", filenameWarningAccepted ? "1" : "0");
     formData.append("road_clip_boundary_enabled", roadClipBoundaryEnabled() ? "1" : "0");
-    if (state.geofabrikRegion) {
-      formData.append("geofabrik_region", state.geofabrikRegion);
+    // ROAD source follows the popup hierarchy: District OSM PBF first, Province PBF fallback.
+    const popupProvince = locationOverrides?.province || "";
+    const popupCity = locationOverrides?.city || "";
+    const popupDistrict = locationOverrides?.district || "";
+    const roadSelectionNeeded = modeHas("dxf") || modeHas("hpdb") || modeHas("astri");
+    const roadKey = (value) => String(value || "").toLowerCase()
+      .replace(/^kabupaten\s+|^kab\.?\s+|^kota\s+/i, "")
+      .replace(/[^a-z0-9]/g, "");
+    if (roadSelectionNeeded && popupDistrict) {
+      const districtKey = roadKey(popupDistrict);
+      const cityKey = roadKey(popupCity);
+      const popupDistrictRoad = state.osmKecamatanRegions.find((region) =>
+        roadKey(region.label) === districtKey && (!cityKey || roadKey(region.city) === cityKey)
+      ) || state.osmKecamatanRegions.find((region) => roadKey(region.label) === districtKey);
+      if (popupDistrictRoad) {
+        formData.append("osm_city", popupDistrictRoad.city || popupCity);
+        formData.append("osm_kecamatan", popupDistrictRoad.filename);
+        logger.info(`ROAD OSM otomatis: ${popupDistrictRoad.filename} untuk Kecamatan ${popupDistrict}.`);
+      }
     }
-    if (state.osmKecamatan) {
-      formData.append("osm_city", state.osmCity);
-      formData.append("osm_kecamatan", state.osmKecamatan);
+    if (roadSelectionNeeded && !formData.has("osm_kecamatan") && popupProvince) {
+      const popupRoadFile = provinceRoadRegionFilename(popupProvince);
+      const popupRoadRegion = state.geofabrikRegions.find((item) => item.filename === popupRoadFile);
+      if (popupRoadRegion) {
+        formData.append("geofabrik_region", popupRoadFile);
+        logger.info(`ROAD OSM fallback: ${popupRoadRegion.filename} dari Province ${popupProvince}.`);
+      } else {
+        logger.warn(`File ROAD OSM belum tersedia untuk ${popupDistrict || popupProvince}.`);
+      }
     }
     if (state.astriMatch?.matched) {
       formData.append("astri_cluster_code", state.astriMatch.cluster_code || "");
       if (state.astriMatch.province) formData.append("province", state.astriMatch.province);
       if (state.astriMatch.area_name) formData.append("area_name", state.astriMatch.area_name);
     }
+    if (locationOverrides?.province) formData.append("province", locationOverrides.province);
+    if (locationOverrides?.city) formData.append("city", locationOverrides.city);
+    if (locationOverrides?.city) formData.append("regency_city", locationOverrides.city);
+    if (locationOverrides?.district) formData.append("district", locationOverrides.district);
+    if (locationOverrides?.subdistrict) formData.append("subdistrict", locationOverrides.subdistrict);
+    if (locationOverrides?.postal_code) formData.append("postal_code", locationOverrides.postal_code);
+    if (locationOverrides?.area_name) formData.append("area_name", locationOverrides.area_name);
     // Do not send raw-source folder filters. The server standardizes folder
     // names before DXF generation and exports every eligible folder.
 
@@ -5269,6 +5438,16 @@ if (!bar || !message || state.errorScope !== "job") return;
     }
     const feederLike = isFeederLikeScope(state.scopeType);
 
+    // City/Kecamatan ROAD manual intentionally disabled. Source is selected from the location popup.
+    els.osmCitySelect?.closest("label")?.classList.add("hidden");
+    els.osmKecamatanSelect?.closest("label")?.classList.add("hidden");
+    if (els.osmKecamatanSize) els.osmKecamatanSize.classList.add("hidden");
+    if (els.roadSourceSummary) els.roadSourceSummary.textContent = "ROAD OSM otomatis mengikuti Province dari popup Pilih Wilayah.";
+    if (els.roadSourceHelper) els.roadSourceHelper.textContent = "Pilih wilayah saat Mulai Proses. EVA akan memakai file ROAD OSM provinsi secara otomatis.";
+    els.osmKecamatanPanel.classList.remove("hidden");
+    els.osmProvinceSelect?.closest("label")?.classList.add("hidden");
+    return;
+
     // --- Province ---
     const currentProvince = state.osmProvince || state.osmKecamatanProvinces[0] || "";
     els.osmProvinceSelect.innerHTML = "";
@@ -5485,26 +5664,26 @@ if (!bar || !message || state.errorScope !== "job") return;
 
   
 // ---------- ASTRI Upload Integration ----------
-var astriGlassButton = "rounded-xl border border-sky-200/70 bg-white/55 px-3 py-2 text-xs font-bold text-sky-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(14,165,233,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50/75 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_30px_rgba(14,165,233,0.18)] active:translate-y-0";
-var astriPrimaryButton = "rounded-xl border border-sky-400/50 bg-gradient-to-b from-sky-500/85 to-cyan-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_12px_28px_rgba(8,145,178,0.26)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:from-sky-500 hover:to-cyan-600 active:translate-y-0";
-var astriInput = "rounded-xl border border-sky-200/70 bg-white/55 px-3 py-2 text-sm text-zinc-800 shadow-inner outline-none backdrop-blur-xl transition placeholder:text-zinc-400 focus:border-sky-400 focus:bg-white/75 focus:ring-2 focus:ring-sky-200/70";
-var astriClusterBtn = "rounded-xl border border-indigo-300/50 bg-gradient-to-b from-indigo-500/85 to-indigo-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(99,102,241,0.25)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:from-indigo-500 hover:to-indigo-600 active:translate-y-0";
-var astriClusterGlass = "rounded-xl border border-indigo-200/70 bg-indigo-50/55 px-3 py-2 text-xs font-bold text-indigo-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(99,102,241,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50/75 active:translate-y-0";
-var astriSubfeederBtn = "rounded-xl border border-emerald-300/50 bg-gradient-to-b from-emerald-500/85 to-emerald-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(16,185,129,0.25)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:from-emerald-500 hover:to-emerald-600 active:translate-y-0";
-var astriSubfeederGlass = "rounded-xl border border-emerald-200/70 bg-emerald-50/55 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(16,185,129,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50/75 active:translate-y-0";
-var astriFeederBtn = "rounded-xl border border-rose-300/50 bg-gradient-to-b from-rose-500/85 to-rose-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(244,63,94,0.25)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:from-rose-500 hover:to-rose-600 active:translate-y-0";
-var astriFeederGlass = "rounded-xl border border-rose-200/70 bg-rose-50/55 px-3 py-2 text-xs font-bold text-rose-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(244,63,94,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-50/75 active:translate-y-0";
+var astriGlassButton = "rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(16,185,129,0.10)]  transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-emerald-50 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_30px_rgba(14,165,233,0.18)] active:translate-y-0";
+var astriPrimaryButton = "rounded-xl border border-emerald-400/60 bg-gradient-to-b from-sky-500/85 to-cyan-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_12px_28px_rgba(8,145,178,0.26)]  transition hover:-translate-y-0.5 hover:from-emerald-500 hover:to-teal-600 active:translate-y-0";
+var astriInput = "rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-2 text-sm text-zinc-800 shadow-inner outline-none  transition placeholder:text-zinc-400 focus:border-sky-400 focus:bg-white/90 focus:ring-2 focus:ring-sky-200/70";
+var astriClusterBtn = "rounded-xl border border-indigo-300/50 bg-gradient-to-b from-indigo-500/85 to-indigo-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(99,102,241,0.25)]  transition hover:-translate-y-0.5 hover:from-indigo-500 hover:to-indigo-600 active:translate-y-0";
+var astriClusterGlass = "rounded-xl border border-indigo-200/70 bg-indigo-50/55 px-3 py-2 text-xs font-bold text-indigo-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(99,102,241,0.10)]  transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50/75 active:translate-y-0";
+var astriSubfeederBtn = "rounded-xl border border-emerald-300/50 bg-gradient-to-b from-emerald-500/85 to-emerald-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(16,185,129,0.25)]  transition hover:-translate-y-0.5 hover:from-emerald-500 hover:to-emerald-600 active:translate-y-0";
+var astriSubfeederGlass = "rounded-xl border border-emerald-200/70 bg-emerald-50/55 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(16,185,129,0.10)]  transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50/75 active:translate-y-0";
+var astriFeederBtn = "rounded-xl border border-rose-300/50 bg-gradient-to-b from-rose-500/85 to-rose-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(244,63,94,0.25)]  transition hover:-translate-y-0.5 hover:from-rose-500 hover:to-rose-600 active:translate-y-0";
+var astriFeederGlass = "rounded-xl border border-rose-200/70 bg-rose-50/55 px-3 py-2 text-xs font-bold text-rose-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(244,63,94,0.10)]  transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-50/75 active:translate-y-0";
 function ensureAstriPanel() {
   const existingPanel = document.getElementById("astriIntegrationPanel");
   if (!existingPanel) {
     const anchor = els.outputStatusPanel || els.resultSummaryPanel || els.previewWorkspacePanel || document.body;
     const panel = document.createElement("section");
     panel.id = "astriIntegrationPanel";
-    panel.className = "mt-4 overflow-hidden rounded-[22px] border border-sky-200/70 bg-white/55 p-4 shadow-[0_18px_60px_rgba(14,165,233,0.14)] backdrop-blur-2xl ring-1 ring-white/70";
+    panel.className = "mt-4 overflow-hidden rounded-[22px] border border-emerald-200/80 bg-white/70 p-4 shadow-[0_18px_60px_rgba(14,165,233,0.14)] backdrop-blur-2xl ring-1 ring-white/70";
     panel.innerHTML = `
       <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 class="text-sm font-black uppercase tracking-[0.18em] text-sky-800">ASTRI Upload</h3>
+          <h3 class="text-sm font-black uppercase tracking-[0.18em] text-emerald-800">ASTRI Upload</h3>
           <p id="astriStatusText" class="mt-1 text-xs text-zinc-500">Belum login ASTRI.</p>
         </div>
         <button id="astriClearButton" type="button" class="${astriGlassButton}">Logout</button>
@@ -5538,7 +5717,7 @@ function ensureAstriPanel() {
         <button id="astriClusterSearchButton" type="button" class="${astriGlassButton}">Search</button>
       </div>
       <select id="astriClusterSelect" class="mt-2 hidden w-full ${astriInput}"></select>
-      <div id="astriMatchBox" class="mt-3 hidden rounded-2xl border border-sky-200/70 bg-white/45 p-3 text-sm text-zinc-700 shadow-inner backdrop-blur-xl"></div>
+      <div id="astriMatchBox" class="mt-3 hidden rounded-2xl border border-sky-200/70 bg-white/45 p-3 text-sm text-zinc-700 shadow-inner "></div>
       <div class="mt-3 flex flex-wrap gap-2">
         <button id="astriMatchButton" type="button" class="${astriGlassButton}">Cari Match ASTRI</button>
         <button id="astriApdConvertButton" type="button" class="${astriGlassButton}">Convert dari APD ASTRI</button>
@@ -5574,7 +5753,7 @@ function ensureAstriPanel() {
       "border:1px solid rgba(186,230,253,0.75)",
       "background:rgba(255,255,255,0.55)",
       "color:#075985",
-      "box-shadow:inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(14,165,233,0.10)",
+      "box-shadow:inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(16,185,129,0.10)",
       "backdrop-filter:blur(16px)",
       "-webkit-backdrop-filter:blur(16px)",
       "transition:transform 160ms ease,background 160ms ease,border-color 160ms ease,box-shadow 160ms ease",
@@ -5609,7 +5788,7 @@ function ensureAstriPanel() {
         card.style.transform = "";
         card.style.background = "rgba(255,255,255,0.55)";
         card.style.borderColor = "rgba(186,230,253,0.75)";
-        card.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(14,165,233,0.10)";
+        card.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(16,185,129,0.10)";
       });
     });
   }
@@ -5631,7 +5810,7 @@ function ensureAstriPanel() {
       "border:1px solid rgba(186,230,253,0.75)",
       "background:rgba(255,255,255,0.55)",
       "color:#075985",
-      "box-shadow:inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(14,165,233,0.10)",
+      "box-shadow:inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(16,185,129,0.10)",
       "backdrop-filter:blur(16px)",
       "-webkit-backdrop-filter:blur(16px)",
       "transition:transform 160ms ease,background 160ms ease,border-color 160ms ease,box-shadow 160ms ease",
@@ -5666,7 +5845,7 @@ function ensureAstriPanel() {
         card.style.transform = "";
         card.style.background = "rgba(255,255,255,0.55)";
         card.style.borderColor = "rgba(186,230,253,0.75)";
-        card.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(14,165,233,0.10)";
+        card.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.75),0 8px 24px rgba(16,185,129,0.10)";
       });
     });
   }
@@ -5943,7 +6122,7 @@ function renderAstriMatch(payload) {
     <strong>${escapeHtml(payload.cluster_code)} - ${escapeHtml(payload.cluster_name)}</strong><br>
     <span>WO: ${escapeHtml(payload.work_order_number)}</span><br>
     <span>Vendor: ${escapeHtml(payload.vendor_label || payload.vendor_name || "-")}</span><br>
-    <span>HP: ${escapeHtml(payload.homepass || "-")} | Net: ${escapeHtml(payload.net_type || "-")}</span>
+    <span>${(payload.target_type === "feeder" ? "Route Length" : "HP")}: ${escapeHtml(payload.target_type === "feeder" ? (payload.route_length || "-") : (payload.homepass || "-"))} | Net: ${escapeHtml(payload.net_type || "-")}</span>
   `;
   if (link) {
     link.href = payload.requirement_url;
@@ -6927,11 +7106,13 @@ async function submitAstriBoq(items, type) {
 
 
   function forceRoadPanelVisible() {
+    // ROAD source selection is automatic from the Pilih Wilayah popup.
+    // Keep the legacy manual panel permanently hidden.
     const panel = document.getElementById("roadSourcePanel");
     if (!panel) return;
-    panel.classList.remove("hidden");
-    panel.style.display = "";
-    panel.hidden = false;
+    panel.classList.add("hidden");
+    panel.style.display = "none";
+    panel.hidden = true;
   }
 
 // ---------- Boot ----------

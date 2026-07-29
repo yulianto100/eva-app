@@ -798,11 +798,67 @@ def search_astri_subfeeders(record: dict, query_raw: str, status: str = "") -> l
     return items[:100]
 
 
+def _feeder_row_value(row: dict, *keys: str) -> str:
+    """Return first non-empty value across the listed CSV/HTML aliases. Also checks alternate key forms with spaces/hyphens converted to underscores."""
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    # Also check normalized versions from row raw keys
+    for raw_key, value in row.items():
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        norm = raw_key.strip().lower().replace(" ", "_").replace("-", "_")
+        if norm in keys:
+            return text
+    return ""
+
+
 def astri_feeder_match_payload(row: dict, query: str = "") -> dict:
-    code = row.get("target_osp_route_code", "")
-    name = row.get("target_osp_route_label", "")
-    wo = row.get("number", "")
-    vendor = row.get("assigned_vendor_label", "")
+    code = _feeder_row_value(
+        row,
+        "target_osp_route_code",
+        "feeder_code",
+        "osp_route_code",
+        "code",
+        "target_feeder_code",
+        "target_wo",
+        "code",
+    )
+    name = _feeder_row_value(
+        row,
+        "target_osp_route_label",
+        "feeder_name",
+        "osp_route_label",
+        "feeder_label",
+        "osp_route_name",
+        "name",
+        "target_feeder_label",   # preferred for display (uppercase)
+        "target_feeder_name",
+        "label",
+    )
+    wo = _feeder_row_value(row, "number", "work_order_number", "wo", "target_wo")
+    vendor = _feeder_row_value(
+        row,
+        "assigned_vendor_label",
+        "vendor_label",
+        "vendor_name",
+    )
+    area = _feeder_row_value(
+        row,
+        "target_osp_route_area",
+        "osp_route_area",
+        "area",
+        "cluster_area",
+        "target_feeder_area",
+        "area",
+    )
     return {
         "matched": True,
         "target_type": "feeder",
@@ -812,14 +868,34 @@ def astri_feeder_match_payload(row: dict, query: str = "") -> dict:
         "feeder_code": code,
         "feeder_name": name,
         "work_order_number": wo,
-        "pr_number": row.get("target_osp_route_purchase_requisition_number", "") or row.get("purchase_requisition_number", ""),
+        "pr_number": _feeder_row_value(
+            row,
+            "target_osp_route_purchase_requisition_number",
+            "target_feeder_purchase_requisition_number",
+            "purchase_requisition_number",
+            "pr_number",
+        ),
         "vendor_label": vendor,
         "vendor_name": vendor,
-        "area": row.get("target_osp_route_area", ""),
-        "homepass": row.get("target_osp_route_length", ""),
-        "net_type": row.get("target_osp_route_drm_net_type", ""),
-        "latest_status_label": row.get("latest_status_label", ""),
-        "latest_status_name": row.get("latest_status_name", ""),
+        "area": area,
+        "homepass": "",
+        "route_length": _feeder_row_value(
+            row,
+            "target_osp_route_length",
+            "target_osp_route_homepass",
+            "target_feeder_length",
+            "homepass",
+            "length",
+        ),
+        "net_type": _feeder_row_value(
+            row,
+            "target_osp_route_drm_net_type",
+            "target_feeder_drm_net_type",
+            "drm_net_type",
+            "net_type",
+        ),
+        "latest_status_label": _feeder_row_value(row, "latest_status_label"),
+        "latest_status_name": _feeder_row_value(row, "latest_status_name"),
         "requirement_url": f"{ASTRI_BASE_URL}/material/feeder/drm/requirement-document?feeder_code={code}&work_order_number={wo}&vendor_label={vendor}",
     }
 
@@ -6407,6 +6483,7 @@ def upload_file():
 
     geofabrik_path = None
     kecamatan_path = None
+    admin_override_fields = _apply_admin_overrides({}, request.form)
     if osm_kecamatan and osm_kecamatan.lower() not in {"auto", "all", ""}:
         kecamatan_path = resolve_osm_kecamatan_path(osm_kecamatan)
         if not kecamatan_path:
@@ -6492,19 +6569,27 @@ def upload_file():
     input_paths = []
     original_filenames = []
     osm_admin_defaults = admin_defaults_for_osm_selection(kecamatan_path, osm_city)
-    # Override province / area_name from form or ASTRI match
-    if override_province and not kecamatan_path:
+    osm_admin_defaults.update(admin_override_fields)
+    # Legacy direct overrides remain as fallback; popup admin fields win.
+    if override_province and not osm_admin_defaults.get("province"):
         osm_admin_defaults["province"] = override_province
-    if override_area_name:
+    if override_area_name and not osm_admin_defaults.get("area_name"):
         osm_admin_defaults["area_name"] = override_area_name
         osm_admin_defaults["Area"] = override_area_name
     # Auto-lookup province from city if not overridden
-    _city_val = osm_admin_defaults.get("city", "")
+    _city_val = osm_admin_defaults.get("city", "") or osm_admin_defaults.get("regency_city", "")
     if _city_val and not osm_admin_defaults.get("province"):
         _prov = province_for_city(_city_val)
         if _prov and _prov != "Lainnya":
             osm_admin_defaults["province"] = _prov
     osm_admin_defaults = require_admin_defaults_from_region_db(osm_admin_defaults) or {}
+    # Re-apply popup overrides at the very end so user-selected values win.
+    for _k, _v in admin_override_fields.items():
+        if _v:
+            osm_admin_defaults[_k] = _v
+    if admin_override_fields.get(postal_code):
+        osm_admin_defaults[postalcode] = admin_override_fields[postal_code]
+        osm_admin_defaults[postal_code] = admin_override_fields[postal_code]
     dxf_output_path = Config.OUTPUT_DIR / f"{job_id}_{network_type}.dxf"
     boq_output_path = Config.BOQ_OUTPUT_DIR / f"{job_id}_BOQ_{network_type}.xlsx"
     astri_output_path = Config.HPDB_OUTPUT_DIR / f"{job_id}_ASTRI_{network_type}.xlsx"
@@ -7987,6 +8072,7 @@ def api_regions_search():
     city = request.args.get("city", "").strip()
     district = request.args.get("district", "").strip()
     subdistrict = request.args.get("subdistrict", "").strip()
+    postal_code = request.args.get("postal_code", "").strip()
 
     REGION_DB = Config.REGION_DB_PATH
     if not REGION_DB.is_file():
@@ -7997,20 +8083,24 @@ def api_regions_search():
     cur = conn.cursor()
 
     try:
-        if subdistrict:
-            cur.execute("""SELECT province, city, district, subdistrict FROM regions
+        if postal_code:
+            cur.execute("""SELECT province, city, district, subdistrict, postal_code FROM regions
+                WHERE postal_code LIKE ?
+                ORDER BY province, city, district, subdistrict""", (f"%{postal_code}%",))
+        elif subdistrict:
+            cur.execute("""SELECT province, city, district, subdistrict, postal_code FROM regions
                 WHERE (subdistrict LIKE ? OR subdistrict_key = ?) AND subdistrict != ''
                 ORDER BY province, city, district""", (f"%{subdistrict}%", region_db.region_key(subdistrict)))
         elif district:
-            cur.execute("""SELECT province, city, district, subdistrict FROM regions
+            cur.execute("""SELECT province, city, district, subdistrict, postal_code FROM regions
                 WHERE district LIKE ? OR district_key = ?
                 ORDER BY province, city, district, subdistrict""", (f"%{district}%", region_db.region_key(district)))
         elif city:
-            cur.execute("""SELECT province, city, district, subdistrict FROM regions
+            cur.execute("""SELECT province, city, district, subdistrict, postal_code FROM regions
                 WHERE city LIKE ? OR city_key = ?
                 ORDER BY province, city, district, subdistrict""", (f"%{city}%", region_db.region_key(city)))
         elif q:
-            cur.execute("""SELECT province, city, district, subdistrict FROM regions
+            cur.execute("""SELECT province, city, district, subdistrict, postal_code FROM regions
                 WHERE subdistrict LIKE ? OR district LIKE ?
                     OR subdistrict_key = ? OR district_key = ?
                 ORDER BY province, city, district, subdistrict""",
@@ -8026,6 +8116,131 @@ def api_regions_search():
         conn.close()
 
 
+
+
+
+
+def _region_db_path() -> Path | None:
+    region_path = getattr(Config, "REGION_DB_PATH", None)
+    if region_path and Path(region_path).is_file():
+        return Path(region_path)
+    fallback = Path(os.environ.get("REGION_DB_PATH", ""))
+    if str(fallback) and fallback.is_file():
+        return fallback
+    fallback = Path("/opt/eva/data/region.db")
+    return fallback if fallback.is_file() else None
+
+def _region_db_rows(sql: str, params: tuple = ()) -> list[dict]:
+    db_path = _region_db_path()
+    if not db_path:
+        return []
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+def _safe_limit() -> int:
+    try:
+        return min(max(int(request.args.get("limit", 20) or 20), 1), 5000)
+    except ValueError:
+        return 20
+
+def _region_city_filter_values(value: str) -> list[str]:
+    value = str(value or "").strip()
+    if not value:
+        return []
+    values = [value]
+    if value.lower().startswith("kab. "):
+        values.append("Kabupaten " + value[5:].strip())
+    elif not value.lower().startswith(("kabupaten ", "kota ")):
+        values.extend([f"Kota {value}", f"Kabupaten {value}"])
+    return list(dict.fromkeys(values))
+
+def _region_suggest(field: str, q: str = "", **filters) -> list[dict]:
+    clauses = [f"{field} != ''"]
+    params: list[str] = []
+    if q:
+        if field in {"city", "district", "subdistrict"}:
+            clauses.append(f"({field} LIKE ? OR {field}_key = ?)")
+            params.extend([f"%{q}%", region_db.region_key(q)])
+        else:
+            clauses.append(f"{field} LIKE ?")
+            params.append(f"%{q}%")
+    for key in ("province", "city", "district", "subdistrict"):
+        val = str(filters.get(key) or "").strip()
+        if not val:
+            continue
+        if key == "city":
+            city_values = _region_city_filter_values(val)
+            clauses.append("(" + " OR ".join(["city = ?"] * len(city_values)) + ")")
+            params.extend(city_values)
+        else:
+            clauses.append(f"{key} = ?")
+            params.append(val)
+    params.append(_safe_limit())
+    return _region_db_rows(f"SELECT DISTINCT {field} FROM regions WHERE {' AND '.join(clauses)} ORDER BY {field} LIMIT ?", tuple(params))
+
+def _apply_admin_overrides(base: dict, form: dict) -> dict:
+    out = dict(base or {})
+    aliases = {"subdistrict": "sub_district", "postalcode": "postal_code", "Area": "area_name"}
+    for key in ("province", "city", "regency_city", "district", "subdistrict", "sub_district", "postal_code", "postalcode", "area_name", "Area"):
+        value = str(form.get(key, "")).strip()
+        if not value:
+            continue
+        target = aliases.get(key, key)
+        if target in {"city", "regency_city"} and value.lower().startswith("kab. "):
+            value = "Kabupaten " + value[5:].strip()
+        out[target] = value
+        if target == "sub_district":
+            out["subdistrict"] = value
+        if target == "postal_code":
+            out["postalcode"] = value
+        if target == "area_name":
+            out["Area"] = value
+    return out
+
+@app.route("/api/regions/provinces")
+def api_regions_provinces():
+    rows = _region_suggest("province", request.args.get("q", "").strip())
+    return jsonify([{"province": row.get("province", "")} for row in rows])
+
+@app.route("/api/regions/cities")
+def api_regions_cities():
+    rows = _region_suggest("city", request.args.get("q", "").strip(), province=request.args.get("province", ""))
+    return jsonify(rows)
+
+@app.route("/api/regions/districts")
+def api_regions_districts():
+    rows = _region_suggest("district", request.args.get("q", "").strip(), province=request.args.get("province", ""), city=request.args.get("city", ""))
+    return jsonify(rows)
+
+@app.route("/api/regions/subdistricts")
+def api_regions_subdistricts():
+    rows = _region_suggest("subdistrict", request.args.get("q", "").strip(), province=request.args.get("province", ""), city=request.args.get("city", ""), district=request.args.get("district", ""))
+    return jsonify(rows)
+
+@app.route("/api/regions/postal-codes")
+def api_regions_postal_codes():
+    rows = _region_suggest("postal_code", request.args.get("q", "").strip(), province=request.args.get("province", ""), city=request.args.get("city", ""), district=request.args.get("district", ""), subdistrict=request.args.get("subdistrict", ""))
+    return jsonify(rows)
+
+@app.route("/api/astri/areas")
+def api_astri_areas():
+    q = request.args.get("q", "").strip()
+    clauses = ["area_name != ''"]
+    params = []
+    if q:
+        clauses.append("area_name LIKE ?")
+        params.append(f"%{q}%")
+    for key in ("province", "city"):
+        val = request.args.get(key, "").strip()
+        if val:
+            clauses.append(f"{key} = ?")
+            params.append(val)
+    params.append(_safe_limit())
+    return jsonify(_region_db_rows(f"SELECT DISTINCT area_name, province, city, source FROM astri_areas WHERE {' AND '.join(clauses)} ORDER BY area_name LIMIT ?", tuple(params)))
 
 
 # ── GDR: fetch internal materials from ASTRI ─────────────────────────────────

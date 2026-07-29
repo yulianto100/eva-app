@@ -18,6 +18,7 @@ services:
     ports:
     - 127.0.0.1:5000:5000
     environment:
+      TZ: Asia/Jakarta
       SECRET_KEY: ${SECRET_KEY:-}
       SECRET_KEY_FILE: /run/secrets/eva_secret_key
       DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
@@ -104,6 +105,7 @@ services:
     env_file: .env
 
     environment:
+      TZ: Asia/Jakarta
       SECRET_KEY: ${SECRET_KEY:-}
       SECRET_KEY_FILE: /run/secrets/eva_secret_key
       DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
@@ -168,6 +170,7 @@ services:
     command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=2
     env_file: .env
     environment:
+      TZ: Asia/Jakarta
       SECRET_KEY: ${SECRET_KEY:-}
       SECRET_KEY_FILE: /run/secrets/eva_secret_key
       DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}

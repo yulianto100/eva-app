@@ -2418,6 +2418,15 @@ def ensure_line_standard_folders(project_folder: ET.Element, namespace: str, net
     return created
 
 def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str, changes: list[dict]) -> None:
+    def _upper_placemark_names_in(element: ET.Element) -> None:
+        for pm in list(element.iter(f"{{{namespace}}}Placemark")):
+            name_el = direct_child_by_name(pm, "name")
+            if name_el is None or name_el.text is None:
+                continue
+            up = name_el.text.upper()
+            if name_el.text != up:
+                name_el.text = up
+
     by_name: dict[str, ET.Element] = {}
     for child in list(hp_cover_folder):
         if local_name(child.tag) != "Folder":
@@ -2448,6 +2457,7 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
     ]
     folder_children.sort(key=lambda child: normalize_text(direct_child_text_by_name(child, "name")).upper())
     hp_cover_folder[:] = metadata_children + folder_children + other_children
+    _upper_placemark_names_in(hp_cover_folder)
 
 def normalize_hp_cover_folders(
     element: ET.Element,
