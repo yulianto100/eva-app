@@ -280,8 +280,13 @@ def normalize_city_value(value: str | None) -> str:
 
 
 def normalize_area_name_value(value: str | None) -> str:
-    text = normalize_city_value(value)
-    return re.sub(r"^\s*Kab\.\s+", "", text, flags=re.IGNORECASE).strip()
+    """Keep Area Name in human/dropdown casing for HPDB and ASTRI exports."""
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    text = re.sub(r"^\s*(?:Kabupaten|Kab\.)\s+", "", text, flags=re.IGNORECASE).strip()
+    # Legacy ASTRI/OSM sources often yield ALL CAPS. Present these like the Area dropdown.
+    if text and text == text.upper() and any(ch.isalpha() for ch in text):
+        text = text.title()
+    return text
 
 def normalize_street_value(value: str | None) -> str:
     text = re.sub(r"\s+", " ", str(value or "").strip())

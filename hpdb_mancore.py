@@ -247,7 +247,7 @@ def write_mancore_metadata(worksheet, cluster_row: dict, rows: Sequence[dict], d
     construction_type = "Underground" if str(network_type or "").strip().upper() == "UG" else "Aerial"
     worksheet["A1"] = "FIBER CORE ASSIGNMENT"
     worksheet["A3"] = "Region"
-    worksheet["C3"] = f": {str(defaults.get('Area') or defaults.get('area_name') or '').upper()}"
+    worksheet["C3"] = f": {str(defaults.get('Area') or defaults.get('area_name') or '').strip()}"
     worksheet["L3"] = "FDT TYPE"
     worksheet["M3"] = ": 48C"
     worksheet["A4"] = "OLT / Feeder Line"
