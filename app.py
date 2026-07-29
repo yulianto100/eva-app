@@ -6587,9 +6587,9 @@ def upload_file():
     for _k, _v in admin_override_fields.items():
         if _v:
             osm_admin_defaults[_k] = _v
-    if admin_override_fields.get(postal_code):
-        osm_admin_defaults[postalcode] = admin_override_fields[postal_code]
-        osm_admin_defaults[postal_code] = admin_override_fields[postal_code]
+    if admin_override_fields.get("postal_code"):
+        osm_admin_defaults["postalcode"] = admin_override_fields["postal_code"]
+        osm_admin_defaults["postal_code"] = admin_override_fields["postal_code"]
     dxf_output_path = Config.OUTPUT_DIR / f"{job_id}_{network_type}.dxf"
     boq_output_path = Config.BOQ_OUTPUT_DIR / f"{job_id}_BOQ_{network_type}.xlsx"
     astri_output_path = Config.HPDB_OUTPUT_DIR / f"{job_id}_ASTRI_{network_type}.xlsx"
