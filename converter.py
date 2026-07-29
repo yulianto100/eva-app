@@ -509,7 +509,7 @@ ROAD_MIN_POLYGON_AREA_SQUARE_METERS = 12.0
 # read as a double line (road edge + inner edge) like standard CAD road
 # drawings, instead of a single thin outline. The inner boundary is the road
 # polygon shrunk inward by this offset.
-ROAD_INNER_LINE_OFFSET_METERS = 0.9
+ROAD_INNER_LINE_OFFSET_METERS = 0.30
 ROAD_INNER_LINE_MIN_POLYGON_AREA_SQUARE_METERS = 18.0
 ROAD_NAME_LABEL_HEIGHT_METERS = 1.05
 ROAD_NAME_LABEL_MIN_HEIGHT_METERS = 0.55
