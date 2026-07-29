@@ -3934,9 +3934,11 @@ def resolve_admin_defaults_from_region_db(defaults: dict) -> dict:
     return defaults
 
 def require_admin_defaults_from_region_db(defaults: dict | None) -> dict | None:
-    """For selected OSM district/city, overwrite admin values strictly from region.db."""
+    """Resolve lookup values while preserving popup-locked administrative output values."""
     if not defaults:
         return defaults
+    original_defaults = dict(defaults)
+    original_locked = set(original_defaults.get("_locked_admin_fields") or [])
     resolved_defaults = resolve_admin_defaults_from_region_db(dict(defaults))
     district = str(defaults.get("district") or "").strip()
     city = str(defaults.get("city") or defaults.get("regency_city") or "").strip()
@@ -3957,6 +3959,11 @@ def require_admin_defaults_from_region_db(defaults: dict | None) -> dict | None:
         else:
             for key in ("province", "city", "regency_city", "district", "sub_district", "subdistrict"):
                 resolved_defaults.pop(key, None)
+    if original_locked:
+        for key in original_locked:
+            if key in original_defaults:
+                resolved_defaults[key] = original_defaults[key]
+        resolved_defaults["_locked_admin_fields"] = sorted(original_locked)
     return resolved_defaults
 
 def iter_osm_kecamatan_files() -> list[Path]:
@@ -6590,6 +6597,12 @@ def upload_file():
     if admin_override_fields.get("postal_code"):
         osm_admin_defaults["postalcode"] = admin_override_fields["postal_code"]
         osm_admin_defaults["postal_code"] = admin_override_fields["postal_code"]
+    if admin_override_fields:
+        osm_admin_defaults["_locked_admin_fields"] = [
+            "province", "city", "regency_city", "district",
+            "sub_district", "subdistrict", "postal_code", "postalcode",
+            "area_name", "Area",
+        ]
     dxf_output_path = Config.OUTPUT_DIR / f"{job_id}_{network_type}.dxf"
     boq_output_path = Config.BOQ_OUTPUT_DIR / f"{job_id}_BOQ_{network_type}.xlsx"
     astri_output_path = Config.HPDB_OUTPUT_DIR / f"{job_id}_ASTRI_{network_type}.xlsx"

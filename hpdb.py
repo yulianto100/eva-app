@@ -1539,9 +1539,16 @@ def parse_hpdb_from_kmz(
             pipeline_logger,
         )
 
-    if auto_geocode:
+    locked_admin_fields = set(defaults.get("_locked_admin_fields") or [])
+    popup_admin_locked = bool(locked_admin_fields.intersection({
+        "province", "city", "regency_city", "district",
+        "sub_district", "subdistrict", "postal_code", "postalcode",
+    }))
+    if auto_geocode and not popup_admin_locked:
         clear_admin_defaults_for_geocode(defaults)
         apply_administrative_defaults_from_candidates(result, defaults, all_placemarks, pipeline_logger=pipeline_logger)
+    elif auto_geocode and popup_admin_locked:
+        pipeline_log(pipeline_logger, "INFO", "Administrative HPDB/ASTRI values locked from Pilih Wilayah popup; OSM reverse-geocode skipped.")
 
     cluster_name_fdt_numbers = set(result.fdt_map) | detect_referenced_line_fdt_numbers(all_placemarks)
     include_fdt_suffix = len(cluster_name_fdt_numbers) > 1
