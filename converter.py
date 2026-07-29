@@ -4249,7 +4249,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # never intersects parcels from another group (no overlapping boxes).
         drawn_union = None
 
-        batch_size = 250
+        # Voronoi cells must be generated against the complete group. Recomputing
+        # cells in batches creates overlapping parcels at batch boundaries.
+        batch_size = max(len(sites), 1)
         for area_idx, indexes in groups.items():
             clip_region = fat_clip_for_area[area_idx]
             if clip_region is None or clip_region.is_empty:
@@ -4594,6 +4596,16 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     parcel = cell.intersection(clip_region)
                 except Exception:
                     parcel = cell
+
+            # Hard non-overlap: never let a new parcel collide with already drawn
+            # HP parcels (including previous points in this same group).
+            if parcel is not None and not parcel.is_empty and self.home_number_boxes:
+                try:
+                    occupied = unary_union(self.home_number_boxes)
+                    if occupied is not None and not occupied.is_empty:
+                        parcel = parcel.difference(occupied.buffer(0.05, join_style=2))
+                except Exception:
+                    pass
             if parcel is None or parcel.is_empty:
                 # Never lose an HP label because its allocated polygon became
                 # a degenerate sliver after road/FAT clipping.  The manual APD
