@@ -4607,34 +4607,33 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 except Exception:
                     pass
             if parcel is None or parcel.is_empty:
-                # Never lose an HP label because its allocated polygon became
-                # a degenerate sliver after road/FAT clipping.  The manual APD
-                # reference keeps every HP text even when no parcel outline is
-                # available, so retain the point label as a clean fallback.
-                text = str(item["text"])
-                self._add_centered_text(
-                    text,
-                    (float(site.x), float(site.y)),
-                    KML_HOME_PARCEL_TEXT_HEIGHT_METERS,
-                    dxfattribs=text_attrs,
-                    rotation=label_rotation,
-                )
-                self.register_fdt_entities(item.get("fdt_number"), self.output_entities[output_start_index:])
-                drawn += 1
-                continue
+                # Never lose an HP COVER outline. Fall back to the clipped cell;
+                # if that still fails, create a small minimum parcel around the
+                # HP point so every point always has a drawn parcel.
+                try:
+                    parcel = cell.intersection(clip_region)
+                except Exception:
+                    parcel = cell
+                if parcel is None or parcel.is_empty:
+                    fallback_w = max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0)
+                    fallback_h = max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0)
+                    parcel = self._home_number_box_polygon((float(site.x), float(site.y)), fallback_w, fallback_h, label_rotation)
+                    try:
+                        parcel = parcel.intersection(clip_region)
+                    except Exception:
+                        pass
             parcel = self._parcel_piece_containing(parcel, site)
             if parcel is None or parcel.is_empty or parcel.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
-                text = str(item["text"])
-                self._add_centered_text(
-                    text,
-                    (float(site.x), float(site.y)),
-                    KML_HOME_PARCEL_TEXT_HEIGHT_METERS,
-                    dxfattribs=text_attrs,
-                    rotation=label_rotation,
-                )
-                self.register_fdt_entities(item.get("fdt_number"), self.output_entities[output_start_index:])
-                drawn += 1
-                continue
+                fallback_w = max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0)
+                fallback_h = max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0)
+                parcel = self._home_number_box_polygon((float(site.x), float(site.y)), fallback_w, fallback_h, label_rotation)
+                try:
+                    parcel = parcel.intersection(clip_region)
+                except Exception:
+                    pass
+                parcel = self._parcel_piece_containing(parcel, site)
+            if parcel is None or parcel.is_empty:
+                parcel = self._home_number_box_polygon((float(site.x), float(site.y)), max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0), max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0), label_rotation)
 
             # A sub-millimetre inset removes floating-point sliver overlaps
             # between adjacent Voronoi cells while remaining invisible in CAD.
