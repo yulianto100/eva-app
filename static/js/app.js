@@ -7133,7 +7133,7 @@ async function submitAstriBoq(items, type) {
     renderStageProgress();
     preloadDashboardFrames();
     if (els.roadSourceSummary) els.roadSourceSummary.textContent = 'Server OSM aktif';
-    if (els.roadSourceHelper) els.roadSourceHelper.textContent = 'Data ROAD wajib memakai server OSM. Mengambil daftar wilayah…';
+    
     loadGeofabrikRegions();
     state.osmLoaded = false;
     loadOsmKecamatanRegions();

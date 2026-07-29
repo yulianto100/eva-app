@@ -133,7 +133,7 @@
 
             <div class="flow-section-card">
               <div class="flow-section-head">
-                <span class="flow-step">2</span>
+                <span class="flow-step">1</span>
                 <div>
                   <strong>Unggah File Desain</strong>
                   <small>Gunakan KML/KMZ berisi pole, kabel, boundary, FAT, atau FDT.</small>
@@ -187,7 +187,7 @@
 
             <section class="mode-card flow-section-card">
               <div id="mode-convert" data-tour-target="mode-convert" class="eva-tour-anchor flow-section-head">
-                <span class="flow-step">3</span>
+                <span class="flow-step">2</span>
                 <div>
                   <h3 class="text-sm font-semibold text-white">Pengaturan Konversi</h3>
                   <p class="mt-1 text-xs leading-5 text-zinc-400">Pilih cakupan, tipe jaringan, dan format output. Jika memilih lebih dari satu output, hasil dibuat sebagai ZIP.</p>
@@ -351,7 +351,7 @@
           <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Ruang Hasil</h2>
-              <p id="statusText" class="mt-1 text-sm text-zinc-400">Unggah file KML/KMZ, pilih wilayah ROAD dari server OSM, lalu klik Mulai Proses.</p>
+              <p id="statusText" class="mt-1 text-sm text-zinc-400">Unggah file KML/KMZ, pilih format output, lalu klik Mulai Proses.</p>
             </div>
             <div class="result-status-actions">
               <button id="cancelJobButton" type="button" class="secondary-button cancel-job-button hidden">Batalkan</button>
@@ -896,7 +896,7 @@
           <div class="help-panel-body">
             <ol>
               <li>Unggah file <code>.kml</code> atau <code>.kmz</code> untuk data desain.</li>
-              <li>Data ROAD wajib memakai server OSM. Pilih Provinsi, Kota, dan Kecamatan.</li>
+              <li>Untuk DXF, HPDB, atau ASTRI, pilih wilayah pada popup sebelum proses dimulai. ROAD OSM dipilih otomatis.</li>
               <li>Pilih cakupan, tipe jaringan, dan format output.</li>
               <li>Lihat checklist untuk memastikan konfigurasi sudah lengkap.</li>
               <li>Klik <strong>Mulai Proses</strong> untuk menjalankan konversi.</li>
@@ -983,7 +983,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="{{ url_for('static', filename='js/utils.js') }}?v=eva-20260605-folder-alias" defer></script>
   <script src="{{ url_for('static', filename='js/toast.js') }}?v=glass-mint-transparent-20260630b"></script>
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=fix-20260729-road-html-removed" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=fix-20260729-upload-order-clean" defer></script>
   <script src="{{ url_for('static', filename='js/eva-assistant.js') }}?v=eva-20260605-folder-alias" defer></script>
   <script type="module" src="{{ url_for('static', filename='js/notifications.js') }}?v=notif-fix-20260709-1029"></script>
 </body>
