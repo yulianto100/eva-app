@@ -130,27 +130,6 @@
           </div>
 
           <form id="uploadForm" class="space-y-5">
-            <div id="geofabrikPanel" class="geofabrik-panel">
-              <div id="roadSourcePanel" class="road-source-panel flow-section-card hidden" style="display:none!important">
-                                <div class="flow-section-head">
-                  <span class="flow-step">1</span>
-                  <div>
-                    <strong>Sumber Data ROAD</strong>
-                    <small id="roadSourceSummary">Server OSM aktif.</small>
-                  </div>
-                </div>
-                <div id="osmKecamatanPanel" class="road-source-body grid grid-cols-[1fr_2fr] gap-x-3 gap-y-2 items-center">
-                  <label for="osmProvinceSelect" class="text-sm font-medium text-zinc-300 text-right">Provinsi</label>
-                  <select id="osmProvinceSelect" class="ui-input geofabrik-select"></select>
-                  <label for="osmCitySelect" class="text-sm font-medium text-zinc-300 text-right">Kota</label>
-                  <select id="osmCitySelect" class="ui-input geofabrik-select"></select>
-                  <label for="osmKecamatanSelect" class="text-sm font-medium text-zinc-300 text-right">Kecamatan</label>
-                  <select id="osmKecamatanSelect" class="ui-input geofabrik-select"></select>
-                  <span id="osmKecamatanSize" class="col-span-2 text-xs text-zinc-500"></span>
-                </div>
-                <p id="roadSourceHelper" class="mt-2 text-xs text-zinc-500">Data ROAD wajib memakai server OSM. Pilih Provinsi, Kota, dan Kecamatan.</p>
-              </div>
-            </div>
 
             <div class="flow-section-card">
               <div class="flow-section-head">
@@ -1004,7 +983,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="{{ url_for('static', filename='js/utils.js') }}?v=eva-20260605-folder-alias" defer></script>
   <script src="{{ url_for('static', filename='js/toast.js') }}?v=glass-mint-transparent-20260630b"></script>
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=fix-20260729-road-manual-removed" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=fix-20260729-road-html-removed" defer></script>
   <script src="{{ url_for('static', filename='js/eva-assistant.js') }}?v=eva-20260605-folder-alias" defer></script>
   <script type="module" src="{{ url_for('static', filename='js/notifications.js') }}?v=notif-fix-20260709-1029"></script>
 </body>
