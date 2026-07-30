@@ -1506,6 +1506,29 @@ def standardize_fat_placemark_names(
     namespace: str,
     changes: list[dict],
 ) -> None:
+    def _extract_fat_suffix(name: str) -> str | None:
+        text = normalize_text(name).upper()
+        if not text:
+            return None
+        # Preferred modern forms: XXX-1.A01, FDT 1 A01, FDT-1_A01, etc.
+        modern = re.search(r"(?:^|\b)(?:[A-Z0-9]+[._ -]*)?(?:FDT\s*[-_ ]*\d+|XXX-\d+|RK-\d+|RR-\d+|TK-\d+)?[._ -]+(?P<fat>[A-Z]\d{2})\b", text)
+        if modern:
+            return modern.group("fat").upper()
+        # Raw suffix-only fallback: A01 / B02 / C03, etc.
+        raw = re.search(r"\b(?P<fat>[A-Z]\d{2})\b", text)
+        if raw:
+            return raw.group("fat").upper()
+        return None
+
+    def _fdt_code_for_record(record: FdtCodingRecord | None) -> str | None:
+        if not record:
+            return None
+        code = normalize_text(record.fdt_code).upper()
+        if not code:
+            return None
+        # No generic fallback: only use an actual code from the file.
+        return code
+
     for child in list(element):
         child_name = local_name(child.tag)
         if child_name in {"Document", "Folder"}:
@@ -1518,13 +1541,17 @@ def standardize_fat_placemark_names(
             continue
         name_element = ensure_direct_child(child, "name", namespace)
         old_name = normalize_text(name_element.text)
-        match = FAT_LEGACY_FDT_NAME_PATTERN.search(old_name)
-        if not match:
+        suffix = _extract_fat_suffix(old_name)
+        if not suffix:
             continue
-        record = record_for_fdt_order(records, int(match.group("fdt")))
-        if not record or not normalize_text(record.fdt_code):
-            continue
-        new_name = f"{normalize_text(record.fdt_code).upper()}.{match.group('fat').upper()}"
+        # Only use FDT code when it is a real code present in the file.
+        # No XXX fallback.
+        record = None
+        fdt_order_match = FAT_LEGACY_FDT_NAME_PATTERN.search(old_name)
+        if fdt_order_match:
+            record = record_for_fdt_order(records, int(fdt_order_match.group("fdt")))
+        fdt_code = _fdt_code_for_record(record)
+        new_name = f"{fdt_code}.{suffix}" if fdt_code else suffix
         if old_name == new_name:
             continue
         name_element.text = new_name
