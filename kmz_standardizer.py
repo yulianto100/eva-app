@@ -2413,6 +2413,31 @@ def ensure_line_standard_folders(project_folder: ET.Element, namespace: str, net
     return created
 
 def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str, changes: list[dict]) -> None:
+    def _normalize_hp_cover_placemark_name(raw_name: str) -> str:
+        name = normalize_text(raw_name).upper()
+        if not name:
+            return name
+        if name.startswith("NN-"):
+            return name
+        if (
+            name.startswith(("MR.", "EXT.", "FDT", "FAT", "RR-", "XXX-"))
+            or "SLACK" in name
+            or "HANGER" in name
+        ):
+            return name
+        if re.search(r"[A-Z]", name):
+            return f"NN-{name}"
+        return name
+
+    def _normalize_placemark_names_in(element: ET.Element) -> None:
+        for pm in list(element.iter(f"{{{namespace}}}Placemark")):
+            name_el = direct_child_by_name(pm, "name")
+            if name_el is None or name_el.text is None:
+                continue
+            normalized = _normalize_hp_cover_placemark_name(name_el.text)
+            if name_el.text != normalized:
+                name_el.text = normalized
+
     by_name: dict[str, ET.Element] = {}
     for child in list(hp_cover_folder):
         if local_name(child.tag) != "Folder":
@@ -2443,6 +2468,7 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
     ]
     folder_children.sort(key=lambda child: normalize_text(direct_child_text_by_name(child, "name")).upper())
     hp_cover_folder[:] = metadata_children + folder_children + other_children
+    _normalize_placemark_names_in(hp_cover_folder)
 
 def normalize_hp_cover_folders(
     element: ET.Element,
