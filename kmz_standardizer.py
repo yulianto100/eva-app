@@ -1520,17 +1520,31 @@ def standardize_fat_placemark_names(
             return raw.group("fat").upper()
         return None
 
-    def _fdt_code_for_record(record: FdtCodingRecord | None) -> str | None:
-        if not record:
-            return None
-        code = normalize_text(record.fdt_code).upper()
-        if not code:
-            return None
-        return code
+    def _base_cluster_key(name: str) -> str:
+        text = normalize_text(name).upper()
+        text = re.sub(r"\s*-\s*FDT\s*\d+\b", "", text)
+        return re.sub(r"\s+", " ", text).strip()
 
-    # Pre-compute FDT order from the folder stack once.
-    # This lets us match FAT placemarks under LINE A - FDT 1 -> fdt_order=1 -> PSGMB056.066
-    fdt_order_from_stack = extract_parent_fdt_order(folder_stack)
+    def _best_record_for_fat(folder_stack: list[str], records: Sequence[FdtCodingRecord]) -> FdtCodingRecord | None:
+        order = extract_parent_fdt_order(folder_stack)
+        if order is not None:
+            rec = record_for_fdt_order(records, order)
+            if rec:
+                return rec
+        # Fallback: choose the record whose site_name base matches the folder stack base.
+        base_stack = next((normalize_text(n).upper() for n in reversed(folder_stack) if "FDT" not in normalize_text(n).upper()), "")
+        base_stack = _base_cluster_key(base_stack)
+        best = None
+        best_score = 0
+        for rec in records:
+            base_site = _base_cluster_key(rec.site_name)
+            if not base_site:
+                continue
+            score = (base_stack in base_site) + (base_site in base_stack) + (base_stack == base_site)
+            if score > best_score:
+                best_score = score
+                best = rec
+        return best
 
     for child in list(element):
         child_name = local_name(child.tag)
@@ -1547,14 +1561,8 @@ def standardize_fat_placemark_names(
         suffix = _extract_fat_suffix(old_name)
         if not suffix:
             continue
-        # Find FDT order from: 1) placemark name pattern, 2) folder stack, 3) default 1
-        record = None
-        fdt_order_match = FAT_LEGACY_FDT_NAME_PATTERN.search(old_name)
-        if fdt_order_match:
-            record = record_for_fdt_order(records, int(fdt_order_match.group("fdt")))
-        if not record and fdt_order_from_stack is not None:
-            record = record_for_fdt_order(records, fdt_order_from_stack)
-        fdt_code = _fdt_code_for_record(record)
+        record = _best_record_for_fat(folder_stack, records)
+        fdt_code = (normalize_text(record.fdt_code).upper() if record and normalize_text(record.fdt_code) else None)
         new_name = f"{fdt_code}.{suffix}" if fdt_code else suffix
         if old_name == new_name:
             continue
