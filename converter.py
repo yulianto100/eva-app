@@ -125,10 +125,6 @@ REQUIRED_KML_FOLDERS = [
     "NEW HH 20X20X20",
     "NEW HH 40X40X60",
     "NEW HH 80X80X130",
-    "EXISTING HH 20X20X20",
-    "EXISTING HH 40X40X60",
-    "EXISTING HH 80X80X130",
-    "HANDHOLE 80X80X130",
     "TWEY",
 ]
 OPTIONAL_KML_FOLDERS = [
@@ -177,11 +173,6 @@ STANDARD_KML_FOLDER_ALIASES.update(
             "NEW HH 20 X 20 X 20": "NEW HH 20X20X20",
             "NEW HH 40 X 40 X 60": "NEW HH 40X40X60",
             "NEW HH 80 X 80 X 130": "NEW HH 80X80X130",
-            "EXISTING HH 20 X 20 X 20": "EXISTING HH 20X20X20",
-            "EXISTING HH 40 X 40 X 60": "EXISTING HH 40X40X60",
-            "EXISTING HH 80 X 80 X 130": "EXISTING HH 80X80X130",
-            "HANDHOLE 80 X 80 X 130": "HANDHOLE 80X80X130",
-            "HANDHOLE 80": "HANDHOLE 80X80X130",
             "T-WAY": "TWEY",
             "T-WEY": "TWEY",
             "FAT AREA": "BOUNDARY FAT",
@@ -210,7 +201,6 @@ KML_UNCOVER_BOX_LAYER = "HP_UNCOVER_BOX"
 KML_UNCOVER_BOX_COLOR = DXF_LAYERS["ROAD"]
 KML_UNCOVER_COLOR = DXF_LAYERS["ROAD"]
 KML_HOME_NUMBER_HEIGHT_METERS = 0.86
-KML_HOME_PARCEL_TEXT_HEIGHT_METERS = 1.0
 KML_HOME_NUMBER_TEXT_WIDTH_FACTOR = 0.72
 KML_HOME_NUMBER_PADDING_X_METERS = 0.7
 KML_HOME_NUMBER_PADDING_Y_METERS = 0.62
@@ -249,15 +239,6 @@ KML_HOME_PARCEL_INSET_METERS = 0.18
 # hand-drawn cadastral look where parcel boxes extend a bit past the dashed
 # FAT boundary ??? following its contour.
 KML_HOME_PARCEL_FAT_OVERFLOW_METERS = 1.0
-# Manual APD reference uses narrow road-fronting lots and keeps HOME_NUMBER
-# text parallel to the frontage.  These bounds prevent the near-square,
-# independently-rotated boxes produced by the former area-only sizing rule.
-KML_HOME_PARCEL_FRONTAGE_MIN_METERS = 3.8
-KML_HOME_PARCEL_FRONTAGE_MAX_METERS = 8.5
-KML_HOME_PARCEL_DEPTH_MIN_METERS = 8.0
-KML_HOME_PARCEL_DEPTH_MAX_METERS = 28.0
-KML_HOME_PARCEL_TANGENT_WINDOW_METERS = 12.0
-KML_HOME_PARCEL_ANGLE_SNAP_DEGREES = 0.5
 KML_HOME_NUMBER_OCCUPANCY_SEARCH_RADIUS_METERS = 72.0
 KML_DISTRIBUTION_CABLE_WIDTH = 0.10
 KML_SLING_WIRE_LAYER = "SLING_WIRE"
@@ -277,36 +258,13 @@ KML_DISTANCE_LABEL_HEIGHT_METERS = 1.45
 KML_DISTANCE_LABEL_OFFSET_METERS = 1.35
 KML_DISTANCE_LABEL_MIN_METERS = 5.0
 KML_DISTANCE_LABEL_DUPLICATE_RADIUS_METERS = 10.0
-DISTRIBUTION_CABLE_CORE_SPECS = (
-    ("12", "1", "FO_12_CORE", "12/1T", 140),
-    ("24", "2", "FO_24_CORE", "24/2T", 3),
-    ("36", "3", "FO_36_CORE", "36/3T", 6),
-    ("48", "4", "FO_48_CORE", "48/4T", 200),
-    ("72", "6", "FO_72_CORE", "72/6T", 16),
-    ("96", "8", "FO_96_CORE", "96/8T", 1),
-    ("144", "12", "FO_144_CORE", "144/12T", 2),
-    ("288", "24", "FO_288_CORE", "288/24T", 40),
-)
-DISTRIBUTION_CABLE_CORE_LAYER_RULES = tuple(
-    (
-        re.compile(
-            rf"(?<![A-Z0-9])(?:FO\s*)?{core}\s*C(?:\s*/\s*{tube}\s*T)?(?!\s*/)(?![A-Z0-9])",
-            re.IGNORECASE,
-        ),
-        layer_name,
-    )
-    for core, tube, layer_name, _summary_key, _aci_color in DISTRIBUTION_CABLE_CORE_SPECS
-)
-DISTRIBUTION_CABLE_CORE_LAYER_COLORS = {
-    layer_name: aci_color
-    for _core, _tube, layer_name, _summary_key, aci_color in DISTRIBUTION_CABLE_CORE_SPECS
-}
-DISTRIBUTION_CABLE_SUMMARY_RULES = tuple(
-    (pattern, summary_key)
-    for pattern, (_core, _tube, _layer_name, summary_key, _aci_color) in zip(
-        (rule[0] for rule in DISTRIBUTION_CABLE_CORE_LAYER_RULES),
-        DISTRIBUTION_CABLE_CORE_SPECS,
-    )
+DISTRIBUTION_CABLE_CORE_LAYER_RULES = (
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?24\s*C(?:\s*/\s*2\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "FO_24_CORE"),
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?36\s*C(?:\s*/\s*3\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "FO_26_CORE"),
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?48\s*C(?:\s*/\s*4\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "FO_48_CORE"),
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?96\s*C\s*/\s*8\s*T(?![A-Z0-9])", re.IGNORECASE), "FO_96_CORE"),
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?144\s*C\s*/\s*12\s*T(?![A-Z0-9])", re.IGNORECASE), "FO_144_CORE"),
+    (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?288\s*C\s*/\s*24\s*T(?![A-Z0-9])", re.IGNORECASE), "FO_288_CORE"),
 )
 KML_FAT_LAYER = "FAT"
 KML_FAT_AREA_LAYER = "FAT_AREA"
@@ -314,17 +272,15 @@ KML_FAT_AREA_COLOR = 134
 KML_FAT_AREA_LINETYPE = "PHANTOM2"
 KML_FAT_BLOCK_NAME = "FAT_ICON"
 KML_FAT_ATTR_TAG = "FAT_CODE"
-KML_FAT_COVERAGE_ATTR_TAG = "FAT_COVERAGE"
 KML_FAT_ICON_WIDTH_METERS = 3.2
 KML_FAT_ICON_HEIGHT_METERS = 2.2
 KML_FAT_ICON_INNER_INSET_METERS = 0.14
 KML_FAT_TO_POLE_GAP_METERS = 0.6
 KML_FAT_CODE_HEIGHT_METERS = 1.25
-KML_FAT_LABEL_GAP_METERS = 0.35
 KML_FAT_BORDER_COLOR = 30
 KML_FDT_LAYER = "FDT"
 KML_FDT_BLOCK_NAME = "FDT_ICON"
-KML_FDT_ATTR_TAG = "FDT_CAPACITY"
+KML_FDT_ATTR_TAG = "FDT_CODE"
 KML_FDT_ICON_WIDTH_METERS = 8.4
 KML_FDT_ICON_HEIGHT_METERS = 5.6
 KML_FDT_ICON_INNER_INSET_METERS = 0.28
@@ -332,18 +288,6 @@ KML_FDT_LABEL_GAP_METERS = 0.65
 KML_FDT_LABEL_HEIGHT_METERS = 1.45
 KML_FDT_TEXT_HEIGHT_METERS = 2.75
 KML_FDT_BORDER_COLOR = 1
-KML_FDT_BYBLOCK_COLOR = 0
-KML_FDT_CAPACITY_TRUE_COLORS = {
-    288: 0xFFAA00,
-    144: 0xFFFF00,
-    96: 0xFF0000,
-    72: 0x550000,
-    48: 0xAA00FF,
-}
-KML_FDT_DEFAULT_TRUE_COLOR = KML_FDT_CAPACITY_TRUE_COLORS[48]
-KML_FDT_AE_MARKER_TRUE_COLOR = 0xFF0000
-KML_FDT_AE_MARKER_RADIUS_METERS = 1.35
-KML_FDT_AE_MARKER_GAP_METERS = 0.45
 KML_OLT_LAYER = "OLT"
 KML_OLT_BLOCK_NAME = "OLT_ICON"
 KML_OLT_COLOR = 1
@@ -374,9 +318,6 @@ KML_HANDHOLE_ICON_SIZE_METERS = 3.2
 KML_HANDHOLE_ICON_INSET_METERS = 0.22
 KML_HANDHOLE_TEXT_HEIGHT_METERS = 0.86
 KML_HANDHOLE_LABEL_HEIGHT_METERS = 0.75
-KML_HANDHOLE_CALLOUT_HEIGHT_METERS = 2.8
-KML_HANDHOLE_CALLOUT_GAP_METERS = 5.0
-KML_HANDHOLE_CALLOUT_COLOR = 1
 KML_TWEY_LAYER = "TWEY"
 KML_TWEY_BLOCK_NAME = "TWEY_ICON"
 KML_TWEY_COLOR = 1
@@ -509,7 +450,7 @@ ROAD_MIN_POLYGON_AREA_SQUARE_METERS = 12.0
 # read as a double line (road edge + inner edge) like standard CAD road
 # drawings, instead of a single thin outline. The inner boundary is the road
 # polygon shrunk inward by this offset.
-ROAD_INNER_LINE_OFFSET_METERS = 0.30
+ROAD_INNER_LINE_OFFSET_METERS = 0.9
 ROAD_INNER_LINE_MIN_POLYGON_AREA_SQUARE_METERS = 18.0
 ROAD_NAME_LABEL_HEIGHT_METERS = 1.05
 ROAD_NAME_LABEL_MIN_HEIGHT_METERS = 0.55
@@ -841,7 +782,13 @@ def distribution_cable_core_layer(*values: str | None) -> str | None:
 
 def distribution_cable_summary_key(*values: str | None) -> str | None:
     search_text = " ".join(value or "" for value in values)
-    for pattern, key in DISTRIBUTION_CABLE_SUMMARY_RULES:
+    rules = (
+        (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?24\s*C(?:\s*/\s*2\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "24/2T"),
+        (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?36\s*C(?:\s*/\s*3\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "36/3T"),
+        (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?48\s*C(?:\s*/\s*4\s*T)?(?!\s*/)(?![A-Z0-9])", re.IGNORECASE), "48/4T"),
+        (re.compile(r"(?<![A-Z0-9])(?:FO\s*)?72\s*C\s*/\s*6\s*T(?![A-Z0-9])", re.IGNORECASE), "72/6T"),
+    )
+    for pattern, key in rules:
         if pattern.search(search_text):
             return key
     return None
@@ -881,7 +828,6 @@ def kml_special_linestring_spec(folder_stack: Sequence[str], name: str = "") -> 
         if core_layer:
             return {
                 "layer": core_layer,
-                "color": DISTRIBUTION_CABLE_CORE_LAYER_COLORS[core_layer],
                 "width": KML_DISTRIBUTION_CABLE_WIDTH,
                 "lineweight": KML_CABLE_LINEWEIGHT,
                 "draw_order": "top_cable",
@@ -1014,10 +960,6 @@ def kml_pole_folder_spec(folder_name: str | None) -> dict | None:
 FAT_CODE_PATTERN = re.compile(r"(?<![A-Z0-9])([A-E]\d{2})(?![A-Z0-9])")
 PARENT_FDT_NUMBER_PATTERN = re.compile(r"(?<![A-Z0-9])FDT\s*[-_\s]*(\d+)(?![A-Z0-9])", re.IGNORECASE)
 FDT_SUFFIX_PATTERN = re.compile(r"\.(\d+)\D*$")
-FDT_CAPACITY_PATTERN = re.compile(
-    r"(?<![A-Z0-9])(24|48|72|96|144|288)\s*(?:C|CORE|CORES)(?![A-Z0-9])",
-    re.IGNORECASE,
-)
 
 
 def find_fat_code(value: str | None) -> str | None:
@@ -1067,14 +1009,6 @@ def extract_fdt_label_from_path(folder_stack: Sequence[str], name: str = "") -> 
     return "FDT"
 
 
-def extract_fdt_capacity(*values: str | None) -> int | None:
-    for value in values:
-        match = FDT_CAPACITY_PATTERN.search(value or "")
-        if match:
-            return int(match.group(1))
-    return None
-
-
 def is_road_clip_boundary_folder(folder_stack: Sequence[str]) -> bool:
     boundary_name = normalized_folder_name(ROAD_CLIP_BOUNDARY_FOLDER)
     return any(normalized_folder_name(folder_name) == boundary_name for folder_name in folder_stack)
@@ -1116,62 +1050,14 @@ def kml_handhole_folder_spec(folder_name: str | None) -> dict | None:
             "size_text": "40",
             "label_lines": ("HANDHOLE", "40x40x60 cm"),
         },
-        "EXISTING HH 40X40X60": {
-            "layer": KML_HANDHOLE_40_LAYER,
-            "block": KML_HANDHOLE_40_BLOCK_NAME,
-            "size_text": "40",
-            "label_lines": ("HANDHOLE", "40x40x60 cm"),
-        },
         "NEW HH 80X80X130": {
             "layer": KML_HANDHOLE_80_LAYER,
             "block": KML_HANDHOLE_80_BLOCK_NAME,
             "size_text": "80",
             "label_lines": ("HANDHOLE", "80x80x130 cm"),
         },
-        "EXISTING HH 80X80X130": {
-            "layer": KML_HANDHOLE_80_LAYER,
-            "block": KML_HANDHOLE_80_BLOCK_NAME,
-            "size_text": "80",
-            "label_lines": ("HANDHOLE", "80x80x130 cm"),
-        },
-        "HANDHOLE 80X80X130": {
-            "layer": KML_HANDHOLE_80_LAYER,
-            "block": KML_HANDHOLE_80_BLOCK_NAME,
-            "size_text": "80",
-            "label_lines": ("HANDHOLE", "80x80x130 cm"),
-        },
     }
     return specs.get(canonical)
-
-
-def kml_handhole_sequence_spec(folder_name: str | None) -> dict | None:
-    canonical = canonical_standard_folder(folder_name) or normalized_folder_name(folder_name or "")
-    specs = {
-        "NEW HH 20X20X20": {"sequence_owner": "NEW", "sequence_prefix": "HHPIT", "sequence_priority": 2},
-        "NEW HH 40X40X60": {"sequence_owner": "NEW", "sequence_prefix": "HH", "sequence_priority": 1},
-        "NEW HH 80X80X130": {"sequence_owner": "NEW", "sequence_prefix": "HH", "sequence_priority": 0},
-        "EXISTING HH 20X20X20": {"sequence_owner": "EXT", "sequence_prefix": "HHPIT", "sequence_priority": 2},
-        "EXISTING HH 40X40X60": {"sequence_owner": "EXT", "sequence_prefix": "HH", "sequence_priority": 1},
-        "EXISTING HH 80X80X130": {"sequence_owner": "EXT", "sequence_prefix": "HH", "sequence_priority": 0},
-        "HANDHOLE 80X80X130": {"sequence_owner": "NEW", "sequence_prefix": "HH", "sequence_priority": 0},
-    }
-    return specs.get(canonical)
-
-
-def kml_handhole_source_code(name: str | None) -> str:
-    parts = [part for part in (name or "").strip().upper().split(".") if part]
-    if len(parts) < 2 or not re.fullmatch(r"(?:P\d+|HH(?:PIT)?\d+)", parts[-1], re.IGNORECASE):
-        return ""
-    if parts[:2] == ["EXT", "MR"]:
-        start = 2
-    elif parts[0] == "MR":
-        start = 1
-    else:
-        start = 0
-    code_parts = parts[start:-1]
-    if not code_parts or any(not re.fullmatch(r"[A-Z0-9-]+", part) for part in code_parts):
-        return ""
-    return ".".join(code_parts)
 
 
 def is_twey_folder(folder_name: str | None) -> bool:
@@ -1560,14 +1446,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.pending_home_numbers: list[dict] = []
         self.pending_uncover_home_numbers: list[dict] = []
         self.pending_fat_icons: list[dict] = []
-        self.pending_fdt_icons: list[dict] = []
         self.pending_handhole_icons: list[dict] = []
         self.pending_twey_points: list[dict] = []
         self.pending_olt_icons: list[dict] = []
         self.pending_pole_ids: list[dict] = []
         self.fat_callout_refs: list[dict] = []
         self.home_number_boxes: list[Polygon] = []
-        self.home_number_text_boxes: list[Polygon] = []
         # Pole positions used for snapping nearby slack/joint closure/cable
         # placemarks to the centre of an existing pole icon.
         self.pole_positions: list[Point] = []
@@ -1643,8 +1527,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self._ensure_layer(KML_TWEY_LAYER, color=KML_TWEY_COLOR)
         self._ensure_layer(KML_HOME_NUMBER_LAYER, color=KML_HOME_NUMBER_COLOR)
         self._ensure_layer(KML_DISTANCE_LABEL_LAYER, color=KML_DISTANCE_LABEL_COLOR)
-        for layer_name, color in DISTRIBUTION_CABLE_CORE_LAYER_COLORS.items():
-            self._ensure_layer(layer_name, color=color)
         self._ensure_exact_layer(KML_HOME_NUMBER_BOX_LAYER, color=KML_HOME_NUMBER_BOX_COLOR)
         if TEMPLATE_LAYER not in self.doc.layers:
             self.doc.layers.add(TEMPLATE_LAYER, color=7)
@@ -2210,9 +2092,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 KML_FAT_BLOCK_NAME,
                 KML_FAT_ICON_WIDTH_METERS,
                 KML_FAT_ICON_HEIGHT_METERS,
-            ) and self._block_attdef_tags_match(
-                KML_FAT_BLOCK_NAME,
-                {KML_FAT_ATTR_TAG, KML_FAT_COVERAGE_ATTR_TAG},
             ):
                 return
             self.doc.blocks.delete_block(KML_FAT_BLOCK_NAME, safe=False)
@@ -2236,28 +2115,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             KML_FAT_ICON_WIDTH_METERS - KML_FAT_ICON_INNER_INSET_METERS * 2,
             KML_FAT_ICON_HEIGHT_METERS - KML_FAT_ICON_INNER_INSET_METERS * 2,
         )
-        coverage = block.add_attdef(
-            KML_FAT_COVERAGE_ATTR_TAG,
-            insert=(0, 0),
-            text="0",
-            height=KML_FAT_CODE_HEIGHT_METERS,
-            dxfattribs=text_attrs,
-        )
-        coverage.set_placement((0, 0), align=TextEntityAlignment.MIDDLE_CENTER)
-        code_center = (
-            0.0,
-            KML_FAT_ICON_HEIGHT_METERS / 2
-            + KML_FAT_LABEL_GAP_METERS
-            + KML_FAT_CODE_HEIGHT_METERS / 2,
-        )
         code = block.add_attdef(
             KML_FAT_ATTR_TAG,
-            insert=code_center,
+            insert=(0, 0),
             text="FAT",
             height=KML_FAT_CODE_HEIGHT_METERS,
             dxfattribs=text_attrs,
         )
-        code.set_placement(code_center, align=TextEntityAlignment.MIDDLE_CENTER)
+        code.set_placement((0, 0), align=TextEntityAlignment.MIDDLE_CENTER)
 
     def _block_line_extent_matches(self, block_name: str, width: float, height: float) -> bool:
         try:
@@ -2276,59 +2141,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         actual_height = max(y for _x, y in points) - min(y for _x, y in points)
         return math.isclose(actual_width, width, abs_tol=1e-6) and math.isclose(actual_height, height, abs_tol=1e-6)
 
-    def _block_attdef_tags_match(self, block_name: str, expected_tags: set[str]) -> bool:
-        try:
-            block = self.doc.blocks.get(block_name)
-        except Exception:
-            return False
-        actual_tags = {
-            str(entity.dxf.tag).upper()
-            for entity in block
-            if entity.dxftype() == "ATTDEF"
-        }
-        return actual_tags == {tag.upper() for tag in expected_tags}
-
-    def _block_entity_colors_match(self, block_name: str, entity_types: set[str], expected_color: int) -> bool:
-        try:
-            block = self.doc.blocks.get(block_name)
-        except Exception:
-            return False
-        checked = False
-        for entity in block:
-            if entity.dxftype() not in entity_types:
-                continue
-            checked = True
-            if int(entity.dxf.color) != int(expected_color):
-                return False
-        return checked
-
-    def _block_entity_true_colors_match(
-        self,
-        block_name: str,
-        entity_types: set[str],
-        expected_true_color: int,
-    ) -> bool:
-        try:
-            block = self.doc.blocks.get(block_name)
-        except Exception:
-            return False
-        checked = False
-        for entity in block:
-            if entity.dxftype() not in entity_types:
-                continue
-            checked = True
-            if getattr(entity.dxf, "true_color", None) != int(expected_true_color):
-                return False
-        return checked
-
-    def _add_kml_fat_icon(
-        self,
-        projected: Point,
-        code: str,
-        coverage: int,
-        style: dict | None = None,
-        rotation: float = 0.0,
-    ) -> object:
+    def _add_kml_fat_icon(self, projected: Point, code: str, style: dict | None = None, rotation: float = 0.0) -> object:
         self._ensure_kml_fat_block()
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
         x, y = projected
@@ -2348,58 +2161,27 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             }
         )
         insert = self.modelspace.add_blockref(KML_FAT_BLOCK_NAME, insert_point, dxfattribs=attrs)
-        insert.add_auto_attribs(
-            {
-                KML_FAT_ATTR_TAG: code.strip() or "FAT",
-                KML_FAT_COVERAGE_ATTR_TAG: str(max(0, int(coverage))),
-            }
-        )
+        insert.add_auto_attribs({KML_FAT_ATTR_TAG: code.strip() or "FAT"})
         for attrib in insert.attribs:
             attrib.dxf.layer = KML_FAT_LAYER
             attrib.dxf.color = 7
         self.fat_fdt_overlay_entities.append(insert)
         return self._remember_output(insert)
 
-    def _kml_fdt_block_name(self, true_color: int) -> str:
-        suffix = "UG" if self.network_type == "UG" else "AE"
-        return f"{KML_FDT_BLOCK_NAME}_{suffix}_{int(true_color):06X}"
-
-    def _ensure_kml_fdt_block(self, true_color: int) -> str:
+    def _ensure_kml_fdt_block(self) -> None:
         layer_name = self._ensure_layer(KML_FDT_LAYER, KML_FDT_BORDER_COLOR)
-        block_name = self._kml_fdt_block_name(true_color)
-        color = true_color_to_aci(true_color)
-        if block_name in self.doc.blocks:
-            marker_matches = any(
-                entity.dxftype() == "CIRCLE"
-                for entity in self.doc.blocks.get(block_name)
-            ) == (self.network_type != "UG")
+        if KML_FDT_BLOCK_NAME in self.doc.blocks:
             if self._block_line_extent_matches(
-                block_name,
+                KML_FDT_BLOCK_NAME,
                 KML_FDT_ICON_WIDTH_METERS,
                 KML_FDT_ICON_HEIGHT_METERS,
-            ) and self._block_attdef_tags_match(
-                block_name,
-                {KML_FDT_ATTR_TAG},
-            ) and self._block_entity_colors_match(
-                block_name,
-                {"LINE", "ATTDEF"},
-                color,
-            ) and self._block_entity_true_colors_match(
-                block_name,
-                {"LINE", "ATTDEF"},
-                true_color,
-            ) and marker_matches:
-                return block_name
-            self.doc.blocks.delete_block(block_name, safe=False)
+            ):
+                return
+            self.doc.blocks.delete_block(KML_FDT_BLOCK_NAME, safe=False)
 
-        block = self.doc.blocks.new(name=block_name)
-        border_attrs = self._supported_attrs({"layer": layer_name, "color": color, "true_color": true_color})
-        text_attrs = self._supported_attrs({"layer": layer_name, "color": color, "true_color": true_color})
-        ae_marker_attrs = {
-            "layer": layer_name,
-            "color": true_color_to_aci(KML_FDT_AE_MARKER_TRUE_COLOR),
-            "true_color": KML_FDT_AE_MARKER_TRUE_COLOR,
-        }
+        block = self.doc.blocks.new(name=KML_FDT_BLOCK_NAME)
+        border_attrs = {"layer": layer_name, "color": KML_FDT_BORDER_COLOR}
+        text_attrs = {"layer": layer_name, "color": 7}
 
         def rectangle(width: float, height: float) -> None:
             left = -width / 2
@@ -2419,38 +2201,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         code = block.add_attdef(
             KML_FDT_ATTR_TAG,
             insert=(0, 0),
-            text="72",
+            text="FDT",
             height=KML_FDT_TEXT_HEIGHT_METERS,
             dxfattribs=text_attrs,
         )
         code.set_placement((0, 0), align=TextEntityAlignment.MIDDLE_CENTER)
-
-        if self.network_type != "UG":
-            radius = KML_FDT_AE_MARKER_RADIUS_METERS
-            center = (
-                0.0,
-                KML_FDT_ICON_HEIGHT_METERS / 2
-                + KML_FDT_AE_MARKER_GAP_METERS
-                + radius,
-            )
-            block.add_circle(center, radius, dxfattribs=ae_marker_attrs)
-            circle_points = [
-                (
-                    center[0] + radius * math.cos(2 * math.pi * index / 36),
-                    center[1] + radius * math.sin(2 * math.pi * index / 36),
-                )
-                for index in range(36)
-            ]
-            try:
-                hatch = block.add_hatch(
-                    color=true_color_to_aci(KML_FDT_AE_MARKER_TRUE_COLOR),
-                    dxfattribs={"layer": layer_name, "true_color": KML_FDT_AE_MARKER_TRUE_COLOR},
-                )
-                hatch.set_solid_fill(color=true_color_to_aci(KML_FDT_AE_MARKER_TRUE_COLOR))
-                hatch.paths.add_polyline_path(circle_points, is_closed=True)
-            except Exception as exc:
-                LOGGER.debug("FDT aerial marker hatch skipped: %s", exc)
-        return block_name
 
     def _fdt_label_height(self, label: str, scale: float) -> float:
         available_width = KML_FDT_ICON_WIDTH_METERS * 1.6 * scale
@@ -2461,24 +2216,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             KML_FDT_LABEL_HEIGHT_METERS * scale,
         )
 
-    def _fdt_true_color(self, capacity: int, style: dict | None = None) -> int:
-        style = style or {}
-        for key in ("icon_color", "line_color", "poly_color"):
-            value = style.get(key)
-            if value is not None:
-                return int(value)
-        return int(KML_FDT_CAPACITY_TRUE_COLORS.get(int(capacity), KML_FDT_DEFAULT_TRUE_COLOR))
-
-    def _add_kml_fdt_icon(
-        self,
-        projected: Point,
-        label: str,
-        capacity: int,
-        style: dict | None = None,
-    ) -> None:
+    def _add_kml_fdt_icon(self, projected: Point, label: str, style: dict | None = None) -> None:
+        self._ensure_kml_fdt_block()
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
-        true_color = self._fdt_true_color(capacity, style)
-        block_name = self._ensure_kml_fdt_block(true_color)
         x, y = projected
         insert_point = (
             x,
@@ -2486,25 +2226,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             + (KML_POLE_ICON_SIZE_METERS / 2 + KML_FAT_TO_POLE_GAP_METERS + KML_FDT_ICON_HEIGHT_METERS / 2)
             * scale,
         )
-        color = true_color_to_aci(true_color)
         attrs = self._supported_attrs(
             {
                 "layer": KML_FDT_LAYER,
-                "color": color,
-                "true_color": true_color,
+                "color": KML_FDT_BORDER_COLOR,
                 "xscale": scale,
                 "yscale": scale,
             }
         )
-        insert = self.modelspace.add_blockref(block_name, insert_point, dxfattribs=attrs)
-        insert.add_auto_attribs({KML_FDT_ATTR_TAG: str(int(capacity))})
+        insert = self.modelspace.add_blockref(KML_FDT_BLOCK_NAME, insert_point, dxfattribs=attrs)
+        insert.add_auto_attribs({KML_FDT_ATTR_TAG: "FDT"})
         for attrib in insert.attribs:
             attrib.dxf.layer = KML_FDT_LAYER
-            attrib.dxf.color = color
-            try:
-                attrib.dxf.true_color = true_color
-            except Exception:
-                pass
+            attrib.dxf.color = 7
         self.fat_fdt_overlay_entities.append(insert)
         self._remember_output(insert)
 
@@ -2513,13 +2247,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             label_height = self._fdt_label_height(clean_label, scale)
             label_center = (
                 x,
-                insert_point[1] - (KML_FDT_ICON_HEIGHT_METERS / 2 + KML_FDT_LABEL_GAP_METERS) * scale - label_height / 2,
+                insert_point[1] + (KML_FDT_ICON_HEIGHT_METERS / 2 + KML_FDT_LABEL_GAP_METERS) * scale + label_height / 2,
             )
             label_text = self._add_centered_text(
                 clean_label,
                 label_center,
                 label_height,
-                dxfattribs={"layer": KML_FDT_LAYER, "color": color, "true_color": true_color},
+                dxfattribs={"layer": KML_FDT_LAYER, "color": KML_FDT_BORDER_COLOR},
             )
             if label_text is not None:
                 self.fat_fdt_overlay_entities.append(label_text)
@@ -2631,7 +2365,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         spec: dict,
         style: dict | None = None,
         rotation: float = 0.0,
-        label: str = "",
     ) -> object:
         block_name = self._ensure_kml_handhole_block(spec)
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
@@ -2647,16 +2380,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             }
         )
         insert = self.modelspace.add_blockref(block_name, projected, dxfattribs=attrs)
-        remembered = self._remember_output(insert)
-        if label:
-            x, y = projected
-            text_entity = self._add_text(
-                label,
-                (x - KML_HANDHOLE_ICON_SIZE_METERS * scale, y - KML_HANDHOLE_CALLOUT_GAP_METERS * scale),
-                KML_HANDHOLE_CALLOUT_HEIGHT_METERS * scale,
-                dxfattribs={"layer": layer_name, "color": KML_HANDHOLE_CALLOUT_COLOR},
-            )
-        return remembered
+        return self._remember_output(insert)
 
     def _ensure_kml_twey_block(self) -> None:
         layer_name = self._ensure_layer(KML_TWEY_LAYER, KML_TWEY_COLOR)
@@ -2741,26 +2465,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         )
         return clean_code
 
-    def _queue_kml_fdt_icon(
-        self,
-        projected: Point,
-        label: str,
-        description: str = "",
-        style: dict | None = None,
-        fdt_number: int | None = None,
-    ) -> str:
-        clean_label = (label or "").strip() or "FDT"
-        self.pending_fdt_icons.append(
-            {
-                "projected": projected,
-                "label": clean_label,
-                "capacity": extract_fdt_capacity(description, label),
-                "style": dict(style or {}),
-                "fdt_number": fdt_number or len(self.pending_fdt_icons) + 1,
-            }
-        )
-        return clean_label
-
     def _queue_kml_handhole_icon(
         self,
         projected: Point,
@@ -2824,53 +2528,16 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             )
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
 
-    def finalize_fdt_icons(self, pipeline_logger=None) -> None:
-        if not self.pending_fdt_icons:
-            return
-        fat_counts = Counter(
-            pending.get("fdt_number")
-            for pending in self.pending_fat_icons
-            if pending.get("fdt_number") is not None
-        )
-        for pending in self.pending_fdt_icons:
-            fdt_number = pending.get("fdt_number")
-            capacity = pending.get("capacity")
-            if not capacity:
-                if self.network_type == "UG":
-                    capacity = 144
-                else:
-                    capacity = 48 if fat_counts.get(fdt_number, 0) <= 20 else 72
-            output_start_index = len(self.output_entities)
-            self._add_kml_fdt_icon(
-                pending["projected"],
-                str(pending.get("label") or "FDT"),
-                int(capacity),
-                pending.get("style") or {},
-            )
-            self.register_fdt_entities(fdt_number, self.output_entities[output_start_index:])
-
     def finalize_fat_icons(self, pipeline_logger=None) -> None:
         if not self.pending_fat_icons:
             return
 
-        hp_counts = Counter(
-            (pending.get("fdt_number"), str(pending.get("fat_code") or "").upper())
-            for pending in self.pending_home_numbers
-            if pending.get("fat_code")
-        )
         for pending in self.pending_fat_icons:
             output_start_index = len(self.output_entities)
             frame = self._nearest_cable_frame(pending["projected"])
             insert = self._add_kml_fat_icon(
                 pending["projected"],
                 str(pending.get("code") or "FAT"),
-                hp_counts.get(
-                    (
-                        pending.get("fdt_number"),
-                        str(pending.get("code") or "").upper(),
-                    ),
-                    0,
-                ),
                 pending.get("style") or {},
                 rotation=float(frame.get("rotation") or 0.0),
             )
@@ -2884,53 +2551,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             )
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
 
-    def _standardized_pending_handhole_icons(self) -> list[dict]:
-        indexed = list(enumerate(self.pending_handhole_icons))
-        indexed.sort(
-            key=lambda item: (
-                int(item[1].get("spec", {}).get("sequence_priority", 99)),
-                item[0],
-            )
-        )
-        counters: dict[tuple[str, str, str], int] = {}
-        ordered: list[dict] = []
-        for _source_order, pending in indexed:
-            owner = str(pending.get("spec", {}).get("sequence_owner") or "")
-            prefix = str(pending.get("spec", {}).get("sequence_prefix") or "")
-            code = kml_handhole_source_code(str(pending.get("name") or ""))
-            if owner and prefix and code:
-                counter_key = (owner, code, prefix)
-                counters[counter_key] = counters.get(counter_key, 0) + 1
-                name_prefix = "EXT.MR" if owner == "EXT" else "MR"
-                pending["name"] = f"{name_prefix}.{code}.{prefix}{counters[counter_key]:03d}"
-            ordered.append(pending)
-        return ordered
-
     def finalize_handhole_icons(self, pipeline_logger=None) -> None:
         if not self.pending_handhole_icons:
             return
 
-        for pending in self._standardized_pending_handhole_icons():
+        for pending in self.pending_handhole_icons:
             output_start_index = len(self.output_entities)
-            if pending["spec"].get("preserve_generic_icon"):
-                self._add_kml_icon(pending["projected"], pending.get("style") or {})
-                self._add_kml_label(
-                    str(pending.get("name") or ""),
-                    pending["projected"],
-                    pending.get("style") or {},
-                )
-                self.register_fdt_entities(
-                    pending.get("fdt_number"),
-                    self.output_entities[output_start_index:],
-                )
-                continue
             frame = self._nearest_cable_frame(pending["projected"])
             self._add_kml_handhole_icon(
                 pending["projected"],
                 pending["spec"],
                 pending.get("style") or {},
                 rotation=float(frame.get("rotation") or 0.0),
-                label=str(pending.get("name") or ""),
             )
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
 
@@ -3294,22 +2926,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         self._queue_kml_pole_id(name, projected, radius, scale, fdt_number=fdt_number)
 
-    def _queue_home_number(
-        self,
-        projected: Point,
-        name: str,
-        fdt_number: int | None = None,
-        fat_code: str | None = None,
-    ) -> str:
+    def _queue_home_number(self, projected: Point, name: str, fdt_number: int | None = None) -> str:
         text = (name or "").strip() or "HP"
-        self.pending_home_numbers.append(
-            {
-                "text": text,
-                "projected": projected,
-                "fdt_number": fdt_number,
-                "fat_code": (fat_code or "").upper() or None,
-            }
-        )
+        self.pending_home_numbers.append({"text": text, "projected": projected, "fdt_number": fdt_number})
         return text
 
     def _queue_uncover_home_number(self, projected: Point, name: str, fdt_number: int | None = None) -> str:
@@ -3693,33 +3312,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             min(KML_HOME_NUMBER_HEIGHT_METERS, width_height, box_height),
             0.35,
             KML_HOME_NUMBER_HEIGHT_METERS,
-        )
-
-    def _parcel_text_height(self, polygon: Polygon, text: str) -> float:
-        """Fit centered HP text inside the parcel's rotated long/short axes."""
-        try:
-            coords = list(polygon.minimum_rotated_rectangle.exterior.coords)
-            lengths = sorted(
-                _distance(start, end)
-                for start, end in zip(coords, coords[1:])
-                if _distance(start, end) > 1e-6
-            )
-        except Exception:
-            lengths = []
-        if len(lengths) < 2:
-            return KML_HOME_PARCEL_TEXT_HEIGHT_METERS
-        short_axis, long_axis = lengths[0], lengths[-1]
-        height_by_length = (
-            long_axis
-            / max(len(text), 1)
-            / KML_HOME_NUMBER_TEXT_WIDTH_FACTOR
-            * 0.82
-        )
-        height_by_width = short_axis * 0.55
-        return _clamp(
-            min(KML_HOME_PARCEL_TEXT_HEIGHT_METERS, height_by_length, height_by_width),
-            0.35,
-            KML_HOME_PARCEL_TEXT_HEIGHT_METERS,
         )
 
     def _geometry_polygons(self, geometry) -> list[Polygon]:
@@ -4229,29 +3821,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         box_attrs = {"layer": KML_HOME_NUMBER_BOX_LAYER, "color": KML_HOME_NUMBER_BOX_COLOR}
         text_attrs = {"layer": KML_HOME_NUMBER_LAYER, "color": KML_HOME_NUMBER_COLOR}
         site_points = [ShapelyPoint(p) for p in sites]
-        ug_rotations: dict[int, float] = {}
-        if self.network_type == "UG":
-            road_geometry = self._road_avoidance_geometry()
-            crowded_indexes = self._home_number_crowded_indexes()
-            for index, item in enumerate(pending):
-                ug_rotations[index] = self._home_number_preferred_rotation(
-                    item["projected"],
-                    str(item["text"]),
-                    road_geometry,
-                    index in crowded_indexes,
-                )
-            ug_rotations.update(
-                self._home_number_fat_area_majority_rotations(road_geometry, crowded_indexes)
-            )
 
         drawn = 0
         # Track the union of all drawn parcels so overflow from one FAT group
         # never intersects parcels from another group (no overlapping boxes).
         drawn_union = None
 
-        # Voronoi cells must be generated against the complete group. Recomputing
-        # cells in batches creates overlapping parcels at batch boundaries.
-        batch_size = max(len(sites), 1)
+        batch_size = 250
         for area_idx, indexes in groups.items():
             clip_region = fat_clip_for_area[area_idx]
             if clip_region is None or clip_region.is_empty:
@@ -4274,7 +3850,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 if clip_region.is_empty:
                     no_fat_indexes.extend(indexes)
                     continue
-            before_group_boxes = len(self.home_number_boxes)
             for batch_start in range(0, len(indexes), batch_size):
                 batch_indexes = indexes[batch_start:batch_start + batch_size]
                 if pipeline_logger is not None and len(indexes) > batch_size:
@@ -4294,20 +3869,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     text_attrs,
                     cap_radius=False,
                     fill_region=True,
-                    forced_rotations=ug_rotations,
                 )
-            new_group_boxes = self.home_number_boxes[before_group_boxes:]
-            if new_group_boxes:
-                new_union = unary_union(new_group_boxes)
-                drawn_union = new_union if drawn_union is None else drawn_union.union(new_union)
 
         if no_fat_indexes:
             block = self._home_parcel_block_geometry([sites[i] for i in no_fat_indexes])
-            if block is not None and drawn_union is not None and not drawn_union.is_empty:
-                try:
-                    block = block.difference(drawn_union)
-                except Exception:
-                    pass
             if block is not None and not block.is_empty:
                 for batch_start in range(0, len(no_fat_indexes), batch_size):
                     batch_indexes = no_fat_indexes[batch_start:batch_start + batch_size]
@@ -4328,7 +3893,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                         text_attrs,
                         cap_radius=True,
                         fill_region=False,
-                        forced_rotations=ug_rotations,
                     )
 
         if drawn == 0:
@@ -4512,7 +4076,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         text_attrs: dict,
         cap_radius: bool = True,
         fill_region: bool = False,
-        forced_rotations: dict[int, float] | None = None,
     ) -> int:
         """Tessellate one group of HP points (Voronoi) and clip every cell to
         `clip_region`. Returns the number of parcels drawn. `clip_region` is
@@ -4568,7 +4131,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 cell = clip_region
             site = site_points[global_idx]
             item = pending[global_idx]
-            output_start_index = len(self.output_entities)
 
             # Road-fronting parcel: front edge attaches to nearest ROAD,
             # parcel extends away from ROAD toward/through HP point, and width
@@ -4576,87 +4138,30 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # subdivision: lots line up along roads instead of floating as
             # free rectangles.
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
-            parcel, frontage_rotation = self._road_front_parcel(
-                site,
-                cell,
-                clip_region,
-                cell_area,
-                region_angle,
-            )
-            label_rotation = (
-                forced_rotations.get(global_idx, frontage_rotation)
-                if forced_rotations is not None
-                else frontage_rotation
-            )
+            parcel = self._road_front_parcel(site, cell, clip_region, cell_area, region_angle)
             if parcel is None or parcel.is_empty:
-                # Road-front rectangle can disappear after clipping (common for
-                # HP UNCOVER outside/near boundary). Fall back to the clipped
-                # Voronoi cell so output is never lost.
+                # Road-front rectangle can disappear (common for HP UNCOVER
+                # outside/near boundary). Fall back to cell envelope clipped
+                # to clip region — keeps rectangle shape.
                 try:
-                    parcel = cell.intersection(clip_region)
+                    cell_clip = cell.intersection(clip_region)
+                    if isinstance(cell_clip, Polygon) and not cell_clip.is_empty:
+                        parcel = cell_clip.minimum_rotated_rectangle
+                    else:
+                        parcel = cell.envelope
                 except Exception:
-                    parcel = cell
-
-            # Hard non-overlap: never let a new parcel collide with already drawn
-            # HP parcels (including previous points in this same group).
-            if parcel is not None and not parcel.is_empty and self.home_number_boxes:
-                try:
-                    occupied = unary_union(self.home_number_boxes)
-                    if occupied is not None and not occupied.is_empty:
-                        parcel = parcel.difference(occupied.buffer(0.05, join_style=2))
-                except Exception:
-                    pass
+                    parcel = cell.envelope
             if parcel is None or parcel.is_empty:
-                # Never lose an HP COVER outline. Fall back to the clipped cell;
-                # if that still fails, create a small minimum parcel around the
-                # HP point so every point always has a drawn parcel.
-                try:
-                    parcel = cell.intersection(clip_region)
-                except Exception:
-                    parcel = cell
-                if parcel is None or parcel.is_empty:
-                    fallback_w = max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0)
-                    fallback_h = max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0)
-                    parcel = self._home_number_box_polygon((float(site.x), float(site.y)), fallback_w, fallback_h, label_rotation)
-                    try:
-                        parcel = parcel.intersection(clip_region)
-                    except Exception:
-                        pass
+                continue
             parcel = self._parcel_piece_containing(parcel, site)
             if parcel is None or parcel.is_empty or parcel.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
-                fallback_w = max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0)
-                fallback_h = max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0)
-                parcel = self._home_number_box_polygon((float(site.x), float(site.y)), fallback_w, fallback_h, label_rotation)
-                try:
-                    parcel = parcel.intersection(clip_region)
-                except Exception:
-                    pass
-                parcel = self._parcel_piece_containing(parcel, site)
-            if parcel is None or parcel.is_empty:
-                parcel = self._home_number_box_polygon((float(site.x), float(site.y)), max(KML_HOME_PARCEL_FRONTAGE_MIN_METERS, 3.0), max(KML_HOME_PARCEL_DEPTH_MIN_METERS * 0.35, 5.0), label_rotation)
-
-            # A sub-millimetre inset removes floating-point sliver overlaps
-            # between adjacent Voronoi cells while remaining invisible in CAD.
-            try:
-                inset_parcel = parcel.buffer(-0.001, join_style=2)
-                if not inset_parcel.is_empty:
-                    parcel = inset_parcel
-            except Exception:
-                pass
-            parcel = parcel.simplify(0.001, preserve_topology=True)
-            if parcel.is_empty:
-                text = str(item["text"])
-                self._add_centered_text(
-                    text,
-                    (float(site.x), float(site.y)),
-                    KML_HOME_PARCEL_TEXT_HEIGHT_METERS,
-                    dxfattribs=text_attrs,
-                    rotation=label_rotation,
-                )
-                self.register_fdt_entities(item.get("fdt_number"), self.output_entities[output_start_index:])
-                drawn += 1
                 continue
 
+            parcel = parcel.simplify(0.05, preserve_topology=True)
+            if parcel.is_empty:
+                continue
+
+            output_start_index = len(self.output_entities)
             for polygon in self._geometry_polygons(parcel):
                 if polygon.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
                     continue
@@ -4669,42 +4174,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             label_polygon = max(self._geometry_polygons(parcel), key=lambda p: p.area, default=None)
             if label_polygon is None:
                 continue
-            # Put every HP label at the geometric center of its final parcel.
-            # For a rare concave parcel whose centroid falls outside, use the
-            # guaranteed-inside representative point instead.
-            anchor = label_polygon.centroid
-            if not label_polygon.buffer(1e-6).covers(anchor):
-                anchor = label_polygon.representative_point()
-            # Match the manual APD sample: HOME_NUMBER uses one consistent
-            # 1.0 m text height.  Auto-shrinking per irregular parcel made
-            # adjacent labels vary wildly and become unreadably small.
-            text_height = self._parcel_text_height(label_polygon, text)
-            # Follow the longest axis of the final parcel.  Road-frontage
-            # rotation makes labels stack in a single vertical line where the
-            # lots themselves extend perpendicular to the road.
+            anchor = label_polygon.representative_point()
+            text_height = self._polygon_text_height(label_polygon, text)
+            # Rotate the label along the longest axis of the parcel so text
+            # runs along the cell's longest edge (cleaner cadastral look,
+            # avoids labels colliding when cells are narrow).
             rotation = self._polygon_label_rotation(label_polygon)
-            # Keep the center and axis fixed; only reduce text size when its
-            # conservative collision box would overlap a previously placed HP
-            # label.  This resolves dense/duplicate points without shifting a
-            # label away from the center of its own parcel.
-            text_box = self._home_number_text_polygon(
-                (float(anchor.x), float(anchor.y)),
-                text,
-                rotation,
-                text_height,
-            )
-            while text_height > 0.1 and any(
-                text_box.intersection(existing).area > 1e-6
-                for existing in self.home_number_text_boxes
-            ):
-                text_height = max(0.1, text_height * 0.9)
-                text_box = self._home_number_text_polygon(
-                    (float(anchor.x), float(anchor.y)),
-                    text,
-                    rotation,
-                    text_height,
-                )
-            self.home_number_text_boxes.append(text_box)
             self._add_centered_text(
                 text,
                 (anchor.x, anchor.y),
@@ -4717,16 +4192,17 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         return drawn
 
     def _road_front_parcel(self, site: ShapelyPoint, cell, clip_region, cell_area: float, fallback_angle: float):
-        """Build a clean road-fronting rectangle/trapezoid for one HP point.
+        """Build a pure rectangle for one HP point.
 
-        Front edge is placed on the nearest ROAD boundary, width follows the
-        local road tangent, and depth extends away from ROAD past the HP point.
-        The final polygon is clipped to its Voronoi allocation and FAT/block
-        clip region so neighbouring lots do not overlap.
+        - SHORT side (width) lies along the road tangent — faces the road.
+        - LONG side (depth) extends away from the road along the normal.
+        - The rectangle is clipped to the cell envelope (no overlap with
+          neighbouring parcels) and shrunk until all 4 corners lie inside
+          the FAT/block polygon so the actual boundary is respected while
+          the shape stays a perfect rectangle.
         """
-        fallback_angle = self._readable_angle(float(fallback_angle))
         if site is None or cell is None or clip_region is None or cell.is_empty or clip_region.is_empty:
-            return None, fallback_angle
+            return None
 
         road_solid = self._home_parcel_road_solid()
         road_point = None
@@ -4755,13 +4231,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     proj = best_line.project(site)
                     p = best_line.interpolate(proj)
                     road_line_point = (float(p.x), float(p.y))
-                    # A wider tangent window smooths short OSM vertex jitter.
-                    # Nearby houses on one street therefore share one readable
-                    # row direction instead of hundreds of tiny angle changes.
-                    eps = min(
-                        KML_HOME_PARCEL_TANGENT_WINDOW_METERS,
-                        max(3.0, best_line.length * 0.04),
-                    )
+                    eps = min(2.0, max(0.25, best_line.length * 0.01))
                     p1 = best_line.interpolate(max(0.0, proj - eps))
                     p2 = best_line.interpolate(min(best_line.length, proj + eps))
                     dx, dy = float(p2.x - p1.x), float(p2.y - p1.y)
@@ -4770,34 +4240,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 except Exception:
                     pass
 
-        # When a road centerline exists it is the authoritative frontage.
-        # FAT-area rectangles often have their longest axis perpendicular to
-        # the street; overriding the road tangent with that axis turns a whole
-        # HP row by 90 degrees.
-        snap = KML_HOME_PARCEL_ANGLE_SNAP_DEGREES
-        if snap > 0:
-            tangent_angle = round(tangent_angle / snap) * snap
-        tangent_angle = self._readable_angle(tangent_angle)
-
-        if (
-            road_solid is not None
-            and not road_solid.is_empty
-            and road_line_point is not None
-        ):
-            try:
-                if road_solid.covers(site):
-                    road_point = road_line_point
-            except Exception:
-                pass
-
-        has_road_reference = road_point is not None or road_line_point is not None
         if road_point is None:
             road_point = road_line_point
         if road_point is None:
-            # No ROAD found: fall back to centered rectangle, still clipped.
             road_point = (float(site.x), float(site.y))
 
-        # Tangent along road, normal points from road toward HP point.
         cos_t = math.cos(math.radians(tangent_angle))
         sin_t = math.sin(math.radians(tangent_angle))
         tx, ty = cos_t, sin_t
@@ -4807,70 +4254,88 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             nx, ny = -nx, -ny
 
         road_to_site = abs(vx * nx + vy * ny)
-        # Manual APD lots are frontage-narrow and depth-long.  Preserve the
-        # Voronoi allocation area while targeting that aspect ratio.
-        frontage = math.sqrt(max(cell_area, 1.0)) * 0.72
-        width = _clamp(
-            frontage,
-            KML_HOME_PARCEL_FRONTAGE_MIN_METERS,
-            KML_HOME_PARCEL_FRONTAGE_MAX_METERS,
-        )
-        area_depth = max(cell_area, 1.0) / max(width, 0.1)
-        depth = _clamp(
-            max(area_depth, road_to_site + 4.0),
-            KML_HOME_PARCEL_DEPTH_MIN_METERS,
-            KML_HOME_PARCEL_DEPTH_MAX_METERS,
-        )
+        # SHORT side faces the road (along tangent). LONG side goes away (along normal).
+        short_side = max(4.0, min(14.0, math.sqrt(max(cell_area, 1.0) * 0.55)))
+        long_side = max(short_side + 2.0, min(42.0, road_to_site + max(8.0, short_side * 0.7)))
+        width = short_side   # along road tangent
+        depth = long_side    # away from road
         half_w = width / 2.0
 
-        # Front edge touches the road boundary. Back edge extends away from road.
-        if has_road_reference:
-            fc = road_point
-            bc = (road_point[0] + nx * depth, road_point[1] + ny * depth)
-        else:
-            fc = (float(site.x) - nx * depth / 2.0, float(site.y) - ny * depth / 2.0)
-            bc = (float(site.x) + nx * depth / 2.0, float(site.y) + ny * depth / 2.0)
+        # Rectangle: front edge at road_point along tangent, back edge at road + depth along normal.
+        # Side offset: align tangent center with HP point so HP lies inside the rectangle.
+        side_offset = vx * tx + vy * ty
+        cx_front = road_point[0] + tx * side_offset
+        cy_front = road_point[1] + ty * side_offset
+        cx_back = cx_front + nx * depth
+        cy_back = cy_front + ny * depth
         rect_coords = [
-            (fc[0] - tx * half_w, fc[1] - ty * half_w),
-            (fc[0] + tx * half_w, fc[1] + ty * half_w),
-            (bc[0] + tx * half_w, bc[1] + ty * half_w),
-            (bc[0] - tx * half_w, bc[1] - ty * half_w),
+            (cx_front - tx * half_w, cy_front - ty * half_w),
+            (cx_front + tx * half_w, cy_front + ty * half_w),
+            (cx_back + tx * half_w, cy_back + ty * half_w),
+            (cx_back - tx * half_w, cy_back - ty * half_w),
         ]
-        parcel = Polygon(rect_coords)
-        if parcel.is_empty:
-            return None, tangent_angle
+        rect = Polygon(rect_coords)
+        if rect.is_empty:
+            return None
+
+        # 1) Clip to cell envelope — guarantees no overlap with neighbouring parcels.
+        #    Intersection of two rectangles is always a rectangle.
+        cell_box = cell.envelope
+        if cell_box is not None and not cell_box.is_empty:
+            try:
+                clipped = rect.intersection(cell_box)
+            except Exception:
+                clipped = None
+            if clipped is not None and not clipped.is_empty:
+                # Ensure result is still rectangular (MBR of clipped is rectangle).
+                rect = clipped.minimum_rotated_rectangle
+            if rect.is_empty:
+                return None
+
+        # 2) Fit inside the FAT/block polygon (minus roads) by shrinking until
+        #    all 4 corners are inside. Keeps the shape a pure rectangle while
+        #    respecting the actual FAT boundary.
+        rect = self._fit_rect_inside_polygon(rect, clip_region)
+        if rect is None or rect.is_empty or rect.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
+            return None
+        return rect
+
+    @staticmethod
+    def _fit_rect_inside_polygon(rect, polygon, max_iterations: int = 30):
+        """Shrink a rectangle uniformly about its center until all 4 corners
+        lie inside `polygon`. Returns the rectangle (still a pure rectangle)
+        or None if it cannot fit."""
+        if polygon is None or polygon.is_empty:
+            return None
+        if rect is None or rect.is_empty:
+            return None
+        # First, try to intersect with polygon and take its MBR — already a rectangle.
+        # Then iterate: while any corner is outside polygon, scale toward center.
         try:
-            parcel = parcel.intersection(cell)
+            inter = rect.intersection(polygon)
+            if inter is None or inter.is_empty:
+                return None
+            if isinstance(inter, Polygon):
+                rect = inter.minimum_rotated_rectangle
         except Exception:
             pass
-        if parcel.is_empty:
-            return None, tangent_angle
-        try:
-            parcel = parcel.intersection(clip_region)
-        except Exception:
-            pass
-        if parcel.is_empty:
-            return None, tangent_angle
-        # If ROAD subtraction split the rectangle into both sides of a road,
-        # retain the piece in the intended normal direction.  A largest-area
-        # fallback is unstable when both pieces are nearly equal and can move
-        # an HP label to the opposite side of its street.
-        if not isinstance(parcel, Polygon):
-            pieces = [
-                part
-                for part in getattr(parcel, "geoms", [])
-                if isinstance(part, Polygon) and not part.is_empty
+        if rect is None or rect.is_empty:
+            return None
+        for _ in range(max_iterations):
+            coords = list(rect.exterior.coords)[:-1]
+            if all(polygon.covers(ShapelyPoint(c)) for c in coords):
+                return rect
+            minx, miny, maxx, maxy = rect.bounds
+            cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+            scale = 0.92
+            new_coords = [
+                (cx + (x - cx) * scale, cy + (y - cy) * scale)
+                for x, y in coords
             ]
-            if pieces:
-                parcel = max(
-                    pieces,
-                    key=lambda part: (
-                        (float(part.centroid.x) - road_point[0]) * nx
-                        + (float(part.centroid.y) - road_point[1]) * ny,
-                        -float(part.distance(site)),
-                    ),
-                )
-        return parcel, tangent_angle
+            rect = Polygon(new_coords)
+            if rect.is_empty or rect.area < 1.0:
+                return None
+        return rect
 
     @staticmethod
     def _polygon_to_minimum_rectangle(polygon):
@@ -5172,7 +4637,6 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         style: dict | None = None,
         folder_name: str | None = None,
         folder_stack: Sequence[str] | None = None,
-        description: str = "",
     ) -> None:
         if "KML" not in self.selected_layers:
             return
@@ -5180,22 +4644,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         projected = project_point(coordinate[0], coordinate[1], self.transformer)
         pole_spec = kml_pole_folder_spec(folder_name)
         handhole_spec = kml_handhole_folder_spec(folder_name)
-        handhole_sequence = kml_handhole_sequence_spec(folder_name)
         fdt_number = detect_parent_fdt_number(folder_stack or [])
         if is_hp_cover_folder(folder_name):
-            preview_name = self._queue_home_number(
-                projected,
-                name,
-                fdt_number=fdt_number,
-                fat_code=next(
-                    (
-                        code
-                        for value in reversed(folder_stack or [])
-                        if (code := find_fat_code(value))
-                    ),
-                    None,
-                ),
-            )
+            preview_name = self._queue_home_number(projected, name, fdt_number=fdt_number)
             self.kml_detail_stats["home_number_points"] += 1
             self.stats[KML_HOME_NUMBER_LAYER] += 1
         elif is_hp_uncover_folder(folder_name):
@@ -5215,13 +4666,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             self.stats[KML_OLT_LAYER] += 1
         elif is_fdt_folder(folder_name):
             fdt_label = extract_fdt_label_from_path(folder_stack or [], name)
-            self._queue_kml_fdt_icon(
-                projected,
-                fdt_label,
-                description,
-                style,
-                fdt_number=fdt_number,
-            )
+            self._add_kml_fdt_icon(projected, fdt_label, style)
             self.kml_detail_stats["fdt_blocks"] += 1
             self.stats[KML_FDT_LAYER] += 1
             preview_name = fdt_label
@@ -5234,27 +4679,15 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             self.kml_detail_stats["slack_hanger_blocks"] += 1
             preview_name = name or "JOINT CLOSURE"
         elif handhole_spec:
-            queued_handhole_spec = {**handhole_spec, **(handhole_sequence or {})}
             preview_name = self._queue_kml_handhole_icon(
                 projected,
-                queued_handhole_spec,
+                handhole_spec,
                 name,
                 style,
                 fdt_number=fdt_number,
             )
             self.kml_detail_stats["handhole_blocks"] += 1
             self.stats[str(handhole_spec["layer"])] += 1
-        elif handhole_sequence:
-            # EXISTING HH 20 keeps the same generic KML/DXF icon path it used
-            # before this naming change; only its deferred label is rewritten.
-            preview_name = self._queue_kml_handhole_icon(
-                projected,
-                {**handhole_sequence, "preserve_generic_icon": True},
-                name,
-                style,
-                fdt_number=fdt_number,
-            )
-            self.kml_detail_stats["generic_icons"] += 1
         elif is_twey_folder(folder_name):
             self._queue_kml_twey_icon(projected, name, style, fdt_number=fdt_number)
             self.kml_detail_stats["twey_blocks"] += 1
@@ -5295,16 +4728,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         line_width = None
         layer_name = None
         if line_spec and line_layer:
-            forced_layer_color = line_spec.get("color")
-            layer_color = int(forced_layer_color) if forced_layer_color is not None else true_color_to_aci(attrs.get("true_color"))
-            layer_name = self._ensure_layer(line_layer, layer_color)
+            attrs["color"] = true_color_to_aci(attrs.get("true_color"))
+            layer_name = self._ensure_layer(line_layer, attrs["color"])
             attrs["layer"] = layer_name
-            if forced_layer_color is not None:
-                # Core cable colors are standardized on the layer so every
-                # entity stays consistent even in the R12 templates where
-                # true-color entity attributes are unavailable.
-                attrs["color"] = 256
-                attrs.pop("true_color", None)
             attrs["lineweight"] = int(line_spec.get("lineweight") or 20)
             line_width = float(line_spec.get("width") or KML_DISTRIBUTION_CABLE_WIDTH)
             if line is not None and not line.is_empty and line.length > 0:
@@ -6159,15 +5585,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         fdt_count = counts.get("FDT", 0)
         fat_count = counts.get("FAT", 0)
         handhole_20_count = counts.get("NEW HH 20X20X20", 0) if is_ug else 0
-        handhole_40_count = (
-            counts.get("NEW HH 40X40X60", 0)
-            + counts.get("EXISTING HH 40X40X60", 0)
-        ) if is_ug else 0
-        handhole_80_count = (
-            counts.get("NEW HH 80X80X130", 0)
-            + counts.get("EXISTING HH 80X80X130", 0)
-            + counts.get("HANDHOLE 80X80X130", 0)
-        ) if is_ug else 0
+        handhole_40_count = counts.get("NEW HH 40X40X60", 0) if is_ug else 0
+        handhole_80_count = counts.get("NEW HH 80X80X130", 0) if is_ug else 0
         aerial_fat_count = 0 if is_ug else fat_count
         pedestal_fat_count = fat_count if is_ug else 0
         cable_loop_holder_count = self._design_summary_override_int(
@@ -6351,31 +5770,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
     def _set_title_block_cluster_name(self, layout, cluster_name: str) -> None:
         min_x, min_y, max_x, max_y = TITLE_BLOCK_CLUSTER_NAME_BOUNDS
-        # Template sometimes already carries placeholder text like "CLUSTER NAME" in
-        # the drawing-name row. Delete every existing value text in that row first,
-        # regardless of layer, otherwise AutoCAD shows duplicate title text.
-        protected_labels = {"NAMA GAMBAR", "DRAWING NAME"}
-        for entity in list(layout):
-            if entity.dxftype() not in {"TEXT", "MTEXT", "ATTRIB"}:
-                continue
+        for entity in self._layout_text_entities(layout, "TITLE_BLOCK"):
             try:
-                insert = entity.dxf.insert
-                x = float(insert.x)
-                y = float(insert.y)
+                x = float(entity.dxf.insert.x)
+                y = float(entity.dxf.insert.y)
             except Exception:
                 continue
-            if not (330.0 <= x <= 430.0 and 84.0 <= y <= 104.0):
-                continue
-            try:
-                text = str(entity.dxf.text if entity.dxftype() != "MTEXT" else entity.text).strip()
-            except Exception:
-                text = ""
-            if text.upper() in protected_labels:
-                continue
-            try:
-                layout.delete_entity(entity)
-            except Exception:
-                pass
+            text = str(entity.dxf.text).strip()
+            if min_x <= x <= max_x and min_y <= y <= max_y and text not in {"Nama Gambar", "Drawing Name"}:
+                try:
+                    layout.delete_entity(entity)
+                except Exception:
+                    pass
 
         width = max_x - min_x
         height = min(1.6, max(0.55, (width - 4.0) / max(len(cluster_name), 1) / 0.86))
@@ -6925,14 +6331,7 @@ def parse_kml_placemark(
         coordinate_element = direct_child_by_name(point, "coordinates")
         coordinates = parse_kml_coordinates(coordinate_element.text if coordinate_element is not None else None)
         if coordinates:
-            handler.add_kml_point(
-                coordinates[0],
-                name,
-                style,
-                folder_name,
-                folder_stack,
-                direct_child_text_by_name(placemark, "description"),
-            )
+            handler.add_kml_point(coordinates[0], name, style, folder_name, folder_stack)
             feature_count += 1
 
     for line in children_by_name(placemark, "LineString"):
@@ -7343,7 +6742,6 @@ def convert_osm_to_dxf(
         f"{len(handler.pending_handhole_icons):,} HH block(s) to nearest cable line...",
     )
     handler.finalize_olt_icons(pipeline_logger=pipeline_logger)
-    handler.finalize_fdt_icons(pipeline_logger=pipeline_logger)
     handler.finalize_fat_icons(pipeline_logger=pipeline_logger)
     handler.finalize_handhole_icons(pipeline_logger=pipeline_logger)
     pipeline_log(
@@ -7447,3 +6845,4 @@ def convert_osm_to_dxf(
         "output_size": output_size,
         "input_count": len(input_paths),
     }
+
