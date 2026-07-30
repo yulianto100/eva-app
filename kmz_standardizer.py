@@ -1526,8 +1526,11 @@ def standardize_fat_placemark_names(
         code = normalize_text(record.fdt_code).upper()
         if not code:
             return None
-        # No generic fallback: only use an actual code from the file.
         return code
+
+    # Pre-compute FDT order from the folder stack once.
+    # This lets us match FAT placemarks under LINE A - FDT 1 -> fdt_order=1 -> PSGMB056.066
+    fdt_order_from_stack = extract_parent_fdt_order(folder_stack)
 
     for child in list(element):
         child_name = local_name(child.tag)
@@ -1544,12 +1547,13 @@ def standardize_fat_placemark_names(
         suffix = _extract_fat_suffix(old_name)
         if not suffix:
             continue
-        # Only use FDT code when it is a real code present in the file.
-        # No XXX fallback.
+        # Find FDT order from: 1) placemark name pattern, 2) folder stack, 3) default 1
         record = None
         fdt_order_match = FAT_LEGACY_FDT_NAME_PATTERN.search(old_name)
         if fdt_order_match:
             record = record_for_fdt_order(records, int(fdt_order_match.group("fdt")))
+        if not record and fdt_order_from_stack is not None:
+            record = record_for_fdt_order(records, fdt_order_from_stack)
         fdt_code = _fdt_code_for_record(record)
         new_name = f"{fdt_code}.{suffix}" if fdt_code else suffix
         if old_name == new_name:
