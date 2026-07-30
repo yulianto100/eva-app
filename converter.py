@@ -1531,6 +1531,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if TEMPLATE_LAYER not in self.doc.layers:
             self.doc.layers.add(TEMPLATE_LAYER, color=7)
         self._ensure_viewports_layer_style()
+        self._ensure_bold_text_style()
         self._turn_all_layers_visible()
 
     def _ensure_viewports_layer_style(self) -> None:
@@ -1543,6 +1544,24 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             layer.rgb = (255, 255, 255)
         except Exception as exc:
             LOGGER.debug("Layer %s tidak bisa diset putih: %s", TEMPLATE_VIEWPORT_LAYER, exc)
+
+    def _ensure_bold_text_style(self) -> None:
+        """Create the dedicated bold style used by converter labels.
+
+        `arialbd.ttf` is the standard Arial Bold font on Windows/AutoCAD
+        systems. DXF viewers without it fall back cleanly to their default
+        TrueType font, unlike an SHX-only workaround.
+        """
+        style_name = "EVA_BOLD"
+        try:
+            if style_name in self.doc.styles:
+                style = self.doc.styles.get(style_name)
+            else:
+                style = self.doc.styles.new(style_name)
+            style.dxf.font = "arialbd.ttf"
+            style.dxf.bigfont = ""
+        except Exception as exc:
+            LOGGER.debug("Gagal membuat style teks bold: %s", exc)
 
     def _ensure_linetype(self, linetype_name: str) -> None:
         if linetype_name in self.doc.linetypes:
@@ -1794,10 +1813,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             return None
         attrs = self._supported_attrs(dxfattribs)
         attrs["height"] = float(height)
+        attrs["width"] = 1.0
+        attrs["style"] = "EVA_BOLD"
         if rotation is not None:
             attrs["rotation"] = float(rotation)
-        # Width factor > 1 makes characters wider → bolder/thicker text.
-        attrs["width"] = 1.5
         entity = self.modelspace.add_text(text.strip(), dxfattribs=attrs)
         entity.set_placement((float(center[0]), float(center[1])), align=TextEntityAlignment.MIDDLE_CENTER)
         return self._remember_output(entity)
@@ -4880,7 +4899,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
     def prepare_autocad_lt_output(self) -> None:
         for style in self.doc.styles:
             try:
-                style.dxf.font = "txt.shx"
+                # Preserve the converter's real bold TTF style. Other styles
+                # remain on txt.shx for AutoCAD LT compatibility.
+                if style.dxf.name == "EVA_BOLD":
+                    style.dxf.font = "arialbd.ttf"
+                else:
+                    style.dxf.font = "txt.shx"
                 style.dxf.bigfont = ""
             except Exception:
                 continue
