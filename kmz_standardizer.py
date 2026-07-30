@@ -2420,9 +2420,10 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
         if name.startswith("NN-"):
             return name
         if (
-            name.startswith(("MR.", "EXT.", "FDT", "FAT", "RR-", "XXX-"))
+            name.startswith(("MR.", "EXT.", "FDT", "FAT", "RR-", "XXX-", "TK-", "RK-", "BLK", "BLOCK"))
             or "SLACK" in name
             or "HANGER" in name
+            or re.fullmatch(r"[A-Z]{2,4}-\d+(?:\s+[A-Z0-9-]+)?", name)
         ):
             return name
         if re.search(r"[A-Z]", name):
