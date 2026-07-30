@@ -1642,6 +1642,9 @@ def write_rows_by_header(worksheet, rows: Sequence[dict], date_headers: set[str]
                 value = normalize_province_value(value)
             elif key.lower() == "block":
                 value = str(value or "").upper()
+                value = value.strip() if value else ""
+                if value == "" or value == "-":
+                    value = "-"
             elif key.lower() == "homenumber":
                 value = str(value or "").upper()
             elif key.lower() == "street":

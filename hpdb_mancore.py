@@ -341,6 +341,10 @@ def write_mancore_fdt_sheet(
                 if column:
                     if header.lower() in {"block", "homenumber"}:
                         value = str(value or "").upper()
+                        if header.lower() == "block":
+                            value = value.strip() if value else ""
+                            if value == "" or value == "-":
+                                value = "-"
                     elif header.lower() == "street":
                         value = normalize_street_value(value)
                     cell = worksheet.cell(row=row_index, column=column, value=value)

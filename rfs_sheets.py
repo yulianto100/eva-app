@@ -420,9 +420,14 @@ def append_record(payload: dict) -> dict:
         raise ValueError("HP RFS harus lebih dari 0")
 
     fingerprint = fingerprint_for(target_month, region, site, hp)
+    message_id = _clean_space(payload.get("message_id"))
     existing = None
     for record in _data_records(_all_values(worksheet)):
-        if record.get("month") == target_month and record.get("fingerprint") == fingerprint:
+        if message_id:
+            if record.get("message_id") == message_id:
+                existing = record
+                break
+        elif record.get("month") == target_month and record.get("fingerprint") == fingerprint:
             existing = record
             break
 

@@ -103,6 +103,14 @@ def _month_from_date(date_header: str) -> str:
         dt = parsedate_to_datetime(date_header)
         if dt.tzinfo is None:
             dt = dt.astimezone()
+        dt = dt.astimezone(rfs_sheets._timezone())
+        if dt.day == 1:
+            year = dt.year
+            month = dt.month - 1
+            if month == 0:
+                month = 12
+                year -= 1
+            return f"{year:04d}-{month:02d}"
         return dt.strftime("%Y-%m")
     except Exception:
         return rfs_sheets.month_key()
