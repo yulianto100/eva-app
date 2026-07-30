@@ -12,22 +12,23 @@ from kmz_standardizer import FdtCodingRecord, format_excel_identifier, normalize
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fdt_coding_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    olt_initial TEXT NOT NULL DEFAULT '',
-    hub_id TEXT NOT NULL DEFAULT '',
-    olt_name_initial TEXT NOT NULL DEFAULT '',
-    olt_hostname TEXT NOT NULL DEFAULT '',
-    site_name TEXT NOT NULL,
-    fdt_order INTEGER,
-    fdt_id TEXT NOT NULL DEFAULT '',
-    fdt_code TEXT NOT NULL,
-    index_code TEXT NOT NULL DEFAULT '',
-    cluster_initial TEXT NOT NULL DEFAULT '',
-    source_spreadsheet_id TEXT NOT NULL DEFAULT '',
-    sheet_name TEXT NOT NULL DEFAULT '',
-    source_row INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ olt_initial TEXT NOT NULL DEFAULT '',
+ hub_id TEXT NOT NULL DEFAULT '',
+ olt_name_initial TEXT NOT NULL DEFAULT '',
+ olt_hostname TEXT NOT NULL DEFAULT '',
+ site_name TEXT NOT NULL,
+ area TEXT NOT NULL DEFAULT '',
+ fdt_order INTEGER,
+ fdt_id TEXT NOT NULL DEFAULT '',
+ fdt_code TEXT NOT NULL,
+ index_code TEXT NOT NULL DEFAULT '',
+ cluster_initial TEXT NOT NULL DEFAULT '',
+ source_spreadsheet_id TEXT NOT NULL DEFAULT '',
+ sheet_name TEXT NOT NULL DEFAULT '',
+ source_row INTEGER NOT NULL DEFAULT 0,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fdt_coding_olt ON fdt_coding_records(olt_initial);
 CREATE INDEX IF NOT EXISTS idx_fdt_coding_site ON fdt_coding_records(site_name);
@@ -88,6 +89,7 @@ FIELDS = (
     "olt_name_initial",
     "olt_hostname",
     "site_name",
+    "area",
     "fdt_order",
     "fdt_id",
     "fdt_code",
@@ -97,7 +99,6 @@ FIELDS = (
     "sheet_name",
     "source_row",
 )
-
 
 
 def utc_now() -> str:
@@ -117,6 +118,8 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
         conn.execute("ALTER TABLE fdt_coding_records ADD COLUMN source_spreadsheet_id TEXT NOT NULL DEFAULT ''")
     if "olt_hostname" not in columns:
         conn.execute("ALTER TABLE fdt_coding_records ADD COLUMN olt_hostname TEXT NOT NULL DEFAULT ''")
+    if "area" not in columns:
+        conn.execute("ALTER TABLE fdt_coding_records ADD COLUMN area TEXT NOT NULL DEFAULT ''")
     olt_columns = {row[1] for row in conn.execute("PRAGMA table_info(fdt_coding_olts)").fetchall()}
     if "olt_hostname" not in olt_columns:
         conn.execute("ALTER TABLE fdt_coding_olts ADD COLUMN olt_hostname TEXT NOT NULL DEFAULT ''")
@@ -175,6 +178,7 @@ def normalize_record_payload(payload: dict) -> dict:
         "olt_name_initial": normalize_text(payload.get("olt_name_initial")),
         "olt_hostname": normalize_text(payload.get("olt_hostname")),
         "site_name": normalize_text(payload.get("site_name")).upper(),
+        "area": normalize_text(payload.get("area")),
         "fdt_order": fdt_order,
         "fdt_id": format_excel_identifier(payload.get("fdt_id")),
         "fdt_code": normalize_text(payload.get("fdt_code")).upper(),
@@ -203,6 +207,7 @@ def row_to_record(row: sqlite3.Row) -> FdtCodingRecord:
         sheet_name=row["sheet_name"] or "Database",
         row_number=int(row["source_row"] or row["id"] or 0),
         site_name=row["site_name"] or "",
+        area=row["area"] or "",
         fdt_order=row["fdt_order"],
         fdt_id=row["fdt_id"] or "",
         fdt_code=row["fdt_code"] or "",

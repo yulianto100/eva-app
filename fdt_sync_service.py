@@ -192,6 +192,43 @@ def _looks_like_hub_id(value: object) -> bool:
     text = normalize_text(value).upper()
     return bool(re.fullmatch(r"[A-Z]{2,}\.\d{3}\.\d{2,4}(?:\.\d+)?", text))
 
+def extract_area_from_sheet_name(sheet_name: str) -> str:
+    text = normalize_text(sheet_name).upper()
+    if "(BEKASI)" in text or "BEKASI" in text.split()[-2:]:  # rough heuristic
+        return "Bekasi"
+    # More precise: look for parenthesized region or explicit label
+    # For spreadsheet labels like 'Coding FTTH - Jakarta Area Update 2021':
+    for label in text.split():
+        label = label.strip("()|")
+        if label.upper() == "BEKASI":
+            return "Bekasi"
+        if label.upper() == "JAKARTA":
+            return "Jakarta"
+    # From actual sheet names like 'OLT Cikarang Utara 2' — we fall back to checking source label
+    return ""
+
+
+def extract_sheet_area(sheet_name: str, source_label: str = "") -> str:
+    text = normalize_text(sheet_name).upper()
+    # Explicit region indicators in sheet name or source label
+    if "BEKASI" in text:
+        return "Bekasi"
+    # Check source spreadsheet label too
+    if source_label:
+        source_upper = normalize_text(source_label).upper()
+        if "BEKASI" in source_upper:
+            return "Bekasi"
+        if "JAKARTA" in source_upper:
+            return "Jakarta"
+    # Check parenthesized: (BEKASI) / (JAKARTA) or (BEKASI) / (JAKARTA) in combined text
+    combined = text + " " + normalize_text(source_label).upper()
+    for region in ["BEKASI", "JAKARTA"]:
+        # Match region as a standalone token, optionally in parentheses
+        if re.search(rf"(?:^|[^A-Z0-9]){region}(?:[^A-Z0-9]|$)", combined):
+            return region.capitalize()
+    return ""
+
+
 def _parse_sheet_data(
     spreadsheet_id: str,
     sheet_name: str,
@@ -275,6 +312,7 @@ def _parse_sheet_data(
             olt_initial=olt_initial.upper() if olt_initial else "",
             hub_id=hub_id,
             olt_hostname=olt_hostname.upper() if olt_hostname else "",
+            area=extract_sheet_area(sheet_name, spreadsheet_id),
         ))
 
     return records
