@@ -1796,6 +1796,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         attrs["height"] = float(height)
         if rotation is not None:
             attrs["rotation"] = float(rotation)
+        # Width factor > 1 makes characters wider → bolder/thicker text.
+        attrs["width"] = 1.5
         entity = self.modelspace.add_text(text.strip(), dxfattribs=attrs)
         entity.set_placement((float(center[0]), float(center[1])), align=TextEntityAlignment.MIDDLE_CENTER)
         return self._remember_output(entity)
