@@ -386,7 +386,7 @@ def delete_olt(db_path: str | Path, olt_initial: str, force: bool = False) -> bo
 
 
 
-def record_filters(olt_initial: str = "", query: str = "") -> tuple[str, list[object]]:
+def record_filters(olt_initial: str = "", query: str = "", area: str = "") -> tuple[str, list[object]]:
     clauses = []
     params: list[object] = []
     olt = normalize_text(olt_initial).upper()
@@ -396,6 +396,10 @@ def record_filters(olt_initial: str = "", query: str = "") -> tuple[str, list[ob
         else:
             clauses.append("olt_initial = ?")
             params.append(olt)
+    area_param = normalize_text(area) if area else None
+    if area_param:
+        clauses.append("area = ?")
+        params.append(area_param)
     q = normalize_text(query)
     if q:
         like = f"%{q}%"
@@ -404,13 +408,13 @@ def record_filters(olt_initial: str = "", query: str = "") -> tuple[str, list[ob
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     return where, params
 
-def count_matching_records(db_path: str | Path, olt_initial: str = "", query: str = "") -> int:
-    where, params = record_filters(olt_initial, query)
+def count_matching_records(db_path: str | Path, olt_initial: str = "", query: str = "", area: str = "") -> int:
+    where, params = record_filters(olt_initial, query, area=area)
     with connect(db_path) as conn:
         return int(conn.execute(f"SELECT COUNT(*) FROM fdt_coding_records{where}", params).fetchone()[0])
 
-def list_records(db_path: str | Path, olt_initial: str = "", query: str = "", limit: int = 250, offset: int = 0) -> list[dict]:
-    where, params = record_filters(olt_initial, query)
+def list_records(db_path: str | Path, olt_initial: str = "", query: str = "", area: str = "", limit: int = 250, offset: int = 0) -> list[dict]:
+    where, params = record_filters(olt_initial, query, area=area)
     params.extend([max(int(limit), 1), max(int(offset), 0)])
     with connect(db_path) as conn:
         rows = conn.execute(

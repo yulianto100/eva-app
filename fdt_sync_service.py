@@ -312,7 +312,7 @@ def _parse_sheet_data(
             olt_initial=olt_initial.upper() if olt_initial else "",
             hub_id=hub_id,
             olt_hostname=olt_hostname.upper() if olt_hostname else "",
-            area=extract_sheet_area(sheet_name, spreadsheet_id),
+            area=extract_sheet_area(sheet_name, source.spreadsheet_label or spreadsheet_id),
         ))
 
     return records

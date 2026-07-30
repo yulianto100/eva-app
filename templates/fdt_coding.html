@@ -114,8 +114,17 @@
         <input id="searchInput" class="ui-input" placeholder="Cari site, FDT code, cluster, hub...">
       </div>
       <div class="fdt-field">
-        <label for="oltFilter">OLT</label>
-        <select id="oltFilter" class="ui-input"><option value="ALL">Semua OLT</option></select>
+       <label for="oltFilter">OLT</label>
+       <select id="oltFilter" class="ui-input"><option value="ALL">Semua OLT</option></select>
+      </div>
+      <div class="fdt-field">
+       <label for="areaFilter">Area</label>
+       <select id="areaFilter" class="ui-input">
+        <option value="">Semua Area</option>
+        <option value="Bekasi">Bekasi</option>
+        <option value="Jakarta">Jakarta</option>
+        <option value="Indramayu">Indramayu</option>
+       </select>
       </div>
       <div class="toolbar-actions">
         <button id="addOltButton" class="secondary-button" type="button">Tambah OLT</button>
@@ -223,7 +232,7 @@ document.getElementById('backToEvaLink')?.addEventListener('click', (event) => {
 });
 
 const els = {
-  search: document.getElementById('searchInput'), olt: document.getElementById('oltFilter'), body: document.getElementById('recordsBody'),
+  search: document.getElementById('searchInput'), olt: document.getElementById('oltFilter'), area: document.getElementById('areaFilter'), body: document.getElementById('recordsBody'),
   summary: document.getElementById('summaryText'), status: document.getElementById('statusText'), importFile: document.getElementById('importFile'), pagination: document.getElementById('paginationControls'), selectedText: document.getElementById('selectedText'), selectAll: document.getElementById('selectAllRows'), bulkEdit: document.getElementById('bulkEditButton'), bulkDelete: document.getElementById('bulkDeleteButton'),
   addOltForm: document.getElementById('addOltForm'),
   oltListPanel: document.getElementById('oltListPanel'), oltListBody: document.getElementById('oltListBody'), oltListSearch: document.getElementById('oltListSearch'), oltListStatus: document.getElementById('oltListStatus'), oltPagination: document.getElementById('oltPaginationControls'),
@@ -492,7 +501,7 @@ function renderPagination(){
   }).join('');
   els.pagination.innerHTML = `<button class="secondary-button" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} type="button">Sebelumnya</button>${pageButtons}<button class="secondary-button" data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} type="button">Berikutnya</button>`;
 }
-async function loadRecords(){ els.status.textContent='Memuat...'; const offset=(currentPage-1)*pageSize; const params=new URLSearchParams({olt:els.olt.value||'ALL', q:els.search.value||'', limit:String(pageSize), offset:String(offset)}); const data=await api('/api/fdt-coding/records?'+params); records=data.records||[]; totalRecords=data.total||0; els.body.innerHTML=records.map(r=>`<tr><td class="fdt-select-col"><input class="row-select" type="checkbox" data-select="${escapeHtml(r.id)}" ${selectedIds.has(String(r.id))?'checked':''}></td><td>${escapeHtml(r.olt_initial)}</td><td>${escapeHtml(r.hub_id)}</td><td>${escapeHtml(r.olt_hostname || '')}</td><td>${escapeHtml(r.olt_name_initial)}</td><td>${escapeHtml(r.area || '')}</td><td>${escapeHtml(r.site_name)}</td><td>${escapeHtml(r.fdt_order)}</td><td>${escapeHtml(r.fdt_id)}</td><td><strong>${escapeHtml(r.fdt_code)}</strong></td><td><button class="secondary-button" data-edit="${escapeHtml(r.id)}">Edit</button> <button class="secondary-button" data-del="${escapeHtml(r.id)}">Hapus</button></td></tr>`).join('') || '<tr><td colspan="11" class="muted">Belum ada data.</td></tr>'; renderPagination(); updateBulkActions(); const from=totalRecords ? offset+1 : 0; const to=Math.min(offset+records.length,totalRecords); els.status.textContent=`${from}-${to} dari ${totalRecords} baris`; }
+async function loadRecords(){ els.status.textContent='Memuat...'; const offset=(currentPage-1)*pageSize; const params=new URLSearchParams({olt:els.olt.value||'ALL', area:els.area.value||'', q:els.search.value||'', limit:String(pageSize), offset:String(offset)}); const data=await api('/api/fdt-coding/records?'+params); records=data.records||[]; totalRecords=data.total||0; els.body.innerHTML=records.map(r=>`<tr><td class="fdt-select-col"><input class="row-select" type="checkbox" data-select="${escapeHtml(r.id)}" ${selectedIds.has(String(r.id))?'checked':''}></td><td>${escapeHtml(r.olt_initial)}</td><td>${escapeHtml(r.hub_id)}</td><td>${escapeHtml(r.olt_hostname || '')}</td><td>${escapeHtml(r.olt_name_initial)}</td><td>${escapeHtml(r.area || '')}</td><td>${escapeHtml(r.site_name)}</td><td>${escapeHtml(r.fdt_order)}</td><td>${escapeHtml(r.fdt_id)}</td><td><strong>${escapeHtml(r.fdt_code)}</strong></td><td><button class="secondary-button" data-edit="${escapeHtml(r.id)}">Edit</button> <button class="secondary-button" data-del="${escapeHtml(r.id)}">Hapus</button></td></tr>`).join('') || '<tr><td colspan="11" class="muted">Belum ada data.</td></tr>'; renderPagination(); updateBulkActions(); const from=totalRecords ? offset+1 : 0; const to=Math.min(offset+records.length,totalRecords); els.status.textContent=`${from}-${to} dari ${totalRecords} baris`; }
 async function refresh(){ await loadSummary(); await loadRecords(); }
 document.getElementById('refreshButton').onclick=refresh;
 document.getElementById('clearButton').onclick=clearForm;
@@ -504,6 +513,7 @@ els.fields.fdtId.oninput=updateGeneratedFdtCodes;
 els.fields.siteName.oninput=updateGenerateResultPanel;
 els.search.oninput=()=>{ clearTimeout(window._fdtSearch); window._fdtSearch=setTimeout(()=>{ currentPage=1; loadRecords(); },250); };
 els.olt.onchange=()=>{ currentPage=1; loadRecords(); };
+els.area.onchange=()=>{ currentPage=1; loadRecords(); };
 document.getElementById('saveButton').onclick=async()=>{
   const button=document.getElementById('saveButton');
   const oldText=button.textContent;

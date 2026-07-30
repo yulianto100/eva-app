@@ -7211,12 +7211,14 @@ def api_fdt_coding_records():
     try:
         olt_initial = request.args.get("olt", "")
         query = request.args.get("q", "")
+        area = request.args.get("area", "")
         limit = int(request.args.get("limit", 250))
         offset = int(request.args.get("offset", 0))
         records = fdt_coding_db.list_records(
             Config.FDT_CODING_DB_PATH,
             olt_initial=olt_initial,
             query=query,
+            area=area,
             limit=limit,
             offset=offset,
         )
@@ -7224,6 +7226,7 @@ def api_fdt_coding_records():
             Config.FDT_CODING_DB_PATH,
             olt_initial=olt_initial,
             query=query,
+            area=area,
         )
         return jsonify({"records": records, "total": total, "limit": limit, "offset": offset})
     except Exception as exc:
