@@ -107,7 +107,6 @@ DEFAULT_EXT_PARTNER_ALIASES = {
     "MR": "MR",
     "FM": "LN",
     "TEL": "TLKM",
-    "TELK": "TLKM",
     "TELKOM": "TLKM",
     "TELECOM": "TLKM",
     "TLKOM": "TLKM",
@@ -399,7 +398,6 @@ STYLE_SPECS: dict[str, KmzStyleSpec] = {
     "fdt_96c": KmzStyleSpec("eva_fdt_96c", "#FF0000", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "fdt_72c": KmzStyleSpec("eva_fdt_72c", "#550000", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "fdt_48c": KmzStyleSpec("eva_fdt_48c", "#AA00FF", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
-    "fdt_ext": KmzStyleSpec("eva_fdt_ext", "#FFFFFF", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "pole_9m_4inch": KmzStyleSpec("eva_pole_9m_4inch", "#FF0000", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
     "pole_7m_4inch": KmzStyleSpec("eva_pole_7m_4inch", "#00FF00", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
     "pole_7m_3inch": KmzStyleSpec("eva_pole_7m_3inch", "#00FFFF", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
@@ -1462,13 +1460,8 @@ def looks_like_fdt_placemark(placemark: ET.Element, folder_stack: Sequence[str])
     search_text = f"{name} {description}"
     upper_text = search_text.upper()
 
-    # Folder FDT is authoritative: every point placemark inside it is FDT.
-    if nearest_standard_folder(folder_stack) == "FDT":
-        return True
     if find_fat_code(name) and "FDT" not in upper_text:
         return False
-    if re.fullmatch(r"(?:EXT[.\s_-]*)?FDT\s*[-_ ]*\d+", name, re.IGNORECASE):
-        return True
     if STANDARD_POLE_NUMBER_PATTERN.search(name) or EXT_PARTNER_BARE_PATTERN.search(name):
         return False
     if MR_EXPANDED_POLE_PATTERN.search(name):
@@ -1480,6 +1473,8 @@ def looks_like_fdt_placemark(placemark: ET.Element, folder_stack: Sequence[str])
     if re.search(r"\b(?:FAT|SLACK|HANGER|TWEY|T-WAY|T-WEY)\b", upper_text):
         return False
 
+    if re.search(r"\bFDT\b", upper_text):
+        return True
     if nearest_standard_folder(folder_stack) == "FDT" and name.upper() in {"XXX", "FDT", "FDT XXX"}:
         return True
 
@@ -2418,15 +2413,6 @@ def ensure_line_standard_folders(project_folder: ET.Element, namespace: str, net
     return created
 
 def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str, changes: list[dict]) -> None:
-    def _upper_placemark_names_in(element: ET.Element) -> None:
-        for pm in list(element.iter(f"{{{namespace}}}Placemark")):
-            name_el = direct_child_by_name(pm, "name")
-            if name_el is None or name_el.text is None:
-                continue
-            up = name_el.text.upper()
-            if name_el.text != up:
-                name_el.text = up
-
     by_name: dict[str, ET.Element] = {}
     for child in list(hp_cover_folder):
         if local_name(child.tag) != "Folder":
@@ -2457,7 +2443,6 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
     ]
     folder_children.sort(key=lambda child: normalize_text(direct_child_text_by_name(child, "name")).upper())
     hp_cover_folder[:] = metadata_children + folder_children + other_children
-    _upper_placemark_names_in(hp_cover_folder)
 
 def normalize_hp_cover_folders(
     element: ET.Element,
@@ -5733,10 +5718,8 @@ def standardize_fdt_placemarks(
                 else:
                     description_element.text = capacity_note
 
-        ext_fdt = bool(re.search(r"\bEXT\b", old_name, re.IGNORECASE))
-        target_fdt_name = f"EXT.{record.fdt_code}" if ext_fdt else record.fdt_code
-        if old_name != target_fdt_name:
-            name_element.text = target_fdt_name
+        if old_name != record.fdt_code:
+            name_element.text = record.fdt_code
             changes.append(
                 {
                     "from": old_name,
@@ -5797,26 +5780,16 @@ def create_missing_slack_hanger_from_fdt(
         if not source_key:
             continue
         fdt_order = max(1, int(fdt_ref.source_order or 1))
-        matching_lines = line_folders.get(fdt_order, [])
-        if not matching_lines:
-            matching_lines = [
-                (line_name, line_folder)
-                for line_list in line_folders.values()
-                for line_name, line_folder in line_list
-                if re.match(r"^LINE\s+A(?:\s|$)", line_name, re.IGNORECASE)
-            ]
-        for line_name, line_folder in matching_lines:
+        for line_name, line_folder in line_folders.get(fdt_order, []):
             slack_folder = direct_child_folder_by_name(line_folder, "SLACK HANGER")
             if slack_folder is None:
                 slack_folder = ensure_folder(line_folder, namespace, "SLACK HANGER")
-            source_point = placemark_point_coordinate(source)
-            existing_points = [
-                placemark_point_coordinate(child)
+            existing_keys = {
+                point_key(child)
                 for child in list(slack_folder)
                 if local_name(child.tag) == "Placemark" and placemark_has_point(child)
-            ]
-            existing_points = [point for point in existing_points if point is not None]
-            if source_point and any(_haversine_distance_meter(source_point, point) <= 5.0 for point in existing_points):
+            }
+            if source_key in existing_keys:
                 continue
             cloned = copy.deepcopy(source)
             name_element = ensure_direct_child(cloned, "name", namespace)
@@ -6358,8 +6331,6 @@ def style_key_for_placemark(
 
     name = direct_child_text_by_name(placemark, "name")
     if source_folder == "FDT" and placemark_has_point(placemark):
-        if re.match(r"^EXT\.", normalize_text(name or ""), re.IGNORECASE):
-            return "fdt_ext", {"ext": True}
         fdt_order = fdt_order_by_placemark.get(id(placemark), 1)
         fat_count = fat_counts_by_fdt.get(fdt_order, 0)
         if not fat_count and len(fdt_order_by_placemark) == 1:
