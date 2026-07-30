@@ -3550,9 +3550,9 @@ async function refreshLocationDropdowns() {
   const [provinces, cities, districts, subdistricts, postals, areas] = await Promise.all([
     fetchLocationJson('/api/regions/provinces?limit=1000'),
     fetchLocationJson(`/api/regions/cities?limit=1000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}`),
-    fetchLocationJson(`/api/regions/districts?limit=2000${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}`),
-    fetchLocationJson(`/api/regions/subdistricts?limit=3000${v.district ? `&district=${encodeURIComponent(v.district)}` : ''}`),
-    fetchLocationJson(`/api/regions/postal-codes?limit=1000${v.subdistrict ? `&subdistrict=${encodeURIComponent(v.subdistrict)}` : ''}`),
+    fetchLocationJson(`/api/regions/districts?limit=2000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}`),
+    fetchLocationJson(`/api/regions/subdistricts?limit=3000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}${v.district ? `&district=${encodeURIComponent(v.district)}` : ''}`),
+    fetchLocationJson(`/api/regions/postal-codes?limit=1000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}${v.district ? `&district=${encodeURIComponent(v.district)}` : ''}${v.subdistrict ? `&subdistrict=${encodeURIComponent(v.subdistrict)}` : ''}`),
     fetchLocationJson('/api/astri/areas?limit=1000'),
   ]);
   fillSelect('province', provinces, 'province', v.province);
