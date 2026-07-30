@@ -5240,6 +5240,30 @@ def run_conversion_job(job_id: str, raise_on_error: bool = False) -> None:
             scope_type=scope_type,
         )
         hpdb_coding_defaults = hpdb_olt_defaults_from_standardizer(standardizer_summary)
+        if not hpdb_coding_defaults:
+            # If standardizer summary doesn't contain FDT coding info (e.g., fallback to default records),
+            # fall back directly to Coding FDT DB for OLT code and hostname.
+            try:
+                from fdt_coding_db import connect as fdt_connect, all_records
+                with fdt_connect(Config.FDT_CODING_DB_PATH) as conn:
+                    records = all_records(conn)
+                    if records:
+                        # Get the first record with non-empty olt_initial/hub_id
+                        best = next((r for r in records if r.hub_id), None)
+                        if best:
+                            olt_code = str(best.hub_id or "").strip().upper()
+                            olt_hostname = (best.olt_hostname or getattr(best, "olt_hostname", "") or "").strip().upper()
+                            if olt_code:
+                                hpdb_coding_defaults.setdefault("olt_code", olt_code)
+                            if olt_hostname:
+                                hpdb_coding_defaults.setdefault("olthostname", olt_hostname)
+                            if hpdb_coding_defaults:
+                                pipeline_logger.info(
+                                    "HPDB/ASTRI OLT fields use Coding FDT (fallback): "
+                                    + ", ".join(f"{k}={v}" for k, v in hpdb_coding_defaults.items())
+                                )
+            except Exception as exc:
+                pipeline_logger.warn(f"Fallback Coding FDT direct lookup failed: {exc}")
         if hpdb_coding_defaults:
             hpdb_defaults_override = {**(hpdb_defaults_override or {}), **hpdb_coding_defaults}
             pipeline_logger.info(
