@@ -4547,7 +4547,7 @@ def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
         return {}
     records = summary.get("available_fdt_codes")
     if not isinstance(records, list):
-        return {}
+        records = []
 
     # Pick first real Coding FDT value, not blindly records[0]. Some jobs may
     # prepend DEFAULT/fallback rows with empty OLT fields; HPDB/ASTRI must still
@@ -4571,6 +4571,31 @@ def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
         if not olt_hostname:
             olt_hostname = fdt_coding_db.normalize_text(default_record.get("olt_hostname")).upper()
 
+    if not olt_code:
+        project_name = fdt_coding_db.normalize_text(summary.get("project_folder_name")).upper() if isinstance(summary, dict) and summary.get("project_folder_name") else ""
+        if project_name:
+            try:
+                import sqlite3 as _sqlite3
+                if Config.FDT_CODING_DB_PATH.exists():
+                    with _sqlite3.connect(Config.FDT_CODING_DB_PATH) as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            """
+                            SELECT hub_id, olt_hostname
+                            FROM fdt_coding_records
+                            WHERE UPPER(site_name) LIKE ?
+                              AND IFNULL(hub_id, '') != ''
+                            ORDER BY COALESCE(fdt_order, 9999), id ASC
+                            LIMIT 1
+                            """
+                        , (f"%{project_name}%",),)
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            olt_code = fdt_coding_db.normalize_text(row[0]).upper()
+                            olt_hostname = fdt_coding_db.normalize_text(row[1] or "").upper()
+            except Exception:
+                pass
+
     if olt_code and not olt_hostname:
         # Backfill OLT hostname from Coding FDT DB by olt_code/hub_id. Some
         # standardizer summaries carry hub_id but not olt_hostname, while
@@ -4585,9 +4610,8 @@ def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
                         SELECT olt_hostname FROM fdt_coding_olts
                         WHERE hub_id = ? AND IFNULL(olt_hostname, '') != ''
                         LIMIT 1
-                        """,
-                        (olt_code,),
-                    )
+                        """
+                    , (olt_code,),)
                     row = cur.fetchone()
                     if not row:
                         cur.execute(
@@ -4595,9 +4619,8 @@ def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
                             SELECT olt_hostname FROM fdt_coding_olt_catalog
                             WHERE olt_code = ? AND IFNULL(olt_hostname, '') != ''
                             LIMIT 1
-                            """,
-                            (olt_code,),
-                        )
+                            """
+                        , (olt_code,),)
                         row = cur.fetchone()
                     if row and row[0]:
                         olt_hostname = fdt_coding_db.normalize_text(row[0]).upper()
@@ -4610,9 +4633,6 @@ def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
     if olt_hostname:
         defaults["olthostname"] = olt_hostname
     return defaults
-
-def standardize_kml_inputs_for_job(
-    job_id: str,
     input_paths: list[str | Path],
     output_mode: str,
     network_type: str,
