@@ -544,6 +544,7 @@ class FdtCodingRecord:
     fdt_code: str
     index_code: str
     cluster_initial: str
+    area: str = ""
     olt_initial: str = ""
     hub_id: str = ""
     olt_hostname: str = ""

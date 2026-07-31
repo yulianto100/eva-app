@@ -215,6 +215,7 @@ def row_to_record(row: sqlite3.Row) -> FdtCodingRecord:
         cluster_initial=row["cluster_initial"] or "",
         olt_initial=row["olt_name_initial"] or row["olt_initial"] or "",
         hub_id=row["hub_id"] or "",
+        olt_hostname=row["olt_hostname"] or "",
         olt_name_initial=row["olt_name_initial"] or "",
     )
 
