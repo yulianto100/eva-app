@@ -3650,7 +3650,7 @@ def looks_like_partner_pole_name(name: str) -> bool:
         EXT_PARTNER_POLE_PATTERN.search(normalized)
         or PARTNER_DOT_POLE_PATTERN.search(normalized)
         or EXT_PARTNER_BARE_PATTERN.search(normalized)
-        or re.search(r"\bEXT[\.\s_-]*(?:EMR|MR|TLKM|LN|MTI|PLN)\b", normalized, re.IGNORECASE)
+        or re.search(r"\bEXT[\.\s_-]*(?:EMR|MR|TLK|TLKM|LN|MTI|PLN)\b", normalized, re.IGNORECASE)
     )
 
 def looks_like_existing_emr_pole_name(name: str) -> bool:
