@@ -7166,8 +7166,9 @@ def fdt_coding_admin_page():
 @app.route("/api/fdt-coding/summary")
 def api_fdt_coding_summary():
     try:
+        area = request.args.get("area", "").strip()
         total = fdt_coding_db.count_records(Config.FDT_CODING_DB_PATH)
-        olts = fdt_coding_db.list_olts(Config.FDT_CODING_DB_PATH)
+        olts = fdt_coding_db.list_olts(Config.FDT_CODING_DB_PATH, area=area or None)
         return jsonify({"total": total, "olts": olts, "source_label": fdt_coding_source_label()})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

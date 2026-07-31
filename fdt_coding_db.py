@@ -240,67 +240,60 @@ def count_records_by_source(db_path: str | Path, source_spreadsheet_id: str) -> 
         )
 
 
-def list_olts(db_path: str | Path) -> list[dict]:
-    with connect(db_path) as conn:
-        catalog_table, catalog_name_col = olt_catalog_source(conn)
-        rows = conn.execute(
-            f"""
-            WITH names AS (
-                SELECT olt_initial FROM fdt_coding_olts WHERE olt_initial <> ''
-                UNION
-                SELECT olt_initial FROM fdt_coding_records WHERE olt_initial <> ''
-            ), record_counts AS (
-                SELECT olt_initial, COUNT(*) AS total
-                FROM fdt_coding_records
-                WHERE olt_initial <> ''
-                GROUP BY olt_initial
-            ), record_olts AS (
-                SELECT
-                    olt_initial,
-                    COALESCE(MIN(NULLIF(hub_id, '')), '') AS hub_id,
-                    COALESCE(MIN(NULLIF(olt_name_initial, '')), '') AS olt_name_initial,
-                    COALESCE(MIN(NULLIF(olt_hostname, '')), '') AS olt_hostname
-                FROM fdt_coding_records
-                WHERE olt_initial <> ''
-                GROUP BY olt_initial
-            ), catalog_olts AS (
-                SELECT
-                    olt_initial,
-                    COALESCE(MIN(NULLIF(olt_code, '')), '') AS hub_id,
-                    COALESCE(MIN(NULLIF({catalog_name_col}, '')), '') AS olt_name_initial,
-                    COALESCE(MIN(NULLIF(olt_hostname, '')), '') AS olt_hostname,
-                    COUNT(*) AS option_count
-                FROM {catalog_table}
-                WHERE olt_initial <> ''
-                GROUP BY olt_initial
-            )
-            SELECT
-                n.olt_initial,
-                COALESCE(c.total, 0) AS total,
-                COALESCE(NULLIF(r.hub_id, ''), NULLIF(o.hub_id, ''), '') AS hub_id,
-                COALESCE(NULLIF(r.olt_name_initial, ''), NULLIF(o.olt_name_initial, ''), '') AS olt_name_initial,
-                COALESCE(NULLIF(r.olt_hostname, ''), NULLIF(o.olt_hostname, ''), '') AS olt_hostname,
-                COALESCE(cat.option_count, 0) AS option_count
-            FROM names n
-            LEFT JOIN fdt_coding_olts o ON o.olt_initial = n.olt_initial
-            LEFT JOIN record_counts c ON c.olt_initial = n.olt_initial
-            LEFT JOIN record_olts r ON r.olt_initial = n.olt_initial
-            LEFT JOIN catalog_olts cat ON cat.olt_initial = n.olt_initial
-            UNION ALL
-            SELECT '(NO OLT)' AS olt_initial, COUNT(*) AS total, '' AS hub_id, '' AS olt_name_initial, '' AS olt_hostname, 0 AS option_count
-            FROM fdt_coding_records
-            WHERE olt_initial = ''
-            HAVING COUNT(*) > 0
-            ORDER BY olt_initial
-            """
-        ).fetchall()
-        result = [row_to_dict(row) for row in rows]
-        options = list_olt_catalog(conn)
-    grouped: dict[str, list[dict]] = {}
-    for option in options:
-        grouped.setdefault(option["olt_initial"], []).append(option)
-    for row in result:
-        row["options"] = grouped.get(row.get("olt_initial", ""), [])
+def list_olts(db_path: str | Path, area: str | None = None) -> list[dict]:
+  with connect(db_path) as conn:
+    catalog_table, catalog_name_col = olt_catalog_source(conn)
+    # Determine area filter
+    area_filter = (normalize_text(area) or '').strip()
+    if area_filter:
+      all_olts = conn.execute(
+        f"""
+        SELECT olt_initial, COUNT(DISTINCT id) AS total,
+          MIN(CASE WHEN hub_id <> '' THEN hub_id ELSE NULL END) AS hub_id,
+          MIN(CASE WHEN olt_hostname <> '' THEN olt_hostname ELSE NULL END) AS olt_hostname,
+          MIN(CASE WHEN olt_name_initial <> '' THEN olt_name_initial ELSE NULL END) AS olt_name_initial,
+          MIN(CASE WHEN area <> '' THEN area ELSE NULL END) AS area,
+          MIN(CASE WHEN source_spreadsheet_id <> '' THEN source_spreadsheet_id ELSE NULL END) AS source_spreadsheet_id
+        FROM fdt_coding_records
+        WHERE olt_initial <> '' AND UPPER(COALESCE(area,'')) = UPPER(?)
+        GROUP BY olt_initial
+        ORDER BY olt_initial
+        """,
+        (area_filter,),
+      ).fetchall()
+    else:
+      all_olts = conn.execute(
+        f"""
+        SELECT olt_initial, COUNT(DISTINCT id) AS total,
+          MIN(CASE WHEN hub_id <> '' THEN hub_id ELSE NULL END) AS hub_id,
+          MIN(CASE WHEN olt_hostname <> '' THEN olt_hostname ELSE NULL END) AS olt_hostname,
+          MIN(CASE WHEN olt_name_initial <> '' THEN olt_name_initial ELSE NULL END) AS olt_name_initial,
+          MIN(CASE WHEN area <> '' THEN area ELSE NULL END) AS area,
+          MIN(CASE WHEN source_spreadsheet_id <> '' THEN source_spreadsheet_id ELSE NULL END) AS source_spreadsheet_id
+        FROM fdt_coding_records
+        WHERE olt_initial <> ''
+        GROUP BY olt_initial
+        UNION
+        SELECT olt_initial, 0 AS total,
+          COALESCE(NULLIF(olt_code,''), NULLIF(hub_id,'')) AS hub_id,
+          COALESCE(NULLIF(olt_hostname,''), NULLIF(olt_name_initial,'')) AS olt_hostname,
+          COALESCE(NULLIF(olt_name_initial,''), NULLIF(olt_name_initial,'')) AS olt_name_initial,
+          olt_area AS area,
+          '' AS source_spreadsheet_id
+        FROM {catalog_table}
+        WHERE olt_initial <> ''
+        ORDER BY olt_initial
+        """
+      ).fetchall()
+    result = []
+    for r in all_olts:
+      d = dict(r)
+      d["hub_id"] = d.get("hub_id") or ""
+      d["olt_hostname"] = d.get("olt_hostname") or ""
+      d["olt_name_initial"] = d.get("olt_name_initial") or ""
+      d["area"] = d.get("area") or ""
+      d["source_spreadsheet_id"] = d.get("source_spreadsheet_id") or ""
+      result.append(d)
     return result
 
 def list_olt_catalog(conn_or_db_path) -> list[dict]:

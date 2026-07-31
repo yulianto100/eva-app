@@ -547,6 +547,50 @@ document.getElementById('importButton').onclick=()=>els.importFile.click();
 els.importFile.onchange=async()=>{ if(!els.importFile.files.length) return; const fd=new FormData(); fd.append('file', els.importFile.files[0]); fd.append('replace','1'); els.status.textContent='Mengimpor...'; const data=await api('/api/fdt-coding/import',{method:'POST',body:fd}); alert(`${data.imported} record berhasil diimpor`); els.importFile.value=''; await refresh(); };
 refresh().catch(err=>{ els.status.textContent=err.message; });
 </script>
+<script>
+const originalLoadSummary = window.loadSummary; // backup if needed
+
+// Overwrite loadSummary to include area filter in API call
+window.loadSummary = function() {
+  return (async () => {
+    const data = await api('/api/fdt-coding/summary?area=' + (els.area.value || ''));
+    window.fdtOltOptions = data.olts || [];
+    els.summary.textContent = `Total ${data.total} record | ${data.olts.length} OLT | Sumber: ${data.source_label}`;
+    const selectedArea = (els.area && els.area.value) || '';
+    let oltList = window.fdtOltOptions || [];
+    if (selectedArea) {
+      oltList = oltList.filter(o => (o.area || '').toUpperCase() === selectedArea.toUpperCase());
+    }
+    const currentFilter = els.olt.value || 'ALL';
+    els.olt.innerHTML = '<option value="ALL">Semua OLT</option>' + oltList.map(o => {
+      const base = `${escapeHtml(o.olt_initial)} (${escapeHtml(o.total)})`;
+      return `<option value="${escapeHtml(o.olt_initial)}">${base}</option>`;
+    }).join('');
+    els.olt.value = currentFilter;
+    if (els.olt.value !== currentFilter) els.olt.value = 'ALL';
+    const formOptions = '<option value="">Pilih OLT</option>' + oltList.map(o => {
+      return `<option value="${escapeHtml(o.olt_initial)}" data-hub="${escapeHtml(o.hub_id || '')}" data-olt-name="${escapeHtml(o.olt_name_initial || '')}" data-hostname="${escapeHtml(o.olt_hostname || '')}">${escapeHtml(o.olt_initial)}</option>`;
+    }).join('');
+    const current = els.fields.oltInitial.value;
+    els.fields.oltInitial.innerHTML = formOptions;
+    if (current) els.fields.oltInitial.value = current;
+    updateHubFromOlt();
+    renderOltList();
+  })();
+};
+
+// Also update filteredOltList to consider area filter when showing OLT list inside modal/list panel
+window.filteredOltList = function() {
+  const query = (els.oltListSearch?.value || '').trim().toUpperCase();
+  const selectedArea = (els.area && els.area.value) || '';
+  let baseList = (window.fdtOltOptions || []).filter(o => o.olt_initial && o.olt_initial !== '(NO OLT)');
+  if (selectedArea) {
+    baseList = baseList.filter(o => (o.area || '').toUpperCase() === selectedArea.toUpperCase());
+  }
+  return baseList.filter(o => !query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial].some(value => String(value || '').toUpperCase().includes(query)));
+};
+
+</script>
 </body>
 </html>
 
