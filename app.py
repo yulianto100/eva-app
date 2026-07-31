@@ -2793,7 +2793,7 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
         # Parsed payload can carry empty/internal vendor for one material while
         # the project BOQ form has the valid assigned vendor. Use form vendor for
         # every row; prevents ASTRI getVendorName() null/type-error.
-        if vendor_from_url:
+        if vendor_from_url and not data.get("vendor_name"):
             data["vendor_name"] = vendor_from_url
         if plant_from_url:
             data["area_plant_code"] = plant_from_url
