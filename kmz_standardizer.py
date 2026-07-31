@@ -4325,9 +4325,17 @@ def standard_external_partner_pole_name(name: str, cluster_initial: str) -> str:
     def replace(match: re.Match) -> str:
         partner = normalize_text(match.group("partner")).upper()
         standard_partner = EXT_PARTNER_ALIASES.get(partner, partner)
-        existing_cluster = normalize_text(match.group("cluster")).upper()
+        existing_cluster_raw = normalize_text(match.group("cluster")).upper() if match.group("cluster") else None
         pole = normalize_text(match.group("pole")).upper()
-        cluster = existing_cluster or cluster_initial
+        # Skip cluster segment if it looks like an FDT code/number (e.g. CKK08.074, 047, etc)
+        # Preserve only if it's a real cluster code (letters + dots, not pure numeric or FDT-style)
+        skip_cluster = False
+        if existing_cluster_raw:
+            parts = existing_cluster_raw.split(".")
+            # Drop the entire cluster string when any segment is pure numeric (embedded FDT ID)
+            if any(p.isdigit() for p in parts):
+                skip_cluster = True
+        cluster = None if skip_cluster else (existing_cluster_raw or cluster_initial)
         if cluster:
             return f"EXT.{standard_partner}.{cluster}.{pole}"
         return f"EXT.{standard_partner}.{pole}"
