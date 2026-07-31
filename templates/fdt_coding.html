@@ -110,21 +110,20 @@
   <main class="fdt-page">
     <section class="fdt-toolbar" aria-label="FDT coding tools">
       <div class="fdt-field">
+        <label for="areaFilter">Area</label>
+        <select id="areaFilter" class="ui-input">
+          <option value="">Semua Area</option>
+          <option value="Bekasi">Bekasi</option>
+          <option value="Jakarta">Jakarta</option>
+        </select>
+      </div>
+      <div class="fdt-field">
         <label for="searchInput">Cari</label>
         <input id="searchInput" class="ui-input" placeholder="Cari site, FDT code, cluster, hub...">
       </div>
       <div class="fdt-field">
-       <label for="oltFilter">OLT</label>
-       <select id="oltFilter" class="ui-input"><option value="ALL">Semua OLT</option></select>
-      </div>
-      <div class="fdt-field">
-       <label for="areaFilter">Area</label>
-       <select id="areaFilter" class="ui-input">
-        <option value="">Semua Area</option>
-        <option value="Bekasi">Bekasi</option>
-        <option value="Jakarta">Jakarta</option>
-        <option value="Indramayu">Indramayu</option>
-       </select>
+        <label for="oltFilter">OLT</label>
+        <select id="oltFilter" class="ui-input"><option value="ALL">Semua OLT</option></select>
       </div>
       <div class="toolbar-actions">
         <button id="addOltButton" class="secondary-button" type="button">Tambah OLT</button>
