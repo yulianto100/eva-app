@@ -403,16 +403,14 @@ def sync_all_incremental(
         for ws in worksheets:
             title = ws.title
             if _should_skip_sheet(title):
-                skipped_olt = normalize_text(title).upper()
-                # removed = fdt_coding_db.delete_records_by_source(db_path, source.spreadsheet_id, skipped_olt)  # DISABLED: prevent data loss
-                try:
-                    fdt_coding_db.delete_olt(db_path, skipped_olt, force=True)
-                except Exception:
-                    logger.debug("Inbound sync: OLT skip '%s' tidak perlu dihapus dari daftar OLT.", title)
-                if removed:
-                    logger.info("Inbound sync: sheet '%s' di-skip dan %d record lama dihapus.", title, removed)
-                skipped += 1
-                continue
+             skipped_olt = normalize_text(title).upper()
+             # removed = fdt_coding_db.delete_records_by_source(db_path, source.spreadsheet_id, skipped_olt) # DISABLED: prevent data loss
+             try:
+              fdt_coding_db.delete_olt(db_path, skipped_olt, force=True)
+             except Exception:
+              logger.debug("Inbound sync: OLT skip '%s' tidak perlu dihapus dari daftar OLT.", title)
+             skipped += 1
+             continue
             data = sheet_data.get(title, [])
             c = _sync_incremental_sheet(source.spreadsheet_id, title, data, db_path, hashes)
             if c:

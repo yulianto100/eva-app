@@ -107,7 +107,6 @@ DEFAULT_EXT_PARTNER_ALIASES = {
     "MR": "MR",
     "FM": "LN",
     "TEL": "TLKM",
-    "TLK": "TLKM",
     "TELKOM": "TLKM",
     "TELECOM": "TLKM",
     "TLKOM": "TLKM",
@@ -2464,6 +2463,7 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
             or "SLACK" in name
             or "HANGER" in name
             or re.search(r"[A-Z]\d+[\s/–\-][A-Z]*\d+", name)
+            or re.search(r"^[A-Z]-\d+$", name)
         ):
             return name
         if re.search(r"[A-Z]", name):
@@ -3650,7 +3650,7 @@ def looks_like_partner_pole_name(name: str) -> bool:
         EXT_PARTNER_POLE_PATTERN.search(normalized)
         or PARTNER_DOT_POLE_PATTERN.search(normalized)
         or EXT_PARTNER_BARE_PATTERN.search(normalized)
-        or re.search(r"\bEXT[\.\s_-]*(?:EMR|MR|TLK|TLKM|LN|MTI|PLN)\b", normalized, re.IGNORECASE)
+        or re.search(r"\bEXT[\.\s_-]*(?:EMR|MR|TLKM|LN|MTI|PLN)\b", normalized, re.IGNORECASE)
     )
 
 def looks_like_existing_emr_pole_name(name: str) -> bool:
