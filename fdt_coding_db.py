@@ -275,9 +275,9 @@ def list_olts(db_path: str | Path, area: str | None = None) -> list[dict]:
         GROUP BY olt_initial
         UNION
         SELECT olt_initial, 0 AS total,
-          COALESCE(NULLIF(olt_code,''), NULLIF(hub_id,'')) AS hub_id,
-          COALESCE(NULLIF(olt_hostname,''), NULLIF(olt_name_initial,'')) AS olt_hostname,
-          COALESCE(NULLIF(olt_name_initial,''), NULLIF(olt_name_initial,'')) AS olt_name_initial,
+          olt_code AS hub_id,
+          olt_hostname AS olt_hostname,
+          olt_name_initial AS olt_name_initial,
           olt_area AS area,
           '' AS source_spreadsheet_id
         FROM {catalog_table}
