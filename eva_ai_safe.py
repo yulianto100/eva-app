@@ -275,6 +275,56 @@ def suggest_kmz_target(
     return {"folder_path": clean, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
 
 
+def suggest_dxf_parcel_orientation(
+    *,
+    fat_angle: float,
+    road_angle: float | None,
+    point_count: int,
+    region_area: float,
+    region_width: float,
+    region_height: float,
+) -> dict[str, Any] | None:
+    """Ask EVA AI for one *group-level* HP COVER parcel axis.
+
+    AI only selects an angle. The DXF converter still deterministically clips
+    parcels to Voronoi cells, FAT/block boundary and road clearance, so it
+    cannot create overlapping or out-of-area boxes.
+    """
+    if not ai_assist_enabled() or point_count < 2:
+        return None
+    system = (
+        "You select a single parcel-grid orientation for telecom DXF HP COVER. "
+        "Return ONLY JSON: {\"angle_degrees\": number, \"confidence\": number, \"reason\": string}. "
+        "Use FAT area axis as default. If a nearby road angle is supplied and it clearly gives a cleaner "
+        "road-front parcel row, use that road angle. Keep the result within -90..90 degrees. "
+        "Do not propose geometry, dimensions, or coordinates."
+    )
+    payload = {
+        "fat_angle_degrees": round(float(fat_angle), 2),
+        "road_angle_degrees": round(float(road_angle), 2) if road_angle is not None else None,
+        "hp_cover_count": int(point_count),
+        "region_area_m2": round(float(region_area), 2),
+        "region_width_m": round(float(region_width), 2),
+        "region_height_m": round(float(region_height), 2),
+        "constraint": "full area, rectangular parcels, no overlap, never cross road/boundary",
+    }
+    result = _post_json(
+        [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(payload)}],
+        max_tokens=120,
+        timeout=min(ai_timeout(), 12),
+    )
+    if not result:
+        return None
+    try:
+        confidence = float(result.get("confidence", 0))
+        angle = float(result.get("angle_degrees"))
+    except (TypeError, ValueError):
+        return None
+    if confidence < ai_confidence_min() or not -90.0 <= angle <= 90.0:
+        return None
+    return {"angle_degrees": angle, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
+
+
 # ── DXF metadata ────────────────────────────────────────────
 
 def dxf_ai_metadata() -> dict[str, Any]:

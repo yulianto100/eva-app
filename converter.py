@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - depends on Shapely build/GEOS version.
     _shapely_voronoi_diagram = None
 
 from config import Config
+from eva_ai_safe import suggest_dxf_parcel_orientation
 
 try:
     from shapely.strtree import STRtree
@@ -4144,6 +4145,47 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # "rectangular, aligned to FAT area" style: parcels are rotated
         # rectangles, not irregular polygons, and they all share edges.
         region_angle = self._polygon_label_rotation(clip_region) if clip_region is not None else 0.0
+        # AI is allowed to choose only the single group axis. All parcel bounds,
+        # road clearance, Voronoi ownership and no-overlap guarantees remain
+        # deterministic below. On AI timeout/low confidence, retain FAT axis.
+        ai_orientation = None
+        road_angle = None
+        try:
+            # Provide the nearest real road direction as a second candidate.
+            # The AI selects only one axis; it never receives or creates parcel
+            # polygons, so geometry safety remains fully deterministic.
+            reference_point = clip_region.representative_point()
+            nearest_line = min(
+                (line for line in self.road_centerlines if line is not None and not line.is_empty),
+                key=lambda line: line.distance(reference_point),
+                default=None,
+            )
+            if nearest_line is not None and nearest_line.length > 0:
+                projected = nearest_line.project(reference_point)
+                epsilon = min(2.0, max(0.25, nearest_line.length * 0.01))
+                p1 = nearest_line.interpolate(max(0.0, projected - epsilon))
+                p2 = nearest_line.interpolate(min(nearest_line.length, projected + epsilon))
+                dx, dy = float(p2.x - p1.x), float(p2.y - p1.y)
+                if dx * dx + dy * dy > 1e-9:
+                    road_angle = math.degrees(math.atan2(dy, dx))
+            bounds = clip_region.bounds
+            ai_orientation = suggest_dxf_parcel_orientation(
+                fat_angle=region_angle,
+                road_angle=road_angle,
+                point_count=len(group_sites),
+                region_area=float(clip_region.area),
+                region_width=float(bounds[2] - bounds[0]),
+                region_height=float(bounds[3] - bounds[1]),
+            )
+        except Exception as exc:
+            LOGGER.debug("HP COVER AI orientation fallback: %s", exc)
+        if ai_orientation:
+            region_angle = float(ai_orientation["angle_degrees"])
+            if pipeline_logger:
+                pipeline_logger(
+                    f"[3/6] EVA AI parcel axis {region_angle:.1f}° "
+                    f"(confidence {ai_orientation['confidence']:.2f})."
+                )
 
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
@@ -4159,7 +4201,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # subdivision: lots line up along roads instead of floating as
             # free rectangles.
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
-            parcel = self._road_front_parcel(site, cell, clip_region, cell_area, region_angle)
+            parcel = self._road_front_parcel(
+                site, cell, clip_region, cell_area, region_angle,
+                preferred_angle=float(ai_orientation["angle_degrees"]) if ai_orientation else None,
+            )
             if parcel is None or parcel.is_empty:
                 # Road-front rectangle can disappear (common for HP UNCOVER
                 # outside/near boundary). Fall back to cell envelope clipped
@@ -4212,7 +4257,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             drawn += 1
         return drawn
 
-    def _road_front_parcel(self, site: ShapelyPoint, cell, clip_region, cell_area: float, fallback_angle: float):
+    def _road_front_parcel(
+        self, site: ShapelyPoint, cell, clip_region, cell_area: float,
+        fallback_angle: float, preferred_angle: float | None = None,
+    ):
         """Build a pure rectangle for one HP point.
 
         - SHORT side (width) lies along the road tangent — faces the road.
@@ -4228,7 +4276,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         road_solid = self._home_parcel_road_solid()
         road_point = None
         road_line_point = None
-        tangent_angle = fallback_angle
+        # EVA AI may select a group axis; fallback remains FAT axis.
+        tangent_angle = preferred_angle if preferred_angle is not None else fallback_angle
         if road_solid is not None and not road_solid.is_empty:
             try:
                 _p_site, p_road = nearest_points(site, road_solid.boundary)
@@ -4256,7 +4305,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     p1 = best_line.interpolate(max(0.0, proj - eps))
                     p2 = best_line.interpolate(min(best_line.length, proj + eps))
                     dx, dy = float(p2.x - p1.x), float(p2.y - p1.y)
-                    if dx * dx + dy * dy > 1e-9:
+                    if preferred_angle is None and dx * dx + dy * dy > 1e-9:
                         tangent_angle = math.degrees(math.atan2(dy, dx))
                 except Exception:
                     pass
