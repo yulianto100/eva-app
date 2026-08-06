@@ -3997,7 +3997,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             )
             drawn += retry_drawn
             if pipeline_logger is not None:
-                pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER retry: {retry_drawn}/{len(missing_indexes)} titik conflict dipasang ke space kosong terdekat.")
+                pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER relocate retry: {retry_drawn}/{len(missing_indexes)} fallback titik dipasang ke space kosong terdekat (maks 12m).")
 
         # Run-3: every HP COVER source remains visible even where FAT/ROAD/
         # cable constraints leave no valid non-overlapping parcel. Do not force
@@ -4257,7 +4257,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         """
         road_solid = self._home_parcel_road_solid()
         drawn = 0
-        offsets = [(0.0, 0.0)]  # immutable source anchor; never relocate HP COVER
+        # Run-2 may relocate only HPs that failed normal corridor layout.
+        # Search nearest valid empty slot first; original source remains intact
+        # in KMZ and normal HPs are never moved.
+        offsets = [(0.0, 0.0)]
+        for radius in (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0):
+            for degrees in range(0, 360, 20):
+                theta = math.radians(degrees)
+                offsets.append((radius * math.cos(theta), radius * math.sin(theta)))
         for idx in missing_indexes:
             source = ShapelyPoint(sites[idx])
             # Prefer containing FAT; otherwise nearest FAT only within 6m.
@@ -4467,8 +4474,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # subdivision: lots line up along roads instead of floating as
             # free rectangles.
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
-            # Intact compact rectangle. Ownership is a fit constraint, not
-            # a clipping blade; failed fits go to Run-2 relocation.
+            # Compact box parcel. Ownership remains a fit constraint, not a
+            # full-area parcel shape, so one HP never claims an entire FAT.
             preferred = region_angle
             allowed = cell.intersection(clip_region)
             road_solid = self._home_parcel_road_solid()
