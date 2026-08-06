@@ -105,6 +105,7 @@
     .fdt-result-rows .copy-btn { padding: .5rem .85rem; border: 1px solid var(--brand-dark); background: var(--brand); color: #06301f; font-size: .8rem; font-weight: 700; cursor: pointer; border-radius: 10px; justify-self: start; }
     .fdt-result-rows .copy-btn:hover { background: #27b97a; }
   </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=20260802-full-redesign">
 </head>
 <body>
   <main class="fdt-page">
@@ -291,18 +292,16 @@ function updateHubFromOlt(preferredHub=''){
   const previous=preferredHub || els.fields.oltUnit.value || (selected ? (selected.dataset.hub || '') : '');
   if(units.length){
     els.fields.oltUnit.disabled=false;
-    els.fields.oltUnit.innerHTML=units.map(unit=>`<option value="${escapeHtml(unit.olt_code)}" data-hub="${escapeHtml(unit.olt_code || '')}" data-hostname="${escapeHtml(unit.olt_hostname || '')}" data-olt-name="${escapeHtml(unit.olt_name_initial || '')}">${escapeHtml(unit.olt_code)}${unit.olt_hostname ? ' - '+escapeHtml(unit.olt_hostname) : ''}</option>`).join('');
+    els.fields.oltUnit.innerHTML=units.map(unit=>`<option value="${escapeHtml(unit.olt_code)}" data-hostname="${escapeHtml(unit.olt_hostname || '')}" data-olt-name="${escapeHtml(unit.olt_name_initial || '')}">${escapeHtml(unit.olt_code || '(NO ID)')}${unit.olt_hostname ? ' - '+escapeHtml(unit.olt_hostname) : ''}</option>`).join('');
     els.fields.oltUnit.value = units.some(unit=>unit.olt_code===previous) ? previous : units[0].olt_code;
   } else {
     els.fields.oltUnit.disabled=true;
     els.fields.oltUnit.innerHTML='<option value="">Tidak ada pilihan unit</option>';
   }
-  const preferredHubFromSelected = selected ? (selected.dataset.hub || '') : '';
-  const preferredHostname = selected ? (selected.dataset.hostname || '') : '';
-  const preferredOltName = selected ? (selected.dataset.oltName || '') : '';
-  els.fields.hubId.value = preferredHubFromSelected;
-  els.fields.oltHostname.value = preferredHostname;
-  els.fields.oltNameInitial.value = preferredOltName;
+  const unit=currentUnitOption();
+  els.fields.hubId.value = unit ? (unit.olt_code || '') : (selected ? (selected.dataset.hub || '') : '');
+  els.fields.oltHostname.value = unit ? (unit.olt_hostname || '') : (selected ? (selected.dataset.hostname || '') : '');
+  els.fields.oltNameInitial.value = unit ? (unit.olt_name_initial || '') : (selected ? (selected.dataset.oltName || '') : '');
   if(!els.fields.recordId.value) loadAvailableFdtIds();
 }
 function updateGeneratedFdtCodes(){
@@ -396,7 +395,7 @@ function startBulkEdit(){
   bulkEditMode=true;
   els.fields.recordId.value='bulk';
   els.fields.oltInitial.value=first.olt_initial||'';
-  updateHubFromOlt();
+  updateHubFromOlt(first.hub_id||'');
   if(first.hub_id && !els.fields.hubId.value) els.fields.hubId.value=first.hub_id;
   els.fields.oltHostname.value=first.olt_hostname||'';
   els.fields.oltNameInitial.value=first.olt_name_initial||'';
@@ -411,7 +410,7 @@ function startBulkEdit(){
 
 async function api(url, opts={}){ const res=await fetch(url, opts); const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data.error||res.statusText); return data; }
 async function loadSummary(){
-  const data=await api('/api/fdt-coding/summary');
+  const data=await api('/api/fdt-coding/summary?'+new URLSearchParams({area:els.area.value||''}));
   window.fdtOltOptions = data.olts || [];
   els.summary.textContent = `Total ${data.total} record | ${data.olts.length} OLT | Sumber: ${data.source_label}`;
   const currentFilter=els.olt.value || 'ALL';
@@ -429,7 +428,7 @@ function filteredOltList(){
   const query=(els.oltListSearch?.value||'').trim().toUpperCase();
   return (window.fdtOltOptions||[])
     .filter(o=>o.olt_initial && o.olt_initial !== '(NO OLT)')
-    .filter(o=>!query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial].some(value=>String(value||'').toUpperCase().includes(query)));
+    .filter(o=>!query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial, ...((o.options||[]).flatMap(unit=>[unit.olt_code,unit.olt_hostname,unit.olt_name_initial]))].some(value=>String(value||'').toUpperCase().includes(query)));
 }
 function renderOltPagination(total){
   const totalPages=Math.max(1, Math.ceil(total / oltListPageSize));
@@ -451,7 +450,13 @@ function renderOltList(){
   if(oltListPage > totalPages) oltListPage = totalPages;
   const offset=(oltListPage-1)*oltListPageSize;
   const pageRows=olts.slice(offset, offset + oltListPageSize);
-  els.oltListBody.innerHTML=pageRows.map(o=>`<tr><td>${escapeHtml(o.olt_initial)}</td><td>${escapeHtml(o.hub_id || '')}</td><td>${escapeHtml(o.olt_hostname || '')}</td><td>${escapeHtml(o.olt_name_initial || '')}</td><td><button class="secondary-button" data-del-olt="${escapeHtml(o.olt_initial)}" data-total="${escapeHtml(o.total || 0)}" type="button">Hapus</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Belum ada OLT.</td></tr>';
+  els.oltListBody.innerHTML=pageRows.map(o=>{
+    const units=(o.options||[]);
+    const ids=units.length?units.map(unit=>escapeHtml(unit.olt_code||'-')).join('<br>'):escapeHtml(o.hub_id||'');
+    const hostnames=units.length?units.map(unit=>escapeHtml(unit.olt_hostname||'-')).join('<br>'):escapeHtml(o.olt_hostname||'');
+    const initials=units.length?[...new Set(units.map(unit=>unit.olt_name_initial).filter(Boolean))].map(escapeHtml).join('<br>'):escapeHtml(o.olt_name_initial||'');
+    return `<tr><td>${escapeHtml(o.olt_initial)}<br><small class="muted">${units.length} unit</small></td><td>${ids}</td><td>${hostnames}</td><td>${initials}</td><td><button class="secondary-button" data-del-olt="${escapeHtml(o.olt_initial)}" data-total="${escapeHtml(o.total||0)}" type="button">Hapus</button></td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">Belum ada OLT.</td></tr>';
   const from=olts.length ? offset + 1 : 0;
   const to=Math.min(offset + pageRows.length, olts.length);
   els.oltListStatus.textContent = `${from}-${to} dari ${olts.length} OLT`;
@@ -512,7 +517,7 @@ els.fields.fdtId.oninput=updateGeneratedFdtCodes;
 els.fields.siteName.oninput=updateGenerateResultPanel;
 els.search.oninput=()=>{ clearTimeout(window._fdtSearch); window._fdtSearch=setTimeout(()=>{ currentPage=1; loadRecords(); },250); };
 els.olt.onchange=()=>{ currentPage=1; loadRecords(); };
-els.area.onchange=()=>{ currentPage=1; loadRecords(); };
+els.area.onchange=()=>{ currentPage=1; loadSummary().then(loadRecords); };
 document.getElementById('saveButton').onclick=async()=>{
   const button=document.getElementById('saveButton');
   const oldText=button.textContent;
@@ -553,7 +558,7 @@ const originalLoadSummary = window.loadSummary; // backup if needed
 // Overwrite loadSummary to include area filter in API call
 window.loadSummary = function() {
   return (async () => {
-    const data = await api('/api/fdt-coding/summary?area=' + (els.area.value || ''));
+    const data = await api('/api/fdt-coding/summary?' + new URLSearchParams({area:els.area.value||''}));
     window.fdtOltOptions = data.olts || [];
     els.summary.textContent = `Total ${data.total} record | ${data.olts.length} OLT | Sumber: ${data.source_label}`;
     const selectedArea = (els.area && els.area.value) || '';
@@ -587,13 +592,12 @@ window.filteredOltList = function() {
   if (selectedArea) {
     baseList = baseList.filter(o => (o.area || '').toUpperCase() === selectedArea.toUpperCase());
   }
-  return baseList.filter(o => !query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial].some(value => String(value || '').toUpperCase().includes(query)));
+  return baseList.filter(o => !query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial, ...((o.options||[]).flatMap(unit=>[unit.olt_code,unit.olt_hostname,unit.olt_name_initial]))].some(value => String(value || '').toUpperCase().includes(query)));
 };
 
 </script>
 </body>
 </html>
-
 
 
 

@@ -242,60 +242,133 @@ def count_records_by_source(db_path: str | Path, source_spreadsheet_id: str) -> 
 
 
 def list_olts(db_path: str | Path, area: str | None = None) -> list[dict]:
-  with connect(db_path) as conn:
-    catalog_table, catalog_name_col = olt_catalog_source(conn)
-    # Determine area filter
-    area_filter = (normalize_text(area) or '').strip()
-    if area_filter:
-      all_olts = conn.execute(
-        f"""
-        SELECT olt_initial, COUNT(DISTINCT id) AS total,
-          MIN(CASE WHEN hub_id <> '' THEN hub_id ELSE NULL END) AS hub_id,
-          MIN(CASE WHEN olt_hostname <> '' THEN olt_hostname ELSE NULL END) AS olt_hostname,
-          MIN(CASE WHEN olt_name_initial <> '' THEN olt_name_initial ELSE NULL END) AS olt_name_initial,
-          MIN(CASE WHEN area <> '' THEN area ELSE NULL END) AS area,
-          MIN(CASE WHEN source_spreadsheet_id <> '' THEN source_spreadsheet_id ELSE NULL END) AS source_spreadsheet_id
-        FROM fdt_coding_records
-        WHERE olt_initial <> '' AND UPPER(COALESCE(area,'')) = UPPER(?)
-        GROUP BY olt_initial
-        ORDER BY olt_initial
-        """,
-        (area_filter,),
-      ).fetchall()
-    else:
-      all_olts = conn.execute(
-        f"""
-        SELECT olt_initial, COUNT(DISTINCT id) AS total,
-          MIN(CASE WHEN hub_id <> '' THEN hub_id ELSE NULL END) AS hub_id,
-          MIN(CASE WHEN olt_hostname <> '' THEN olt_hostname ELSE NULL END) AS olt_hostname,
-          MIN(CASE WHEN olt_name_initial <> '' THEN olt_name_initial ELSE NULL END) AS olt_name_initial,
-          MIN(CASE WHEN area <> '' THEN area ELSE NULL END) AS area,
-          MIN(CASE WHEN source_spreadsheet_id <> '' THEN source_spreadsheet_id ELSE NULL END) AS source_spreadsheet_id
-        FROM fdt_coding_records
-        WHERE olt_initial <> ''
-        GROUP BY olt_initial
-        UNION
-        SELECT olt_initial, 0 AS total,
-          olt_code AS hub_id,
-          olt_hostname AS olt_hostname,
-          olt_name_initial AS olt_name_initial,
-          olt_area AS area,
-          '' AS source_spreadsheet_id
-        FROM {catalog_table}
-        WHERE olt_initial <> ''
-        ORDER BY olt_initial
-        """
-      ).fetchall()
-    result = []
-    for r in all_olts:
-      d = dict(r)
-      d["hub_id"] = d.get("hub_id") or ""
-      d["olt_hostname"] = d.get("olt_hostname") or ""
-      d["olt_name_initial"] = d.get("olt_name_initial") or ""
-      d["area"] = d.get("area") or ""
-      d["source_spreadsheet_id"] = d.get("source_spreadsheet_id") or ""
-      result.append(d)
-    return result
+    """Return one parent row per OLT, preserving its OLT ID/hostname units."""
+    area_filter = normalize_text(area).strip()
+    with connect(db_path) as conn:
+        catalog_table, catalog_name_col = olt_catalog_source(conn)
+        record_where = "WHERE TRIM(olt_initial) <> ''"
+        catalog_where = "WHERE TRIM(olt_initial) <> ''"
+        record_params: list[str] = []
+        catalog_params: list[str] = []
+        if area_filter:
+            record_where += " AND UPPER(TRIM(COALESCE(area, ''))) = UPPER(?)"
+            catalog_where += " AND UPPER(TRIM(COALESCE(olt_area, ''))) = UPPER(?)"
+            record_params.append(area_filter)
+            catalog_params.append(area_filter)
+
+        # Coding records show what is in use; the OLT catalog adds every valid
+        # unit/hostname pair, including units not used by an FDT row yet.
+        record_rows = conn.execute(
+            f"""
+            SELECT
+                TRIM(olt_initial) AS olt_initial,
+                TRIM(hub_id) AS olt_code,
+                TRIM(olt_hostname) AS olt_hostname,
+                TRIM(olt_name_initial) AS olt_name_initial,
+                TRIM(area) AS area,
+                MIN(TRIM(source_spreadsheet_id)) AS source_spreadsheet_id,
+                COUNT(DISTINCT id) AS total
+            FROM fdt_coding_records
+            {record_where}
+            GROUP BY TRIM(olt_initial), TRIM(hub_id), TRIM(olt_hostname), TRIM(olt_name_initial), TRIM(area)
+            """,
+            record_params,
+        ).fetchall()
+        catalog_rows = conn.execute(
+            f"""
+            SELECT
+                TRIM(olt_initial) AS olt_initial,
+                TRIM(olt_code) AS olt_code,
+                TRIM(olt_hostname) AS olt_hostname,
+                TRIM({catalog_name_col}) AS olt_name_initial,
+                TRIM(olt_area) AS area,
+                '' AS source_spreadsheet_id,
+                0 AS total
+            FROM {catalog_table}
+            {catalog_where}
+            """,
+            catalog_params,
+        ).fetchall()
+        # Manually added OLTs are not guaranteed to be in OLT.db yet.
+        manual_rows = []
+        if not area_filter:
+            manual_rows = conn.execute(
+                """
+                SELECT
+                    TRIM(olt_initial) AS olt_initial,
+                    TRIM(hub_id) AS olt_code,
+                    TRIM(olt_hostname) AS olt_hostname,
+                    TRIM(olt_name_initial) AS olt_name_initial,
+                    '' AS area,
+                    '' AS source_spreadsheet_id,
+                    0 AS total
+                FROM fdt_coding_olts
+                WHERE TRIM(olt_initial) <> ''
+                """
+            ).fetchall()
+
+    parents: dict[str, dict] = {}
+    for row in [*record_rows, *catalog_rows, *manual_rows]:
+        item = dict(row)
+        olt_initial = normalize_text(item.get("olt_initial")).upper()
+        if not olt_initial:
+            continue
+        parent = parents.setdefault(
+            olt_initial,
+            {
+                "olt_initial": olt_initial,
+                "total": 0,
+                "area_values": set(),
+                "source_values": set(),
+                "units": {},
+            },
+        )
+        total = int(item.get("total") or 0)
+        parent["total"] += total
+        if item.get("area"):
+            parent["area_values"].add(normalize_text(item["area"]))
+        if item.get("source_spreadsheet_id"):
+            parent["source_values"].add(normalize_text(item["source_spreadsheet_id"]))
+
+        unit = {
+            "olt_code": normalize_text(item.get("olt_code")).upper(),
+            "olt_hostname": normalize_text(item.get("olt_hostname")).upper(),
+            "olt_name_initial": normalize_text(item.get("olt_name_initial")).upper(),
+            "area": normalize_text(item.get("area")),
+            "total": total,
+        }
+        # Same OLT code is one unit. Catalog fills hostname/initial when older
+        # coding records have blanks; divergent nonblank hostname stays visible.
+        key = (unit["olt_code"], unit["olt_hostname"] or unit["olt_name_initial"])
+        existing = parent["units"].get(key)
+        if existing:
+            existing["total"] += total
+            for field in ("olt_hostname", "olt_name_initial", "area"):
+                if not existing[field] and unit[field]:
+                    existing[field] = unit[field]
+        else:
+            parent["units"][key] = unit
+
+    result: list[dict] = []
+    for parent in parents.values():
+        options = sorted(
+            parent["units"].values(),
+            key=lambda unit: (-int(unit["total"] or 0), unit["olt_code"], unit["olt_hostname"]),
+        )
+        primary = options[0] if options else {"olt_code": "", "olt_hostname": "", "olt_name_initial": ""}
+        result.append(
+            {
+                "olt_initial": parent["olt_initial"],
+                "total": parent["total"],
+                "hub_id": primary["olt_code"],
+                "olt_hostname": primary["olt_hostname"],
+                "olt_name_initial": primary["olt_name_initial"],
+                "area": sorted(parent["area_values"])[0] if parent["area_values"] else "",
+                "source_spreadsheet_id": sorted(parent["source_values"])[0] if parent["source_values"] else "",
+                "options": options,
+            }
+        )
+    return sorted(result, key=lambda item: item["olt_initial"])
 
 def list_olt_catalog(conn_or_db_path) -> list[dict]:
     close_conn = False
