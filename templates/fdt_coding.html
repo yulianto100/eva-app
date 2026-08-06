@@ -179,12 +179,12 @@
       </summary>
       <section class="fdt-form" aria-label="FDT coding form">
         <input id="recordId" type="hidden">
-        <div class="fdt-field span-2"><label for="oltInitial">OLT</label><select id="oltInitial" class="ui-input"><option value="">Pilih OLT</option></select></div>
-        <div class="fdt-field span-2"><label for="oltUnit">OLT Unit</label><select id="oltUnit" class="ui-input"><option value="">Auto / pilih OLT unit</option></select></div>
+        <div class="fdt-field span-6"><label for="areaArea">AREA</label><select id="areaArea" class="ui-input" required><option value="" selected>Pilih Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option></select></div>
+        <div class="fdt-field span-2"><label for="oltInitial">OLT</label><select id="oltInitial" class="ui-input" disabled><option value="">Pilih Area dulu</option></select></div>
+        <div class="fdt-field span-2"><label for="oltUnit">OLT Unit</label><select id="oltUnit" class="ui-input" disabled><option value="">Pilih OLT dulu</option></select></div>
         <div class="fdt-field span-2"><label for="hubId">OLT ID</label><input id="hubId" class="ui-input" placeholder="Auto dari OLT" readonly></div>
         <div class="fdt-field span-2"><label for="oltHostname">OLT Hostname (Kolom D)</label><input id="oltHostname" class="ui-input" placeholder="Auto dari CSV" readonly></div>
         <div class="fdt-field span-2"><label for="oltNameInitial">Inisial Name OLT</label><input id="oltNameInitial" class="ui-input" placeholder="Auto dari OLT" readonly></div>
-        <div class="fdt-field span-6"><label for="areaArea">AREA</label><select id="areaArea" class="ui-input"><option value="">Semua Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option></select></div>
         <div class="fdt-field span-2"><label for="siteName">Nama Cluster</label><input id="siteName" class="ui-input" placeholder="Nama cluster"></div>
         <div class="fdt-field span-2"><label for="clusterInitial">FDT Code</label><input id="clusterInitial" class="ui-input" placeholder="PVMJ14"></div>
         <div class="fdt-field span-2"><label for="fdtOrder">Total FDT</label><input id="fdtOrder" class="ui-input" type="number" min="1" value="1" placeholder="1"></div>
@@ -246,11 +246,12 @@ let totalRecords = 0;
 let selectedIds = new Set();
 let bulkEditMode = false;
 let availableFdtIds = [];
+let fdtFormOltOptions = [];
 let oltListPage = 1;
 const oltListPageSize = 10;
 function escapeHtml(value){ return String(value ?? '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 function currentOltOption(){
-  return (window.fdtOltOptions||[]).find(o=>o.olt_initial===els.fields.oltInitial.value) || null;
+  return fdtFormOltOptions.find(o=>o.olt_initial===els.fields.oltInitial.value) || null;
 }
 function currentUnitOption(){
   const olt=currentOltOption();
@@ -282,8 +283,40 @@ function payload(){
 
   return { ids:[...selectedIds], olt_initial: els.fields.oltInitial.value, hub_id: fallbackHub, olt_hostname: els.fields.oltHostname.value, olt_name_initial: els.fields.oltNameInitial.value, area: (els.fields.areaArea ? els.fields.areaArea.value : ''), site_name: els.fields.siteName.value.toUpperCase(), total_fdt: els.fields.fdtOrder.value || '1', fdt_order: els.fields.fdtOrder.value || '1', fdt_id: firstFdtId, fdt_ids: fdtIds, fdt_code: payloadFdtCode, index_code: '', cluster_initial: prefix, sheet_name: els.fields.oltInitial.value };
 }
-function fillForm(row){ document.getElementById('fdtFormPanel').open=true; bulkEditMode=false; selectedIds.clear(); updateBulkActions(); els.fields.fdtId.readOnly=false; els.fields.recordId.value=row.id||''; els.fields.oltInitial.value=row.olt_initial||''; updateHubFromOlt(row.hub_id||''); els.fields.hubId.value=row.hub_id||els.fields.hubId.value||''; els.fields.oltHostname.value=row.olt_hostname||els.fields.oltHostname.value||''; els.fields.oltNameInitial.value=row.olt_name_initial||els.fields.oltNameInitial.value||''; els.fields.areaArea.value=row.area||''; els.fields.siteName.value=(row.site_name||'').replace(/ - FDT \d+$/,''); els.fields.fdtOrder.value=row.fdt_order||1; els.fields.fdtId.value=row.fdt_id||''; els.fields.clusterInitial.value=row.cluster_initial||String(row.fdt_code||'').split('.')[0]||''; els.fields.indexCode.value=''; updateGeneratedFdtCodes(); window.scrollTo({top:0,behavior:'smooth'}); }
-function clearForm(){ Object.values(els.fields).forEach(el=>el.value=''); els.fields.fdtOrder.value='1'; els.fields.fdtId.readOnly=true; bulkEditMode=false; selectedIds.clear(); updateBulkActions(); updateHubFromOlt(); loadAvailableFdtIds(); updateGeneratedFdtCodes(); }
+async function fillForm(row){
+  document.getElementById('fdtFormPanel').open=true;
+  bulkEditMode=false;
+  selectedIds.clear();
+  updateBulkActions();
+  els.fields.fdtId.readOnly=false;
+  els.fields.recordId.value=row.id||'';
+  els.fields.areaArea.value=row.area||'';
+  await loadFormOlts(row.olt_initial||'', row.hub_id||'');
+  els.fields.hubId.value=row.hub_id||els.fields.hubId.value||'';
+  els.fields.oltHostname.value=row.olt_hostname||els.fields.oltHostname.value||'';
+  els.fields.oltNameInitial.value=row.olt_name_initial||els.fields.oltNameInitial.value||'';
+  els.fields.siteName.value=(row.site_name||'').replace(/ - FDT \d+$/,'');
+  els.fields.fdtOrder.value=row.fdt_order||1;
+  els.fields.fdtId.value=row.fdt_id||'';
+  els.fields.clusterInitial.value=row.cluster_initial||String(row.fdt_code||'').split('.')[0]||'';
+  els.fields.indexCode.value='';
+  updateGeneratedFdtCodes();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function clearForm(){
+  Object.values(els.fields).forEach(el=>el.value='');
+  els.fields.fdtOrder.value='1';
+  els.fields.fdtId.readOnly=true;
+  bulkEditMode=false;
+  selectedIds.clear();
+  fdtFormOltOptions=[];
+  els.fields.oltInitial.disabled=true;
+  els.fields.oltInitial.innerHTML='<option value="">Pilih Area dulu</option>';
+  els.fields.oltUnit.disabled=true;
+  els.fields.oltUnit.innerHTML='<option value="">Pilih OLT dulu</option>';
+  updateBulkActions();
+  updateGeneratedFdtCodes();
+}
 
 function updateHubFromOlt(preferredHub=''){
   const selected = els.fields.oltInitial.selectedOptions && els.fields.oltInitial.selectedOptions[0];
@@ -385,7 +418,7 @@ function updateBulkActions(){
   if(els.bulkEdit) els.bulkEdit.disabled=count===0;
   if(els.selectAll){ els.selectAll.checked=records.length>0 && records.every(row=>selectedIds.has(String(row.id))); els.selectAll.indeterminate=count>0 && !els.selectAll.checked; }
 }
-function startBulkEdit(){
+async function startBulkEdit(){
   document.getElementById('fdtFormPanel').open=true;
   const rows=selectedRows();
   if(!rows.length) return alert('Pilih data dulu.');
@@ -394,8 +427,8 @@ function startBulkEdit(){
   const first=rows[0];
   bulkEditMode=true;
   els.fields.recordId.value='bulk';
-  els.fields.oltInitial.value=first.olt_initial||'';
-  updateHubFromOlt(first.hub_id||'');
+  els.fields.areaArea.value=first.area||'';
+  await loadFormOlts(first.olt_initial||'', first.hub_id||'');
   if(first.hub_id && !els.fields.hubId.value) els.fields.hubId.value=first.hub_id;
   els.fields.oltHostname.value=first.olt_hostname||'';
   els.fields.oltNameInitial.value=first.olt_name_initial||'';
@@ -409,6 +442,29 @@ function startBulkEdit(){
 }
 
 async function api(url, opts={}){ const res=await fetch(url, opts); const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data.error||res.statusText); return data; }
+async function loadFormOlts(preferredOlt='', preferredHub=''){
+  const area=(els.fields.areaArea.value||'').trim();
+  fdtFormOltOptions=[];
+  els.fields.oltInitial.value='';
+  els.fields.oltInitial.disabled=true;
+  els.fields.oltUnit.disabled=true;
+  els.fields.oltUnit.innerHTML='<option value="">Pilih OLT dulu</option>';
+  els.fields.hubId.value='';
+  els.fields.oltHostname.value='';
+  els.fields.oltNameInitial.value='';
+  if(!area){
+    els.fields.oltInitial.innerHTML='<option value="">Pilih Area dulu</option>';
+    return;
+  }
+  els.fields.oltInitial.innerHTML='<option value="">Memuat OLT...</option>';
+  const data=await api('/api/fdt-coding/summary?'+new URLSearchParams({area}));
+  fdtFormOltOptions=data.olts||[];
+  els.fields.oltInitial.innerHTML='<option value="">Pilih OLT</option>'+fdtFormOltOptions.map(o=>`<option value="${escapeHtml(o.olt_initial)}">${escapeHtml(o.olt_initial)}</option>`).join('');
+  els.fields.oltInitial.disabled=false;
+  if(preferredOlt && fdtFormOltOptions.some(o=>o.olt_initial===preferredOlt)) els.fields.oltInitial.value=preferredOlt;
+  updateHubFromOlt(preferredHub);
+}
+
 async function loadSummary(){
   const data=await api('/api/fdt-coding/summary?'+new URLSearchParams({area:els.area.value||''}));
   window.fdtOltOptions = data.olts || [];
@@ -417,11 +473,6 @@ async function loadSummary(){
   els.olt.innerHTML='<option value="ALL">Semua OLT</option>'+window.fdtOltOptions.map(o=>`<option value="${escapeHtml(o.olt_initial)}">${escapeHtml(o.olt_initial)} (${escapeHtml(o.total)})</option>`).join('');
   els.olt.value=currentFilter;
   if(els.olt.value !== currentFilter) els.olt.value='ALL';
-  const formOptions='<option value="">Pilih OLT</option>'+window.fdtOltOptions.map(o=>`<option value="${escapeHtml(o.olt_initial)}" data-hub="${escapeHtml(o.hub_id || '')}" data-olt-name="${escapeHtml(o.olt_name_initial || '')}" data-hostname="${escapeHtml(o.olt_hostname || '')}">${escapeHtml(o.olt_initial)}</option>`).join('');
-  const current=els.fields.oltInitial.value;
-  els.fields.oltInitial.innerHTML=formOptions;
-  if(current) els.fields.oltInitial.value=current;
-  updateHubFromOlt();
   renderOltList();
 }
 function filteredOltList(){
@@ -509,6 +560,7 @@ async function loadRecords(){ els.status.textContent='Memuat...'; const offset=(
 async function refresh(){ await loadSummary(); await loadRecords(); }
 document.getElementById('refreshButton').onclick=refresh;
 document.getElementById('clearButton').onclick=clearForm;
+els.fields.areaArea.onchange=()=>{ loadFormOlts().catch(err=>{ els.status.textContent=`Gagal memuat OLT: ${err.message||err}`; }); };
 els.fields.oltInitial.onchange=()=>{ updateHubFromOlt(); loadAvailableFdtIds(); updateGenerateResultPanel(); };
 els.fields.oltUnit.onchange=()=>{ updateHubFromOlt(els.fields.oltUnit.value); loadAvailableFdtIds(); updateGenerateResultPanel(); };
 els.fields.clusterInitial.oninput=updateGeneratedFdtCodes;
@@ -525,6 +577,8 @@ document.getElementById('saveButton').onclick=async()=>{
   button.textContent='Menyimpan...';
   els.status.textContent='Menyimpan data FDT...';
   try{
+    if(!els.fields.areaArea.value) throw new Error('AREA wajib dipilih');
+    if(!els.fields.oltInitial.value) throw new Error('OLT wajib dipilih');
     const id=els.fields.recordId.value;
     const isBulk=bulkEditMode && selectedIds.size>0;
     const method=isBulk||id?'PUT':'POST';
@@ -543,7 +597,7 @@ document.getElementById('saveButton').onclick=async()=>{
     button.textContent=oldText;
   }
 };
-els.body.onclick=async(ev)=>{ const select=ev.target.dataset.select, edit=ev.target.dataset.edit, del=ev.target.dataset.del; if(select){ ev.target.checked ? selectedIds.add(String(select)) : selectedIds.delete(String(select)); updateBulkActions(); } if(edit){ fillForm(records.find(r=>String(r.id)===String(edit))||{}); } if(del && confirm('Hapus record ini?')){ await api(`/api/fdt-coding/records/${del}`,{method:'DELETE'}); selectedIds.delete(String(del)); await refresh(); } };
+els.body.onclick=async(ev)=>{ const select=ev.target.dataset.select, edit=ev.target.dataset.edit, del=ev.target.dataset.del; if(select){ ev.target.checked ? selectedIds.add(String(select)) : selectedIds.delete(String(select)); updateBulkActions(); } if(edit){ fillForm(records.find(r=>String(r.id)===String(edit))||{}).catch(err=>{ els.status.textContent=`Gagal membuka data: ${err.message||err}`; }); } if(del && confirm('Hapus record ini?')){ await api(`/api/fdt-coding/records/${del}`,{method:'DELETE'}); selectedIds.delete(String(del)); await refresh(); } };
 els.pagination.onclick=(ev)=>{ const page=Number(ev.target.dataset.page||0); if(!page || ev.target.disabled) return; currentPage=page; loadRecords(); };
 els.selectAll.onchange=()=>{ records.forEach(row=>els.selectAll.checked ? selectedIds.add(String(row.id)) : selectedIds.delete(String(row.id))); loadRecords(); };
 els.bulkEdit.onclick=startBulkEdit;
@@ -552,50 +606,7 @@ document.getElementById('importButton').onclick=()=>els.importFile.click();
 els.importFile.onchange=async()=>{ if(!els.importFile.files.length) return; const fd=new FormData(); fd.append('file', els.importFile.files[0]); fd.append('replace','1'); els.status.textContent='Mengimpor...'; const data=await api('/api/fdt-coding/import',{method:'POST',body:fd}); alert(`${data.imported} record berhasil diimpor`); els.importFile.value=''; await refresh(); };
 refresh().catch(err=>{ els.status.textContent=err.message; });
 </script>
-<script>
-const originalLoadSummary = window.loadSummary; // backup if needed
 
-// Overwrite loadSummary to include area filter in API call
-window.loadSummary = function() {
-  return (async () => {
-    const data = await api('/api/fdt-coding/summary?' + new URLSearchParams({area:els.area.value||''}));
-    window.fdtOltOptions = data.olts || [];
-    els.summary.textContent = `Total ${data.total} record | ${data.olts.length} OLT | Sumber: ${data.source_label}`;
-    const selectedArea = (els.area && els.area.value) || '';
-    let oltList = window.fdtOltOptions || [];
-    if (selectedArea) {
-      oltList = oltList.filter(o => (o.area || '').toUpperCase() === selectedArea.toUpperCase());
-    }
-    const currentFilter = els.olt.value || 'ALL';
-    els.olt.innerHTML = '<option value="ALL">Semua OLT</option>' + oltList.map(o => {
-      const base = `${escapeHtml(o.olt_initial)} (${escapeHtml(o.total)})`;
-      return `<option value="${escapeHtml(o.olt_initial)}">${base}</option>`;
-    }).join('');
-    els.olt.value = currentFilter;
-    if (els.olt.value !== currentFilter) els.olt.value = 'ALL';
-    const formOptions = '<option value="">Pilih OLT</option>' + oltList.map(o => {
-      return `<option value="${escapeHtml(o.olt_initial)}" data-hub="${escapeHtml(o.hub_id || '')}" data-olt-name="${escapeHtml(o.olt_name_initial || '')}" data-hostname="${escapeHtml(o.olt_hostname || '')}">${escapeHtml(o.olt_initial)}</option>`;
-    }).join('');
-    const current = els.fields.oltInitial.value;
-    els.fields.oltInitial.innerHTML = formOptions;
-    if (current) els.fields.oltInitial.value = current;
-    updateHubFromOlt();
-    renderOltList();
-  })();
-};
-
-// Also update filteredOltList to consider area filter when showing OLT list inside modal/list panel
-window.filteredOltList = function() {
-  const query = (els.oltListSearch?.value || '').trim().toUpperCase();
-  const selectedArea = (els.area && els.area.value) || '';
-  let baseList = (window.fdtOltOptions || []).filter(o => o.olt_initial && o.olt_initial !== '(NO OLT)');
-  if (selectedArea) {
-    baseList = baseList.filter(o => (o.area || '').toUpperCase() === selectedArea.toUpperCase());
-  }
-  return baseList.filter(o => !query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial, ...((o.options||[]).flatMap(unit=>[unit.olt_code,unit.olt_hostname,unit.olt_name_initial]))].some(value => String(value || '').toUpperCase().includes(query)));
-};
-
-</script>
 </body>
 </html>
 
