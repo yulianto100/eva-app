@@ -161,6 +161,10 @@ def ai_assist_enabled() -> bool:
     return _env_bool("EVA_AI_ASSIST", False)
 
 
+def ai_visual_parcel_enabled() -> bool:
+    return ai_assist_enabled() and _env_bool("EVA_AI_VISUAL_PARCEL", False)
+
+
 def ai_confidence_min() -> float:
     return _env_float("EVA_AI_CONFIDENCE_MIN", 0.80)
 
@@ -171,7 +175,7 @@ def ai_timeout() -> int:
 
 # ── generic LLM call ────────────────────────────────────────
 
-def _post_json(messages: list[dict[str, str]], *, max_tokens: int = 220, timeout: int | None = None) -> dict[str, Any] | None:
+def _post_json(messages: list[dict[str, Any]], *, max_tokens: int = 220, timeout: int | None = None) -> dict[str, Any] | None:
     api_key, base_url, model = _provider_config()
     if not api_key or not base_url:
         return None
@@ -323,6 +327,86 @@ def suggest_dxf_parcel_orientation(
     if confidence < ai_confidence_min() or not -90.0 <= angle <= 90.0:
         return None
     return {"angle_degrees": angle, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
+
+
+def suggest_dxf_visual_parcel_layout(*, preview_svg: str, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
+    """Vision-only parcel hint. SVG shows FAT=cyan, ROAD=red, HP=yellow.
+    It returns hints only; converter owns all coordinates and topology."""
+    if not ai_visual_parcel_enabled() or not preview_svg or point_count < 2:
+        return None
+    import base64
+    image = 'data:image/svg+xml;base64,' + base64.b64encode(preview_svg.encode('utf-8')).decode('ascii')
+    system = (
+        'You visually review EVA telecom HP COVER parcel layout. Return ONLY JSON: '
+        '{"angle_degrees":number,"width_scale":number,"depth_scale":number,"road_side":1,"confidence":number,"reason":string}. '
+        'Image legend: cyan=FAT boundary, red=ROAD exclusion, yellow=fixed HP source points. '
+        'Choose ONE clean shared grid angle. Do not output coordinates or polygons. '
+        'HP points must never move; parcels must stay inside cyan and outside red, not overlap.'
+    )
+    content = [
+        {'type': 'text', 'text': json.dumps({'fat_angle_degrees': round(float(fat_angle), 2), 'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None, 'hp_cover_count': int(point_count)})},
+        {'type': 'image_url', 'image_url': {'url': image}},
+    ]
+    result = _post_json([{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], max_tokens=160, timeout=min(ai_timeout(), 20))
+    if not result:
+        return None
+    try:
+        confidence=float(result.get('confidence', 0)); angle=float(result.get('angle_degrees'))
+        width=max(0.70, min(1.30, float(result.get('width_scale', 1.0))))
+        depth=max(0.70, min(1.30, float(result.get('depth_scale', 1.0))))
+        side=1 if float(result.get('road_side', 1)) >= 0 else -1
+    except (TypeError, ValueError):
+        return None
+    if confidence < ai_confidence_min() or not -90 <= angle <= 90:
+        return None
+    return {'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth, 'road_side': side, 'confidence': confidence, 'reason': str(result.get('reason') or '')}
+
+
+def suggest_dxf_asset_layout(
+    *,
+    asset_type: str,
+    asset_name: str,
+    cable_angle: float,
+    has_serving_pole: bool = False,
+) -> dict[str, Any] | None:
+    """Ask EVA AI for visual layout hints for UG/KML DXF assets.
+
+    AI may only choose side/offset/rotation hint. Deterministic converter.py
+    still owns the actual anchor rules: pole/HH/slack keep source coordinate,
+    FAT anchors to nearest pole, cable tangent controls rotation, anti-cluster
+    stays deterministic.
+    """
+    if not ai_assist_enabled():
+        return None
+    system = (
+        "You tune visual placement hints for EVA telecom DXF assets. Return ONLY JSON: "
+        "{\"normal_side\": 1 or -1, \"offset_scale\": number, \"confidence\": number, \"reason\": string}. "
+        "Rules: FAT must attach beside its serving pole; pole/slack/handhole keep source coordinates; labels rotate with cable; "
+        "never cluster multiple assets into one point; do not output coordinates."
+    )
+    payload = {
+        "asset_type": str(asset_type or "ASSET").upper(),
+        "asset_name": str(asset_name or ""),
+        "cable_angle_degrees": round(float(cable_angle), 2),
+        "has_serving_pole": bool(has_serving_pole),
+        "constraint": "side/offset hint only; converter keeps deterministic anchors and anti-overlap",
+    }
+    result = _post_json(
+        [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(payload)}],
+        max_tokens=120,
+        timeout=min(ai_timeout(), 8),
+    )
+    if not result:
+        return None
+    try:
+        confidence = float(result.get("confidence", 0))
+        normal_side = 1 if float(result.get("normal_side", 1)) >= 0 else -1
+        offset_scale = max(0.75, min(1.35, float(result.get("offset_scale", 1.0))))
+    except (TypeError, ValueError):
+        return None
+    if confidence < ai_confidence_min():
+        return None
+    return {"normal_side": normal_side, "offset_scale": offset_scale, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
 
 
 # ── DXF metadata ────────────────────────────────────────────

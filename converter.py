@@ -4458,9 +4458,30 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 except Exception:
                     pass
         region_angle = self._readable_angle(region_angle)
+        deterministic_angle = region_angle
         ai_orientation = None
+        # Visual AI may refine one shared axis for the whole local sub-block.
+        # Guardrail: never accept a wild turn more than 15 degrees away from
+        # the road/FAT deterministic reference.
+        try:
+            preview = self._hp_visual_parcel_svg(clip_region, [site_points[i] for i in indexes])
+            ai_hint = suggest_dxf_visual_parcel_layout(
+                preview_svg=preview,
+                fat_angle=deterministic_angle,
+                road_angle=deterministic_angle,
+                point_count=len(group_sites),
+            )
+            if ai_hint:
+                candidate = self._readable_angle(float(ai_hint["angle_degrees"]))
+                delta = abs(((candidate - deterministic_angle + 90.0) % 180.0) - 90.0)
+                if delta <= 15.0:
+                    region_angle = candidate
+                    ai_orientation = ai_hint
+        except Exception as exc:
+            LOGGER.debug("HP COVER constrained AI axis fallback: %s", exc)
         if pipeline_logger is not None:
-            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER deterministic local axis {region_angle:.1f}°.")
+            mode = "AI-assisted" if ai_orientation else "deterministic"
+            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} local axis {region_angle:.1f}°.")
 
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
