@@ -858,7 +858,9 @@ def apply_catalog_to_payload(conn: sqlite3.Connection, payload: dict) -> dict:
     payload = dict(payload)
     hub_id = normalize_text(payload.get("hub_id")).upper()
     olt_initial = normalize_text(payload.get("olt_initial")).upper()
+    olt_hostname = normalize_text(payload.get("olt_hostname")).upper()
     row = None
+    exact_catalog_unit = False
     catalog_table, catalog_name_col = olt_catalog_source(conn)
     select_sql = f"SELECT olt_code, olt_initial, {catalog_name_col} AS olt_name_initial, olt_hostname FROM {catalog_table}"
     if is_valid_olt_code(hub_id):
@@ -869,6 +871,11 @@ def apply_catalog_to_payload(conn: sqlite3.Connection, payload: dict) -> dict:
             """,
             (hub_id,),
         ).fetchone()
+        if row is not None:
+            catalog_hostname = normalize_text(row["olt_hostname"]).upper()
+            # A source tab can be stale/wrong. An exact OLT ID plus matching
+            # hostname is authoritative: catalog parent wins over tab title.
+            exact_catalog_unit = bool(not olt_hostname or not catalog_hostname or olt_hostname == catalog_hostname)
     if row is None and olt_initial:
         row = conn.execute(
             f"""
@@ -895,6 +902,8 @@ def apply_catalog_to_payload(conn: sqlite3.Connection, payload: dict) -> dict:
         if not is_valid_olt_code(hub_id):
             payload["hub_id"] = ""
         return payload
+    if exact_catalog_unit and normalize_text(row["olt_initial"]):
+        payload["olt_initial"] = normalize_text(row["olt_initial"]).upper()
     payload["hub_id"] = payload.get("hub_id", "") or row["olt_code"] or ""
     payload["olt_hostname"] = payload.get("olt_hostname", "") or row["olt_hostname"] or ""
     hostname_initial = initial_from_olt_hostname(row["olt_hostname"])
@@ -905,24 +914,29 @@ def replace_records_by_source(
     db_path: str | Path,
     records: Iterable[FdtCodingRecord],
     source_spreadsheet_id: str,
-    olt_initial: str,
+    source_sheet_name: str,
 ) -> int:
-    """Replace records for one source sheet safely.
+    """Replace one source sheet after catalog canonicalization.
 
-    Google Sheets can contain duplicate logical identities. SQLite unique
-    constraints stay strict; incoming rows are normalized, catalog-enriched,
-    and de-duplicated by DB identity before writing. Last row wins.
+    The source sheet title can differ from canonical OLT parent. Delete by
+    immutable source ID + sheet name so resync cannot leave stale rows under a
+    previous parent name.
     """
     record_list = list(records)
     with connect(db_path) as conn:
-        # Remove all old rows for this source+OLT first.
         conn.execute(
             """
             DELETE FROM fdt_coding_records
             WHERE source_spreadsheet_id = ?
-              AND olt_initial = ?
+              AND (
+                    UPPER(TRIM(sheet_name)) = UPPER(?)
+                    OR (
+                        TRIM(sheet_name) = ''
+                        AND UPPER(TRIM(olt_initial)) = UPPER(?)
+                    )
+              )
             """,
-            (source_spreadsheet_id, olt_initial),
+            (source_spreadsheet_id, source_sheet_name, source_sheet_name),
         )
 
         deduped: dict[tuple[str, str, str, str, str], dict] = {}
