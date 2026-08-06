@@ -4310,6 +4310,39 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     break
         return drawn
 
+    def _solve_hp_block_axis(self, indexes, sites, site_points, clip_region, base_angle):
+        """Choose one shared axis with the best collision-free compact layout."""
+        if not indexes or clip_region is None or clip_region.is_empty:
+            return base_angle
+        road_solid=self._home_parcel_road_solid()
+        occupied=[box for box in self.home_number_boxes if box is not None and not box.is_empty]
+        best=None
+        for delta in (0.0,-3.0,3.0,-6.0,6.0,-9.0,9.0,-12.0,12.0,-15.0,15.0):
+            angle=self._readable_angle(base_angle+delta)
+            cells=self._hp_row_grid_parcels(indexes,sites,[],clip_region,angle)
+            trial=[]; count=0; area=0.0
+            for idx in indexes:
+                site=site_points[idx]; allowed=cells.get(idx)
+                if allowed is None or allowed.is_empty:
+                    continue
+                if road_solid is not None and not road_solid.is_empty:
+                    allowed=allowed.difference(road_solid)
+                if occupied:
+                    allowed=allowed.difference(unary_union(occupied))
+                others=[site_points[j].buffer(3.0) for j in indexes if j != idx]
+                if others:
+                    allowed=allowed.difference(unary_union(others))
+                if trial:
+                    allowed=allowed.difference(unary_union(trial))
+                parcel=self._fit_compact_rect(site,allowed,angle)
+                if parcel is None or parcel.is_empty or parcel.area<24.0:
+                    continue
+                trial.append(parcel); count+=1; area+=parcel.area
+            # Max placed then max usable area then minimum angular deviation.
+            score=(count,round(area,3),-abs(delta))
+            if best is None or score>best[0]: best=(score,angle)
+        return best[1] if best is not None else base_angle
+
     def _draw_parcel_group(
         self,
         indexes: list[int],
@@ -4479,9 +4512,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     ai_orientation = ai_hint
         except Exception as exc:
             LOGGER.debug("HP COVER constrained AI axis fallback: %s", exc)
+        # Collision solver rotates the whole local block only. It never rotates
+        # individual parcels and remains within the AI/deterministic ±15° band.
+        requested_angle = region_angle
+        region_angle = self._solve_hp_block_axis(indexes, sites, site_points, clip_region, requested_angle)
         if pipeline_logger is not None:
             mode = "AI-assisted" if ai_orientation else "deterministic"
-            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} local axis {region_angle:.1f}°.")
+            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} collision-safe axis {region_angle:.1f}° (requested {requested_angle:.1f}°).")
 
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
@@ -4517,18 +4554,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             if other_hp_buffers:
                 allowed = allowed.difference(unary_union(other_hp_buffers))
             parcel = self._fit_compact_rect(site, allowed, preferred)
-            if parcel is None or parcel.is_empty:
-                # Road-front rectangle can disappear (common for HP UNCOVER
-                # outside/near boundary). Fall back to cell envelope clipped
-                # to clip region — keeps rectangle shape.
-                try:
-                    cell_clip = cell.intersection(clip_region)
-                    if isinstance(cell_clip, Polygon) and not cell_clip.is_empty:
-                        parcel = cell_clip.minimum_rotated_rectangle
-                    else:
-                        parcel = cell.envelope
-                except Exception:
-                    parcel = cell.envelope
+            # If no shared-axis rectangle fits, leave this HP for retry/label
+            # fallback. Never introduce a per-cell arbitrary rectangle angle.
             if parcel is None or parcel.is_empty:
                 continue
             # Final hard guard for every renderer path (row-grid, road-front,
