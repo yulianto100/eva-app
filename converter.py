@@ -3770,19 +3770,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     parts.append(lines)
             except Exception:
                 pass
-        # Distribution Cable and SLING WIRE are hard parcel boundaries too.
-        # Keep a 0.3m safety gap on each side, same treatment as ROAD.
-        cable_boundary_lines = [
-            line for line in (self.kml_cable_centerlines or [])
-            if line is not None and not line.is_empty and line.length > 0
-        ]
-        if cable_boundary_lines:
-            try:
-                cable_solid = unary_union(cable_boundary_lines).buffer(0.3, cap_style=2, join_style=2)
-                if not cable_solid.is_empty:
-                    parts.append(cable_solid)
-            except Exception:
-                pass
+        # Distribution Cable and SLING WIRE remain visible reference lines.
+        # They do not clip HP COVER parcels; ROAD remains the hard exclusion.
         if not parts:
             return None
         solid = unary_union(parts).buffer(0)
@@ -4280,17 +4269,22 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     if road_solid is not None and not road_solid.is_empty and road_solid.buffer(0.01).covers(candidate_anchor):
                         continue
                     # Compact 6x10m base, centered on relocated retry anchor.
+                    # Prefer a broad 10x12m slot for relocated source; shrink
+                    # only when the road/FAT/cable safe space requires it.
                     parcel = Polygon([
-                        (candidate_anchor.x - 3.0, candidate_anchor.y - 5.0),
-                        (candidate_anchor.x + 3.0, candidate_anchor.y - 5.0),
-                        (candidate_anchor.x + 3.0, candidate_anchor.y + 5.0),
-                        (candidate_anchor.x - 3.0, candidate_anchor.y + 5.0),
+                        (candidate_anchor.x - 5.0, candidate_anchor.y - 6.0),
+                        (candidate_anchor.x + 5.0, candidate_anchor.y - 6.0),
+                        (candidate_anchor.x + 5.0, candidate_anchor.y + 6.0),
+                        (candidate_anchor.x - 5.0, candidate_anchor.y + 6.0),
                     ]).intersection(fat)
                     if road_solid is not None and not road_solid.is_empty:
                         parcel = parcel.difference(road_solid)
                     for existing in self.home_number_boxes:
                         if existing is not None and not existing.is_empty:
                             parcel = parcel.difference(existing)
+                    protected_sources = [ShapelyPoint(sites[j]).buffer(3.0) for j in range(len(sites)) if j != idx]
+                    if protected_sources:
+                        parcel = parcel.difference(unary_union(protected_sources))
                     parcel = self._parcel_piece_containing(parcel, candidate_anchor)
                     if parcel is None or parcel.is_empty or parcel.area < 24.0:
                         continue
@@ -4379,17 +4373,30 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                         total += self._draw_parcel_group(block, sites, site_points, pending, local_region, box_attrs, text_attrs, cap_radius, fill_region, pipeline_logger, True)
                 return total
 
-        # Stable spatial order inside each FAT/sub-block. AI axis remains
-        # unchanged; only deterministic parcel allocation order is stabilized.
+        # Road-first allocation. Front-row HPs establish a clean parcel row;
+        # interior HPs then follow that same local axis/spacing.
         if len(indexes) > 1:
+            _roads = [line for line in self.road_centerlines if line is not None and not line.is_empty and line.length > 2]
             _stable_angle = self._polygon_label_rotation(clip_region)
+            _road = None
+            if _roads:
+                _center = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).centroid
+                _road = min(_roads, key=lambda line: line.distance(_center))
+                if _road.distance(_center) <= 24.0:
+                    _at = _road.project(_center)
+                    _eps = min(2.0, max(.25, _road.length * .01))
+                    _a = _road.interpolate(max(0.0, _at-_eps)); _b = _road.interpolate(min(_road.length, _at+_eps))
+                    _dx, _dy = _b.x-_a.x, _b.y-_a.y
+                    if _dx*_dx+_dy*_dy > 1e-9:
+                        _stable_angle = math.degrees(math.atan2(_dy, _dx))
             _radians = math.radians(_stable_angle)
             _tx, _ty = math.cos(_radians), math.sin(_radians)
-            indexes = sorted(indexes, key=lambda i: (
-                round(sites[i][0] * _tx + sites[i][1] * _ty, 3),
-                round(-sites[i][0] * _ty + sites[i][1] * _tx, 3),
-                i,
-            ))
+            def _road_first_key(i):
+                _point = ShapelyPoint(sites[i])
+                _along = _road.project(_point) if _road is not None else sites[i][0]*_tx+sites[i][1]*_ty
+                _near = _road.distance(_point) if _road is not None else 9999.0
+                return (0 if _near <= 18.0 else 1, round(_along, 3), round(_near, 3), i)
+            indexes = sorted(indexes, key=_road_first_key)
         group_sites = [sites[i] for i in indexes]
         if len(group_sites) == 1:
             # Single point in this region: the parcel IS the clip region
@@ -4483,6 +4490,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 allowed = allowed.difference(road_solid)
             if self.home_number_boxes:
                 allowed = allowed.difference(unary_union(self.home_number_boxes))
+            # Every other HP source reserves a 3m minimum parcel opportunity.
+            # Own source stays valid; no parcel may cover a neighbour source.
+            other_hp_buffers = [site_points[j].buffer(3.0) for j in indexes if j != global_idx]
+            if other_hp_buffers:
+                allowed = allowed.difference(unary_union(other_hp_buffers))
             parcel = self._fit_compact_rect(site, allowed, preferred)
             if parcel is None or parcel.is_empty:
                 # Road-front rectangle can disappear (common for HP UNCOVER
