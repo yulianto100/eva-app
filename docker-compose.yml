@@ -27,7 +27,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
       CONVERSION_MAX_CONCURRENT_JOBS: "2"
-      JOB_SLOT_TTL_SECONDS: '1800'
+      JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
       JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
@@ -61,6 +61,7 @@ services:
       EVA_AI_MODEL: ${EVA_AI_MODEL:-9r}
       EVA_AI_CONFIDENCE_MIN: ${EVA_AI_CONFIDENCE_MIN:-0.80}
       EVA_AI_TIMEOUT: ${EVA_AI_TIMEOUT:-20}
+      EVA_AI_VISUAL_PARCEL: ${EVA_AI_VISUAL_PARCEL:-false}
       KNOWLEDGE_DIR: ${KNOWLEDGE_DIR:-knowledge}
       KNOWLEDGE_DB_PATH: ${KNOWLEDGE_DB_PATH:-data/knowledge_index.db}
     volumes:
@@ -101,7 +102,7 @@ services:
   worker:
     build: .
     container_name: eva-worker
-    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=2
+    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker@%h
     env_file: .env
 
     environment:
@@ -114,7 +115,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
       CONVERSION_MAX_CONCURRENT_JOBS: "2"
-      JOB_SLOT_TTL_SECONDS: '1800'
+      JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
       JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
@@ -167,7 +168,7 @@ services:
   worker2:
     build: .
     container_name: eva-worker2
-    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=2
+    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker2@%h
     env_file: .env
     environment:
       TZ: Asia/Jakarta
@@ -179,7 +180,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
       CONVERSION_MAX_CONCURRENT_JOBS: "2"
-      JOB_SLOT_TTL_SECONDS: '1800'
+      JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
       JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}

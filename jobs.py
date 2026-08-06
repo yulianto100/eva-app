@@ -240,12 +240,50 @@ class RedisJobStore:
         return removed
 
     def acquire_slot(self, job_id: str, ttl_seconds: int) -> str | None:
+        # A cancelled/finished task can leave a Redis lease behind if Docker
+        # terminates its process before the task's finally block runs.
+        self.reclaim_terminal_slots()
         token = f"{job_id}:{_now():.6f}"
         for index in range(Config.CONVERSION_MAX_CONCURRENT_JOBS):
             key = self._slot_key(index)
             if self._redis.set(key, token, nx=True, ex=max(ttl_seconds, 60)):
                 return f"{index}:{token}"
         return None
+
+    def reclaim_terminal_slots(self) -> int:
+        """Release only leases whose owning job is already terminal."""
+        reclaimed = 0
+        terminal_statuses = {"done", "error", "failed", "cancelled"}
+        for index in range(Config.CONVERSION_MAX_CONCURRENT_JOBS):
+            key = self._slot_key(index)
+            raw_token = self._redis.get(key)
+            if not raw_token:
+                continue
+            job_id = raw_token.split(":", 1)[0]
+            raw_job = self._redis.get(self._job_key(job_id))
+            if not raw_job:
+                continue
+            try:
+                status = str(json.loads(raw_job).get("status") or "").lower()
+            except json.JSONDecodeError:
+                continue
+            if status not in terminal_statuses:
+                continue
+            # Compare-and-delete prevents deleting a lease renewed by another
+            # task while this worker was inspecting it.
+            deleted = self._redis.eval(
+                """
+                if redis.call('GET', KEYS[1]) == ARGV[1] then
+                    return redis.call('DEL', KEYS[1])
+                end
+                return 0
+                """,
+                1,
+                key,
+                raw_token,
+            )
+            reclaimed += int(deleted or 0)
+        return reclaimed
 
     def refresh_slot(self, token: str, ttl_seconds: int) -> bool:
         index, raw_token = self._split_slot_token(token)
