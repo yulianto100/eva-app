@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover - depends on Shapely build/GEOS version.
     _shapely_voronoi_diagram = None
 
 from config import Config
-from eva_ai_safe import suggest_dxf_parcel_orientation
+from eva_ai_safe import suggest_dxf_parcel_orientation, suggest_dxf_visual_parcel_layout, suggest_dxf_asset_layout
 
 try:
     from shapely.strtree import STRtree
@@ -225,7 +225,7 @@ KML_HOME_PARCEL_ENABLED = True
 KML_HOME_PARCEL_BLOCK_PADDING_METERS = 14.0
 # Roads are subtracted with this extra clearance so parcels never touch the
 # road outline.
-KML_HOME_PARCEL_ROAD_CLEARANCE_METERS = 1.2
+KML_HOME_PARCEL_ROAD_CLEARANCE_METERS = 2.0
 # A parcel cell is capped to this distance from its own point, so an isolated
 # HP point doesn't claim a huge cell stretching across an empty block.
 KML_HOME_PARCEL_MAX_RADIUS_METERS = 22.0
@@ -445,7 +445,7 @@ ROAD_MIN_LENGTH_METERS = {
     "living_street": 12.0,
     "residential": 8.0,
 }
-ROAD_SIMPLIFY_TOLERANCE_METERS = 0.25
+ROAD_SIMPLIFY_TOLERANCE_METERS = 0.4
 ROAD_MIN_POLYGON_AREA_SQUARE_METERS = 12.0
 # Inner "casing" line drawn parallel just inside each road outline so roads
 # read as a double line (road edge + inner edge) like standard CAD road
@@ -1039,9 +1039,9 @@ def kml_handhole_folder_spec(folder_name: str | None) -> dict | None:
     specs = {
         "NEW HH 20X20X20": {
             "layer": KML_HANDHOLE_20_LAYER,
-            "block": KML_HANDHOLE_20_BLOCK_NAME,
-            "label_lines": ("HANDHOLE", "20x20x20 cm"),
-            "color": KML_HANDHOLE_20_COLOR,
+            "block": "HANDHOLE_PIT_20_BLOCK",
+            "label_lines": ("HANDHOLE PIT", "20x20x30 cm"),
+            "color": 5,
             "icon_size": KML_TWEY_ICON_SIZE_METERS,
             "show_text": False,
         },
@@ -1815,7 +1815,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         attrs = self._supported_attrs(dxfattribs)
         attrs["height"] = float(height)
         attrs["width"] = 1.0
-        attrs["style"] = "EVA_BOLD"
+        # Callers can opt out of bold. HP COVER uses a single normal TEXT
+        # entity so it never looks like an overprinted/doubled label.
+        attrs.setdefault("style", "EVA_BOLD")
         if rotation is not None:
             attrs["rotation"] = float(rotation)
         entity = self.modelspace.add_text(text.strip(), dxfattribs=attrs)
@@ -2163,15 +2165,21 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         actual_height = max(y for _x, y in points) - min(y for _x, y in points)
         return math.isclose(actual_width, width, abs_tol=1e-6) and math.isclose(actual_height, height, abs_tol=1e-6)
 
-    def _add_kml_fat_icon(self, projected: Point, code: str, style: dict | None = None, rotation: float = 0.0) -> object:
+    def _add_kml_fat_icon(self, projected: Point, code: str, style: dict | None = None, rotation: float = 0.0, normal_side: int = 1, offset_scale: float = 1.0) -> object:
         self._ensure_kml_fat_block()
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
         x, y = projected
+        pole_gap = (
+            KML_POLE_ICON_SIZE_METERS / 2
+            + KML_FAT_TO_POLE_GAP_METERS
+            + KML_FAT_ICON_HEIGHT_METERS / 2
+        ) * scale * float(offset_scale)
+        side = 1 if int(normal_side or 1) >= 0 else -1
+        # Local cable normal. AI may choose side/scale only; anchor remains deterministic.
+        radians = math.radians(float(rotation))
         insert_point = (
-            x,
-            y
-            + (KML_POLE_ICON_SIZE_METERS / 2 + KML_FAT_TO_POLE_GAP_METERS + KML_FAT_ICON_HEIGHT_METERS / 2)
-            * scale,
+            x - math.sin(radians) * pole_gap * side,
+            y + math.cos(radians) * pole_gap * side,
         )
         attrs = self._supported_attrs(
             {
@@ -2360,25 +2368,29 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         block_name = str(spec["block"])
         if block_name in self.doc.blocks:
             return block_name
-
         block = self.doc.blocks.new(name=block_name)
         attrs = {"layer": layer_name, "color": color}
+        if block_name == "HANDHOLE_PIT_20_BLOCK":
+            # UG HH20 template: double blue square with SH only. No callout,
+            # no size/name text; source point remains the insertion anchor.
+            inner = icon_size - KML_HANDHOLE_ICON_INSET_METERS * 2
+            self._add_block_rectangle(block, icon_size, icon_size, attrs)
+            self._add_block_rectangle(block, inner, inner, attrs)
+            mark_attrs = {**attrs, "height": inner * 0.42, "style": "EVA_BOLD"}
+            mark = block.add_text("SH", dxfattribs=mark_attrs)
+            mark.set_placement((0, 0), align=TextEntityAlignment.MIDDLE_CENTER)
+            return block_name
+
         self._add_block_rectangle(block, icon_size, icon_size, attrs)
         inner_size = icon_size - KML_HANDHOLE_ICON_INSET_METERS * 2
         self._add_block_rectangle(block, inner_size, inner_size, attrs)
         if spec.get("show_text") is False:
             return block_name
-
-        top = block.add_text(
-            "HH",
-            dxfattribs={**attrs, "height": KML_HANDHOLE_TEXT_HEIGHT_METERS},
-        )
-        top.set_placement((0, icon_size * 0.18), align=TextEntityAlignment.MIDDLE_CENTER)
-        bottom = block.add_text(
-            str(spec["size_text"]),
-            dxfattribs={**attrs, "height": KML_HANDHOLE_TEXT_HEIGHT_METERS},
-        )
-        bottom.set_placement((0, -icon_size * 0.22), align=TextEntityAlignment.MIDDLE_CENTER)
+        label_attrs = {**attrs, "height": KML_POLE_ID_HEIGHT_METERS, "style": "EVA_BOLD"}
+        top=block.add_text("HH",dxfattribs=label_attrs)
+        top.set_placement((0,icon_size*.18),align=TextEntityAlignment.MIDDLE_CENTER)
+        bottom=block.add_text(str(spec["size_text"]),dxfattribs=label_attrs)
+        bottom.set_placement((0,-icon_size*.22),align=TextEntityAlignment.MIDDLE_CENTER)
         return block_name
 
     def _add_kml_handhole_icon(
@@ -2462,8 +2474,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         best_line = min(candidates, key=lambda line: point.distance(line))
         position = best_line.project(point)
+        snapped = best_line.interpolate(position)
         return {
-            "point": projected,
+            # All cable-associated assets use the cable projection as anchor,
+            # so symbols and labels do not drift away from the actual route.
+            "point": (float(snapped.x), float(snapped.y)),
             "rotation": self._line_angle_at_position(best_line, position),
         }
 
@@ -2556,12 +2571,29 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         for pending in self.pending_fat_icons:
             output_start_index = len(self.output_entities)
-            frame = self._nearest_cable_frame(pending["projected"])
+            source_point = pending["projected"]
+            frame = self._nearest_cable_frame(source_point)
+            # FAT terminates at its serving pole. Resolve against the original
+            # FAT coordinate, never the projected cable point, to avoid cluster.
+            anchor = self._snap_to_nearest_pole(source_point)
+            rotation = float(frame.get("rotation") or 0.0)
+            ai_asset = None
+            try:
+                ai_asset = suggest_dxf_asset_layout(
+                    asset_type="FAT",
+                    asset_name=str(pending.get("code") or "FAT"),
+                    cable_angle=rotation,
+                    has_serving_pole=anchor != source_point,
+                )
+            except Exception as exc:
+                LOGGER.debug("FAT AI layout fallback: %s", exc)
             insert = self._add_kml_fat_icon(
-                pending["projected"],
+                anchor,
                 str(pending.get("code") or "FAT"),
                 pending.get("style") or {},
-                rotation=float(frame.get("rotation") or 0.0),
+                rotation=rotation,
+                normal_side=int((ai_asset or {}).get("normal_side", 1)),
+                offset_scale=float((ai_asset or {}).get("offset_scale", 1.0)),
             )
             self.fat_callout_refs.append(
                 {
@@ -2579,9 +2611,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         for pending in self.pending_handhole_icons:
             output_start_index = len(self.output_entities)
-            frame = self._nearest_cable_frame(pending["projected"])
+            source_point = pending["projected"]
+            frame = self._nearest_cable_frame(source_point)
             self._add_kml_handhole_icon(
-                pending["projected"],
+                source_point,
                 pending["spec"],
                 pending.get("style") or {},
                 rotation=float(frame.get("rotation") or 0.0),
@@ -2671,6 +2704,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
     def _add_kml_slack_hanger_icon(self, projected: Point, style: dict | None = None) -> None:
         self._ensure_kml_slack_hanger_block()
+        # Preserve the asset's actual coordinate. Cable frame is for rotation
+        # only; projecting every asset onto a line makes nearby assets collapse.
+        frame = self._nearest_cable_frame(projected)
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
         attrs = self._supported_attrs(
             {
@@ -2681,6 +2717,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             }
         )
         insert = self.modelspace.add_blockref(KML_SLACK_HANGER_BLOCK_NAME, projected, dxfattribs=attrs)
+        try:
+            insert.dxf.rotation = float(frame.get("rotation") or 0.0)
+        except Exception:
+            pass
         self._remember_output(insert)
 
     def _ensure_kml_joint_closure_block(self) -> None:
@@ -2877,17 +2917,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         radius = float(pending["radius"])
         scale = float(pending["scale"])
         label_height = KML_POLE_ID_HEIGHT_METERS * scale
+        rotation = self._nearest_pole_id_line_angle(projected)
         x, y = projected
+        offset = radius + (KML_POLE_ID_GAP_METERS * scale) + (label_height / 2)
         label_center = (
-            x,
-            y - radius - (KML_POLE_ID_GAP_METERS * scale) - (label_height / 2),
+            x - math.sin(math.radians(rotation)) * offset,
+            y + math.cos(math.radians(rotation)) * offset,
         )
         return self._add_centered_text(
             name,
             label_center,
             label_height,
             dxfattribs={"layer": "POLE_ID", "color": 1},
-            rotation=self._nearest_pole_id_line_angle(projected),
+            rotation=rotation,
         )
 
     def finalize_pole_ids(self, pipeline_logger=None) -> None:
@@ -2939,13 +2981,16 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 "yscale": scale,
             }
         )
+        # Preserve actual pole position; cable angle only controls rotation.
+        frame = self._nearest_cable_frame(projected)
         insert = self.modelspace.add_blockref(block_name, projected, dxfattribs=attrs)
+        try:
+            insert.dxf.rotation = float(frame.get("rotation") or 0.0)
+        except Exception:
+            pass
         self._remember_output(insert)
 
-        # Track pole centre so other icons (slack, joint closure, cable end) can
-        # snap onto it during finalize.
         self.pole_positions.append((float(projected[0]), float(projected[1])))
-
         self._queue_kml_pole_id(name, projected, radius, scale, fdt_number=fdt_number)
 
     def _queue_home_number(self, projected: Point, name: str, fdt_number: int | None = None) -> str:
@@ -3592,7 +3637,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     self._add_polyline(interior_points, close=True, dxfattribs=box_attrs)
 
     def _draw_home_number(self, text: str, placement: dict) -> None:
-        text_attrs = {"layer": KML_HOME_NUMBER_LAYER, "color": KML_HOME_NUMBER_COLOR}
+        text_attrs = {
+            "layer": KML_HOME_NUMBER_LAYER,
+            "color": KML_HOME_NUMBER_COLOR,
+            "style": "EVA_BOLD",
+        }
         self._add_home_number_box_geometry(placement["clipped_box"])
         self._add_centered_text(
             text,
@@ -3721,6 +3770,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     parts.append(lines)
             except Exception:
                 pass
+        # Distribution Cable and SLING WIRE are hard parcel boundaries too.
+        # Keep a 0.3m safety gap on each side, same treatment as ROAD.
+        cable_boundary_lines = [
+            line for line in (self.kml_cable_centerlines or [])
+            if line is not None and not line.is_empty and line.length > 0
+        ]
+        if cable_boundary_lines:
+            try:
+                cable_solid = unary_union(cable_boundary_lines).buffer(0.3, cap_style=2, join_style=2)
+                if not cable_solid.is_empty:
+                    parts.append(cable_solid)
+            except Exception:
+                pass
         if not parts:
             return None
         solid = unary_union(parts).buffer(0)
@@ -3841,10 +3903,17 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 groups.setdefault(best_area_idx, []).append(index)
 
         box_attrs = {"layer": KML_HOME_NUMBER_BOX_LAYER, "color": KML_HOME_NUMBER_BOX_COLOR}
-        text_attrs = {"layer": KML_HOME_NUMBER_LAYER, "color": KML_HOME_NUMBER_COLOR}
+        text_attrs = {
+            "layer": KML_HOME_NUMBER_LAYER,
+            "color": KML_HOME_NUMBER_COLOR,
+            "style": "EVA_BOLD",
+        }
         site_points = [ShapelyPoint(p) for p in sites]
 
         drawn = 0
+        # Run-1 identity tracking. Used by deferred compact retry; avoids
+        # re-drawing HPs that already have a valid parcel.
+        self._hp_cover_drawn_indexes = set()
         # Track the union of all drawn parcels so overflow from one FAT group
         # never intersects parcels from another group (no overlapping boxes).
         drawn_union = None
@@ -3891,6 +3960,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     text_attrs,
                     cap_radius=False,
                     fill_region=True,
+                pipeline_logger=pipeline_logger,
                 )
 
         if no_fat_indexes:
@@ -3915,10 +3985,44 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                         text_attrs,
                         cap_radius=True,
                         fill_region=False,
+                pipeline_logger=pipeline_logger,
                     )
 
-        if drawn == 0:
-            raise ValueError("tidak ada parcel HP COVER yang tergambar")
+        # Run-2: only source HPs that Run-1 could not fit. AI visual axis
+        # selection remains Run-1 behaviour; retry only finds nearby free room.
+        missing_indexes = [i for i in range(total) if i not in self._hp_cover_drawn_indexes]
+        if missing_indexes:
+            retry_drawn = self._draw_missing_hp_cover_retry(
+                missing_indexes, sites, pending, fat_areas, box_attrs, text_attrs, pipeline_logger
+            )
+            drawn += retry_drawn
+            if pipeline_logger is not None:
+                pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER retry: {retry_drawn}/{len(missing_indexes)} titik conflict dipasang ke space kosong terdekat.")
+
+        # Run-3: every HP COVER source remains visible even where FAT/ROAD/
+        # cable constraints leave no valid non-overlapping parcel. Do not force
+        # bad geometry; retain the HOME_NUMBER label at its original KMZ point.
+        label_only_indexes = [i for i in range(total) if i not in self._hp_cover_drawn_indexes]
+        if label_only_indexes:
+            fallback_angle = 0.0
+            for idx in label_only_indexes:
+                item = pending[idx]
+                source = site_points[idx]
+                self._add_centered_text(
+                    str(item["text"]), (source.x, source.y),
+                    KML_HOME_NUMBER_HEIGHT_METERS,
+                    dxfattribs=text_attrs, rotation=fallback_angle,
+                )
+                self._hp_cover_drawn_indexes.add(idx)
+            if pipeline_logger is not None:
+                pipeline_log(
+                    pipeline_logger, "warning",
+                    f"[3/6] HP COVER label-only fallback: {len(label_only_indexes)}/{len(label_only_indexes)} "
+                    "titik retained tanpa parcel karena ruang aman tidak tersedia.",
+                )
+
+        if drawn == 0 and not label_only_indexes:
+            raise ValueError("tidak ada HP COVER yang dapat dipertahankan")
 
         if pipeline_logger is not None:
             pipeline_log(
@@ -4046,6 +4150,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 text_attrs,
                 cap_radius=False,
                 fill_region=True,
+                pipeline_logger=pipeline_logger,
             )
             # Update drawn_union with newly placed parcels.
             new_boxes = self.home_number_boxes[before_drawn:]
@@ -4068,6 +4173,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     text_attrs,
                     cap_radius=True,
                     fill_region=False,
+                pipeline_logger=pipeline_logger,
                 )
 
         if drawn == 0:
@@ -4087,6 +4193,122 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 f"{format_stage_seconds(time.perf_counter() - sub_step_start)}.",
             )
 
+    def _split_hp_parcel_subblocks(self, indexes: list[int], sites: list[Point]) -> list[list[int]]:
+        """Split one FAT region into local layout blocks before selecting an axis.
+
+        Split only by source-point topology and road side. AI is called later per
+        returned block and never sees/creates geometry.
+        """
+        if len(indexes) < 3:
+            return [indexes]
+        gap = 32.0  # ponytail: fixed locality ceiling; make config only after field tuning.
+        remaining = set(indexes)
+        components: list[list[int]] = []
+        while remaining:
+            seed = remaining.pop()
+            group = {seed}
+            frontier = [seed]
+            while frontier:
+                current = frontier.pop()
+                close = [other for other in remaining if _distance(sites[current], sites[other]) <= gap]
+                for other in close:
+                    remaining.remove(other)
+                    group.add(other)
+                    frontier.append(other)
+            components.append(sorted(group))
+
+        # Roads, Distribution Cable, and SLING WIRE create independent local
+        # layout sides so AI may choose different axes per side.
+        out: list[list[int]] = []
+        roads = [line for line in self.road_centerlines if line is not None and not line.is_empty and line.length > 2]
+        boundary_lines = list(roads)
+        boundary_lines.extend(line for line in (self.kml_cable_centerlines or []) if line is not None and not line.is_empty and line.length > 2)
+        for component in components:
+            if len(component) < 4 or not boundary_lines:
+                out.append(component)
+                continue
+            center = MultiPoint([ShapelyPoint(sites[i]) for i in component]).centroid
+            if not boundary_lines:
+                out.append(component)
+                continue
+            road = min(boundary_lines, key=lambda line: line.distance(center))
+            if road.distance(center) > 18.0:
+                out.append(component)
+                continue
+            d = road.project(center)
+            delta = min(2.0, max(.25, road.length * .01))
+            a = road.interpolate(max(0.0, d-delta)); b = road.interpolate(min(road.length, d+delta))
+            dx, dy = b.x-a.x, b.y-a.y
+            plus=[]; minus=[]
+            for index in component:
+                x,y=sites[index]
+                (plus if (x-a.x)*dy-(y-a.y)*dx >= 0 else minus).append(index)
+            if len(plus) >= 2 and len(minus) >= 2:
+                out.extend([plus, minus])
+            else:
+                out.append(component)
+        return out
+
+    def _draw_missing_hp_cover_retry(self, missing_indexes, sites, pending, fat_areas, box_attrs, text_attrs, pipeline_logger=None):
+        """Second pass for HPs blocked by FAT/ROAD edge conflicts.
+
+        Search compact offsets <=6m around source, reserve earlier parcels, and
+        draw one small non-overlapping parcel. This never changes AI Run-1 axis.
+        """
+        road_solid = self._home_parcel_road_solid()
+        drawn = 0
+        offsets = [(0.0, 0.0)]  # immutable source anchor; never relocate HP COVER
+        for idx in missing_indexes:
+            source = ShapelyPoint(sites[idx])
+            # Prefer containing FAT; otherwise nearest FAT only within 6m.
+            ranked = sorted(fat_areas, key=lambda poly: poly.distance(source))
+            placed = False
+            for fat in ranked[:3]:
+                if fat is None or fat.is_empty or fat.distance(source) > 6.0:
+                    continue
+                for dx, dy in offsets:
+                    candidate_anchor = ShapelyPoint(source.x + dx, source.y + dy)
+                    if not fat.buffer(0.01).covers(candidate_anchor):
+                        continue
+                    if road_solid is not None and not road_solid.is_empty and road_solid.buffer(0.01).covers(candidate_anchor):
+                        continue
+                    # Compact 6x10m base, centered on relocated retry anchor.
+                    parcel = Polygon([
+                        (candidate_anchor.x - 3.0, candidate_anchor.y - 5.0),
+                        (candidate_anchor.x + 3.0, candidate_anchor.y - 5.0),
+                        (candidate_anchor.x + 3.0, candidate_anchor.y + 5.0),
+                        (candidate_anchor.x - 3.0, candidate_anchor.y + 5.0),
+                    ]).intersection(fat)
+                    if road_solid is not None and not road_solid.is_empty:
+                        parcel = parcel.difference(road_solid)
+                    for existing in self.home_number_boxes:
+                        if existing is not None and not existing.is_empty:
+                            parcel = parcel.difference(existing)
+                    parcel = self._parcel_piece_containing(parcel, candidate_anchor)
+                    if parcel is None or parcel.is_empty or parcel.area < 24.0:
+                        continue
+                    polys = self._geometry_polygons(parcel)
+                    label_polygon = max(polys, key=lambda poly: poly.area, default=None)
+                    if label_polygon is None:
+                        continue
+                    output_start = len(self.output_entities)
+                    for poly in polys:
+                        if poly.area <= 0.05:
+                            continue
+                        self._add_polyline(list(poly.exterior.coords), close=True, dxfattribs=box_attrs)
+                        self.home_number_boxes.append(poly)
+                    center = label_polygon.representative_point()
+                    self._add_centered_text(str(pending[idx]["text"]), (center.x, center.y), KML_HOME_NUMBER_HEIGHT_METERS,
+                                            dxfattribs=text_attrs, rotation=self._polygon_label_rotation(label_polygon))
+                    self.register_fdt_entities(pending[idx].get("fdt_number"), self.output_entities[output_start:])
+                    self._hp_cover_drawn_indexes.add(idx)
+                    drawn += 1
+                    placed = True
+                    break
+                if placed:
+                    break
+        return drawn
+
     def _draw_parcel_group(
         self,
         indexes: list[int],
@@ -4098,6 +4320,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         text_attrs: dict,
         cap_radius: bool = True,
         fill_region: bool = False,
+        pipeline_logger=None,
+        _subblocks_split: bool = False,
     ) -> int:
         """Tessellate one group of HP points (Voronoi) and clip every cell to
         `clip_region`. Returns the number of parcels drawn. `clip_region` is
@@ -4109,6 +4333,56 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if not indexes:
             return 0
 
+        # Do not force a full FAT AREA into one orientation. Split local blocks
+        # first, then this function selects one axis per sub-block.
+        if not _subblocks_split:
+            subblocks = self._split_hp_parcel_subblocks(indexes, sites)
+            if len(subblocks) > 1:
+                if pipeline_logger is not None:
+                    pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER split into {len(subblocks)} local blocks before axis selection.")
+                total = 0
+                for block in subblocks:
+                    local_region = clip_region
+                    # Build half-plane clip based on nearest road side for this sub-block.
+                    if len(block) >= 2 and self.road_centerlines:
+                        center = MultiPoint([ShapelyPoint(sites[i]) for i in block]).centroid
+                        road = min(self.road_centerlines, key=lambda line: line.distance(center))
+                        probe = ShapelyPoint(sites[block[0]])
+                        d = road.project(probe)
+                        eps = min(2.0, max(.25, road.length * .01))
+                        a = road.interpolate(max(0.0, d-eps)); b = road.interpolate(min(road.length, d+eps))
+                        dx, dy = b.x-a.x, b.y-a.y
+                        side = (probe.x-a.x)*dy-(probe.y-a.y)*dx
+                        minx,miny,maxx,maxy=clip_region.bounds
+                        span=max(maxx-minx,maxy-miny,1.0)*4.0
+                        if side >= 0:
+                            cutter=Polygon([(a.x-dy*span,a.y+dx*span),(b.x-dy*span,b.y+dx*span),(b.x+dy*span,b.y-dx*span),(a.x+dy*span,a.y-dx*span)])
+                        else:
+                            cutter=Polygon([(a.x+dy*span,a.y-dx*span),(b.x+dy*span,b.y-dx*span),(b.x-dy*span,b.y+dx*span),(a.x-dy*span,a.y+dx*span)])
+                        try:
+                            candidate_region = clip_region.intersection(cutter)
+                            # Local road-side cut must retain every source HP.
+                            anchors_ok = candidate_region is not None and not candidate_region.is_empty and all(
+                                candidate_region.buffer(0.01).covers(ShapelyPoint(sites[i])) for i in block
+                            )
+                            local_region = candidate_region if anchors_ok else clip_region
+                        except Exception:
+                            local_region=clip_region
+                    if local_region is not None and not local_region.is_empty:
+                        total += self._draw_parcel_group(block, sites, site_points, pending, local_region, box_attrs, text_attrs, cap_radius, fill_region, pipeline_logger, True)
+                return total
+
+        # Stable spatial order inside each FAT/sub-block. AI axis remains
+        # unchanged; only deterministic parcel allocation order is stabilized.
+        if len(indexes) > 1:
+            _stable_angle = self._polygon_label_rotation(clip_region)
+            _radians = math.radians(_stable_angle)
+            _tx, _ty = math.cos(_radians), math.sin(_radians)
+            indexes = sorted(indexes, key=lambda i: (
+                round(sites[i][0] * _tx + sites[i][1] * _ty, 3),
+                round(-sites[i][0] * _ty + sites[i][1] * _tx, 3),
+                i,
+            ))
         group_sites = [sites[i] for i in indexes]
         if len(group_sites) == 1:
             # Single point in this region: the parcel IS the clip region
@@ -4123,7 +4397,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             except Exception:
                 cells = []
             if not cells:
-                cells = [clip_region for _ in group_sites]
+                # Never give every HP the full FAT region. Build deterministic
+                # per-point ownership cells below instead.
+                cells = []
 
         # Map each group site to the Voronoi cell that contains it.
         cell_for_local: list = [None] * len(group_sites)
@@ -4132,10 +4408,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             for local_idx, point in enumerate(group_sites):
                 sp = ShapelyPoint(point)
                 for cell in cells:
-                    if isinstance(cell, Polygon) and cell.covers(sp):
-                        cell_for_local[local_idx] = cell
-                        cell_area_for_local[local_idx] = float(cell.area)
-                        break
+                    if isinstance(cell, Polygon):
+                        clipped_cell = cell.intersection(clip_region)
+                        if clipped_cell.buffer(0.01).covers(sp):
+                            cell_for_local[local_idx] = clipped_cell
+                            cell_area_for_local[local_idx] = float(clipped_cell.area)
+                            break
         else:
             cell_for_local[0] = cells[0]
             cell_area_for_local[0] = float(cells[0].area) if not cells[0].is_empty else float(clip_region.area)
@@ -4145,53 +4423,41 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # "rectangular, aligned to FAT area" style: parcels are rotated
         # rectangles, not irregular polygons, and they all share edges.
         region_angle = self._polygon_label_rotation(clip_region) if clip_region is not None else 0.0
-        # AI is allowed to choose only the single group axis. All parcel bounds,
-        # road clearance, Voronoi ownership and no-overlap guarantees remain
-        # deterministic below. On AI timeout/low confidence, retain FAT axis.
+        # One deterministic axis per local sub-block. Visual AI parcel hints
+        # are disabled: they caused neighboring boxes to rotate inconsistently.
+        nearest_road = min(
+            (line for line in self.road_centerlines if line is not None and not line.is_empty and line.length > 2),
+            key=lambda line: line.distance(clip_region.representative_point()),
+            default=None,
+        )
+        if nearest_road is not None:
+            reference = clip_region.representative_point()
+            if nearest_road.distance(reference) <= 18.0:
+                try:
+                    position = nearest_road.project(reference)
+                    epsilon = min(2.0, max(0.25, nearest_road.length * .01))
+                    point_a = nearest_road.interpolate(max(0.0, position - epsilon))
+                    point_b = nearest_road.interpolate(min(nearest_road.length, position + epsilon))
+                    dx, dy = point_b.x - point_a.x, point_b.y - point_a.y
+                    if dx * dx + dy * dy > 1e-9:
+                        region_angle = math.degrees(math.atan2(dy, dx))
+                except Exception:
+                    pass
+        region_angle = self._readable_angle(region_angle)
         ai_orientation = None
-        road_angle = None
-        try:
-            # Provide the nearest real road direction as a second candidate.
-            # The AI selects only one axis; it never receives or creates parcel
-            # polygons, so geometry safety remains fully deterministic.
-            reference_point = clip_region.representative_point()
-            nearest_line = min(
-                (line for line in self.road_centerlines if line is not None and not line.is_empty),
-                key=lambda line: line.distance(reference_point),
-                default=None,
-            )
-            if nearest_line is not None and nearest_line.length > 0:
-                projected = nearest_line.project(reference_point)
-                epsilon = min(2.0, max(0.25, nearest_line.length * 0.01))
-                p1 = nearest_line.interpolate(max(0.0, projected - epsilon))
-                p2 = nearest_line.interpolate(min(nearest_line.length, projected + epsilon))
-                dx, dy = float(p2.x - p1.x), float(p2.y - p1.y)
-                if dx * dx + dy * dy > 1e-9:
-                    road_angle = math.degrees(math.atan2(dy, dx))
-            bounds = clip_region.bounds
-            ai_orientation = suggest_dxf_parcel_orientation(
-                fat_angle=region_angle,
-                road_angle=road_angle,
-                point_count=len(group_sites),
-                region_area=float(clip_region.area),
-                region_width=float(bounds[2] - bounds[0]),
-                region_height=float(bounds[3] - bounds[1]),
-            )
-        except Exception as exc:
-            LOGGER.debug("HP COVER AI orientation fallback: %s", exc)
-        if ai_orientation:
-            region_angle = float(ai_orientation["angle_degrees"])
-            if pipeline_logger:
-                pipeline_logger(
-                    f"[3/6] EVA AI parcel axis {region_angle:.1f}° "
-                    f"(confidence {ai_orientation['confidence']:.2f})."
-                )
+        if pipeline_logger is not None:
+            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER deterministic local axis {region_angle:.1f}°.")
 
+        row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
             cell = cell_for_local[local_idx]
             if cell is None or cell.is_empty:
-                cell = clip_region
+                # Row-grid is the safe per-HP fallback. Never substitute the
+                # whole FAT region, which makes parcels overlap.
+                cell = row_grid_parcels.get(global_idx)
+                if cell is None or cell.is_empty:
+                    continue
             site = site_points[global_idx]
             item = pending[global_idx]
 
@@ -4201,10 +4467,16 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # subdivision: lots line up along roads instead of floating as
             # free rectangles.
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
-            parcel = self._road_front_parcel(
-                site, cell, clip_region, cell_area, region_angle,
-                preferred_angle=float(ai_orientation["angle_degrees"]) if ai_orientation else None,
-            )
+            # Intact compact rectangle. Ownership is a fit constraint, not
+            # a clipping blade; failed fits go to Run-2 relocation.
+            preferred = region_angle
+            allowed = cell.intersection(clip_region)
+            road_solid = self._home_parcel_road_solid()
+            if road_solid is not None and not road_solid.is_empty:
+                allowed = allowed.difference(road_solid)
+            if self.home_number_boxes:
+                allowed = allowed.difference(unary_union(self.home_number_boxes))
+            parcel = self._fit_compact_rect(site, allowed, preferred)
             if parcel is None or parcel.is_empty:
                 # Road-front rectangle can disappear (common for HP UNCOVER
                 # outside/near boundary). Fall back to cell envelope clipped
@@ -4219,43 +4491,188 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     parcel = cell.envelope
             if parcel is None or parcel.is_empty:
                 continue
-            parcel = self._parcel_piece_containing(parcel, site)
-            if parcel is None or parcel.is_empty or parcel.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
+            # Final hard guard for every renderer path (row-grid, road-front,
+            # and fallback): a parcel may never leave FAT AREA or enter ROAD.
+            # Do this after shape generation because row-grid can bypass the
+            # block-builder road subtraction.
+            try:
+                parcel = parcel.intersection(clip_region)
+                road_solid = self._home_parcel_road_solid()
+                if road_solid is not None and not road_solid.is_empty:
+                    # ROAD + 0.3m cable solid is absolute. Never reopen it for
+                    # an anchor pocket; Run-2 relocates blocked HPs safely.
+                    parcel = self._parcel_piece_containing(parcel.difference(road_solid), site)
+                else:
+                    parcel = self._parcel_piece_containing(parcel, site)
+            except Exception:
                 continue
+            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
+                # Final anchored fallback. Never drop a source HP because a
+                # Voronoi/road clip produced no usable polygon. Build a small
+                # deterministic rectangle around the immutable source point,
+                # then constrain it to the local FAT-safe region.
+                try:
+                    fallback_region = clip_region
+                    if fallback_region is not None and not fallback_region.is_empty:
+                        half = 2.0
+                        anchor_box = ShapelyPoint(site).buffer(half, cap_style=3, join_style=2)
+                        candidate = anchor_box.intersection(fallback_region)
+                        if road_solid is not None and not road_solid.is_empty:
+                            candidate = candidate.difference(road_solid)
+                        # Preserve one-HP-one-parcel: reserve all prior boxes.
+                        for existing_box in self.home_number_boxes:
+                            if existing_box is not None and not existing_box.is_empty:
+                                candidate = candidate.difference(existing_box)
+                        anchored = self._parcel_piece_containing(candidate, site)
+                        if anchored is not None and not anchored.is_empty:
+                            parcel = anchored
+                except Exception:
+                    parcel = None
+            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
+                continue
+            # A house parcel must never collapse to a text-sized sliver.
+            # Let Run-2 relocate conflict anchors to nearby free space instead.
+            if parcel.area < 24.0:
+                continue
+            # Road clipping can leave a long thin spur at junctions. Keep the
+            # original KMZ anchor piece only; reject slivers that make parcels
+            # look like they cross a road in DXF.
+            try:
+                minx, miny, maxx, maxy = parcel.bounds
+                short_side = min(maxx - minx, maxy - miny)
+                if short_side < 0.45 and parcel.area < 8.0:
+                    continue
+            except Exception:
+                pass
 
+            # Global occupancy: blocks from all FAT/sub-blocks are mutually
+            # exclusive. Use a tiny buffer to avoid DXF visual overlap while
+            # allowing shared boundaries.
+            try:
+                occupied = [box for box in self.home_number_boxes if box is not None and not box.is_empty]
+                if occupied:
+                    parcel = parcel.difference(unary_union(occupied))
+                parcel = self._parcel_piece_containing(parcel, site)
+            except Exception:
+                parcel = None
+            if parcel is None or parcel.is_empty or parcel.area < 24.0:
+                continue
             parcel = parcel.simplify(0.05, preserve_topology=True)
-            if parcel.is_empty:
+            parcel = self._parcel_piece_containing(parcel, site)
+            if parcel is None or parcel.is_empty or parcel.area < 24.0:
                 continue
 
             output_start_index = len(self.output_entities)
-            for polygon in self._geometry_polygons(parcel):
-                if polygon.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
-                    continue
-                exterior = list(polygon.exterior.coords)
-                if len(exterior) >= 4:
-                    self._add_polyline(exterior, close=True, dxfattribs=box_attrs)
-                self.home_number_boxes.append(polygon)
+            # One HP owns exactly one connected polygon. Detached clipped
+            # remnants are deliberately not drawn.
+            exterior = list(parcel.exterior.coords)
+            if len(exterior) < 4:
+                continue
+            self._add_polyline(exterior, close=True, dxfattribs=box_attrs)
+            self.home_number_boxes.append(parcel)
 
             text = str(item["text"])
-            label_polygon = max(self._geometry_polygons(parcel), key=lambda p: p.area, default=None)
+            label_polygon = parcel
             if label_polygon is None:
                 continue
+            # HP COVER label is anchored at the original KMZ placemark.
+            # Do not substitute polygon centre after clipping; that makes the
+            # source HP appear to move in DXF.
+            if not label_polygon.buffer(0.01).covers(site):
+                continue
+            # Text always sits at final parcel centre. Source coordinates are
+            # retained for parcel generation; this only prevents edge labels.
             anchor = label_polygon.representative_point()
-            text_height = self._polygon_text_height(label_polygon, text)
-            # Rotate the label along the longest axis of the parcel so text
-            # runs along the cell's longest edge (cleaner cadastral look,
-            # avoids labels colliding when cells are narrow).
+            text_height = KML_HOME_NUMBER_HEIGHT_METERS
             rotation = self._polygon_label_rotation(label_polygon)
             self._add_centered_text(
-                text,
-                (anchor.x, anchor.y),
-                text_height,
-                dxfattribs=text_attrs,
-                rotation=rotation,
+                text, (anchor.x, anchor.y), text_height,
+                dxfattribs=text_attrs, rotation=rotation,
             )
             self.register_fdt_entities(item.get("fdt_number"), self.output_entities[output_start_index:])
+            self._hp_cover_drawn_indexes.add(global_idx)
             drawn += 1
         return drawn
+
+    def _hp_visual_parcel_svg(self, region, points):
+        """Small dependency-free visual preview for multimodal parcel review."""
+        if region is None or region.is_empty: return ""
+        minx,miny,maxx,maxy=region.bounds; w=max(maxx-minx, 1.0); h=max(maxy-miny, 1.0)
+        pad=12; scale=min(480/w, 480/h)
+        def xy(x,y): return (pad+(x-minx)*scale, pad+(maxy-y)*scale)
+        def path(poly):
+            coords=list(poly.exterior.coords); return ' '.join((('M' if i==0 else 'L')+f'{xy(x,y)[0]:.1f},{xy(x,y)[1]:.1f}') for i,(x,y) in enumerate(coords))+' Z'
+        fat=''.join(f'<path d="{path(p)}" fill="#00d9ff22" stroke="#00d9ff" stroke-width="2"/>' for p in self._geometry_polygons(region))
+        roads=self._home_parcel_road_solid(); road=''
+        if roads is not None and not roads.is_empty:
+            road=''.join(f'<path d="{path(p)}" fill="#ff333355" stroke="#ff3333" stroke-width="2"/>' for p in self._geometry_polygons(roads.intersection(region.envelope)))
+        dots=''.join(f'<circle cx="{xy(p.x,p.y)[0]:.1f}" cy="{xy(p.x,p.y)[1]:.1f}" r="4" fill="#ffe600" stroke="#111"/>' for p in points)
+        size=int(max(w,h)*scale+pad*2)
+        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
+
+    def _hp_row_grid_parcels(self, indexes, sites, pending, clip_region, angle):
+        """Aligned midpoint cells; never move HP source points."""
+        if not indexes or clip_region is None or clip_region.is_empty:
+            return {}
+        a=math.radians(float(angle)); tx,ty=math.cos(a),math.sin(a); nx,ny=-ty,tx
+        def uv(pt):
+            x,y=float(pt[0]),float(pt[1]); return x*tx+y*ty, x*nx+y*ny
+        def xy(u,v): return (tx*u+nx*v, ty*u+ny*v)
+        coords=[]
+        for g in self._geometry_polygons(clip_region): coords.extend(g.exterior.coords)
+        if not coords: return {}
+        us=[uv(c)[0] for c in coords]; vs=[uv(c)[1] for c in coords]
+        min_u,max_u,min_v,max_v=min(us)-2,max(us)+2,min(vs)-2,max(vs)+2
+        pts=[]
+        for i in indexes:
+            u,v=uv(sites[i]); pts.append((i,u,v))
+        rows=[]
+        for item in sorted(pts,key=lambda x:x[2]):
+            if not rows or abs(item[2]-rows[-1][0])>14.0: rows.append([item[2],[item]])
+            else: rows[-1][1].append(item); rows[-1][0]=sum(x[2] for x in rows[-1][1])/len(rows[-1][1])
+        centers=[r[0] for r in rows]; out={}
+        for ri,(_,row) in enumerate(rows):
+            v0=(centers[ri-1]+centers[ri])/2 if ri else max(min_v,centers[ri]-5)
+            v1=(centers[ri]+centers[ri+1])/2 if ri<len(rows)-1 else min(max_v,centers[ri]+5)
+            row=sorted(row,key=lambda x:x[1])
+            for j,(idx,u,v) in enumerate(row):
+                u0=(row[j-1][1]+u)/2 if j else max(min_u,u-3.0)
+                u1=(u+row[j+1][1])/2 if j<len(row)-1 else min(max_u,u+3.0)
+                try: cell=Polygon([xy(u0,v0),xy(u1,v0),xy(u1,v1),xy(u0,v1)]).intersection(clip_region)
+                except Exception: continue
+                if not cell.is_empty and cell.area>=KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS: out[idx]=cell
+        return out
+
+    def _fit_compact_rect(self, site, allowed, angle, width=6.0, depth=10.0):
+        """Fit largest intact house rectangle without producing slivers.
+
+        Start from the capped 12x18 module and step down toward 6x10. Shared
+        parcel edges are valid; geometry may touch but never overlap.
+        """
+        if site is None or allowed is None or allowed.is_empty:
+            return None
+        rad = math.radians(float(angle))
+        tx, ty = math.cos(rad), math.sin(rad)
+        nx, ny = -ty, tx
+        # Balanced house parcels: max 14m each axis. Avoid old 12x18 strips.
+        # HP source remains the fixed centre/anchor; only parcel extent grows.
+        widths = (14.0, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0, 6.0)
+        depths = (14.0, 13.0, 12.0, 11.0, 10.0)
+        candidates = sorted(
+            ((w * d, w, d) for w in widths for d in depths),
+            reverse=True,
+        )
+        for _area, w, d in candidates:
+            hw, hd = w / 2.0, d / 2.0
+            rect = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-ty*hw+ny*hd),
+            ])
+            if allowed.buffer(1e-6).covers(rect):
+                return rect
+        return None
 
     def _road_front_parcel(
         self, site: ShapelyPoint, cell, clip_region, cell_area: float,
@@ -4324,11 +4741,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             nx, ny = -nx, -ny
 
         road_to_site = abs(vx * nx + vy * ny)
-        # SHORT side faces the road (along tangent). LONG side goes away (along normal).
-        short_side = max(4.0, min(14.0, math.sqrt(max(cell_area, 1.0) * 0.55)))
-        long_side = max(short_side + 2.0, min(42.0, road_to_site + max(8.0, short_side * 0.7)))
-        width = short_side   # along road tangent
-        depth = long_side    # away from road
+        # Standard large HP parcel module. Never derive its dimensions from
+        # a tiny/irregular Voronoi cell: all parcels begin consistently sized.
+        # Clipping below creates clean shared edges at FAT/ROAD/midpoint limits.
+        width = 6.0          # compact house parcel base width (metres)
+        depth = 10.0         # compact house parcel base depth (metres)
+        # One house = one consistent compact module. Do not independently
+        # grow parcels from their cell bounds: that produced mixed tiny/long
+        # lots in one FAT group. Free space remains as free space.
         half_w = width / 2.0
 
         # Rectangle: front edge at road_point along tangent, back edge at road + depth along normal.
@@ -4348,27 +4768,22 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if rect.is_empty:
             return None
 
-        # 1) Clip to cell envelope — guarantees no overlap with neighbouring parcels.
-        #    Intersection of two rectangles is always a rectangle.
-        cell_box = cell.envelope
-        if cell_box is not None and not cell_box.is_empty:
-            try:
-                clipped = rect.intersection(cell_box)
-            except Exception:
-                clipped = None
-            if clipped is not None and not clipped.is_empty:
-                # Ensure result is still rectangular (MBR of clipped is rectangle).
-                rect = clipped.minimum_rotated_rectangle
-            if rect.is_empty:
-                return None
-
-        # 2) Fit inside the FAT/block polygon (minus roads) by shrinking until
-        #    all 4 corners are inside. Keeps the shape a pure rectangle while
-        #    respecting the actual FAT boundary.
-        rect = self._fit_rect_inside_polygon(rect, clip_region)
-        if rect is None or rect.is_empty or rect.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
+        # Hard clip, do NOT shrink. Ownership borders are exact midpoint lines
+        # between HP points, so intersections produce touching parcels without
+        # any overlap. `clip_region` is FAT AREA minus ROAD safety geometry.
+        try:
+            allowed = cell.intersection(clip_region)
+        except Exception:
+            allowed = clip_region
+        if allowed is None or allowed.is_empty:
             return None
-        return rect
+        try:
+            parcel = rect.intersection(allowed)
+        except Exception:
+            return None
+        if parcel is None or parcel.is_empty or parcel.area < KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS:
+            return None
+        return parcel
 
     @staticmethod
     def _fit_rect_inside_polygon(rect, polygon, max_iterations: int = 30):
@@ -4471,17 +4886,25 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         for piece in pieces:
             if piece.covers(site):
                 return piece
-        return max(pieces, key=lambda p: p.area)
+        # Never borrow the largest clipped piece: it belongs to another HP
+        # when the source HP lies outside after FAT/ROAD clipping.
+        return None
 
     def finalize_home_numbers(self, pipeline_logger=None) -> None:
         if not self.pending_home_numbers:
             return
 
         if KML_HOME_PARCEL_ENABLED and _shapely_voronoi_diagram is not None:
+            # Never retain partial tessellation before legacy box fallback.
+            # Otherwise the same HP COVER is drawn twice.
+            parcel_entity_start = len(self.output_entities)
+            parcel_box_start = len(self.home_number_boxes)
             try:
                 self._finalize_home_numbers_as_parcels(pipeline_logger)
                 return
             except Exception as exc:
+                del self.output_entities[parcel_entity_start:]
+                del self.home_number_boxes[parcel_box_start:]
                 # Parcel tessellation is best-effort; if anything goes wrong
                 # (degenerate geometry, GEOS edge case) fall back to the
                 # original independent-box placement so output is never lost.
