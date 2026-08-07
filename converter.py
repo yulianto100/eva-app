@@ -3959,27 +3959,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if no_fat_indexes:
             block = self._home_parcel_block_geometry([sites[i] for i in no_fat_indexes])
             if block is not None and not block.is_empty:
-                for batch_start in range(0, len(no_fat_indexes), batch_size):
-                    batch_indexes = no_fat_indexes[batch_start:batch_start + batch_size]
-                    if pipeline_logger is not None and len(no_fat_indexes) > batch_size:
-                        pipeline_log(
-                            pipeline_logger,
-                            "info",
-                            f"[3/6] HP COVER fallback batch {batch_start // batch_size + 1}/"
-                            f"{math.ceil(len(no_fat_indexes) / batch_size)}: {len(batch_indexes):,} titik.",
-                        )
-                    drawn += self._draw_parcel_group(
-                        batch_indexes,
-                        sites,
-                        site_points,
-                        pending,
-                        block,
-                        box_attrs,
-                        text_attrs,
-                        cap_radius=True,
-                        fill_region=False,
-                pipeline_logger=pipeline_logger,
-                    )
+                drawn += self._draw_parcel_group(
+                    no_fat_indexes,
+                    sites,
+                    site_points,
+                    pending,
+                    block,
+                    box_attrs,
+                    text_attrs,
+                    cap_radius=True,
+                    fill_region=False,
+                    pipeline_logger=pipeline_logger,
+                )
 
         # Run-2: only source HPs that Run-1 could not fit. AI visual axis
         # selection remains Run-1 behaviour; retry only finds nearby free room.
@@ -4538,6 +4529,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if clip_region is None or clip_region.is_empty:
             clip_region = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).buffer(18.0, cap_style=3, join_style=2)
         strip_parcels = self._road_strip_cells(indexes, sites, clip_region, region_angle, ai_layout_hint)
+        if not strip_parcels and not any(line is not None and not line.is_empty and line.length > 2 for line in self.road_centerlines):
+            strip_parcels = self._open_ai_grid_cells(indexes, sites, region_angle, ai_layout_hint)
+            if pipeline_logger is not None:
+                pipeline_log(
+                    pipeline_logger,
+                    "info",
+                    f"[3/6] HP COVER AI open-grid fallback: {len(strip_parcels)}/{len(indexes)} parcel tanpa ROAD/FAT.",
+                )
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
@@ -4626,7 +4625,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                             parcel = anchored
                 except Exception:
                     parcel = None
-            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
+            if parcel is None or parcel.is_empty or (not strip_geometry and not parcel.buffer(0.01).covers(site)):
                 continue
             # A house parcel must never collapse to a text-sized sliver.
             # Let Run-2 relocate conflict anchors to nearby free space instead.
@@ -4740,6 +4739,93 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if road is not None and not road.is_empty:
             allowed = allowed.difference(road)
         return self._fit_compact_rect(site, allowed, angle)
+
+    @staticmethod
+    def _packed_axis_centers(values, minimum_gap):
+        """Least-squares monotone packing with a fixed minimum spacing."""
+        if not values:
+            return []
+        ordered = [float(value) for value in values]
+        adjusted = [value - index * minimum_gap for index, value in enumerate(ordered)]
+        blocks = []
+        for index, value in enumerate(adjusted):
+            blocks.append([index, index, value, 1])
+            while len(blocks) >= 2 and blocks[-2][2] > blocks[-1][2]:
+                right = blocks.pop(); left = blocks.pop()
+                count = left[3] + right[3]
+                mean = (left[2] * left[3] + right[2] * right[3]) / count
+                blocks.append([left[0], right[1], mean, count])
+        fitted = [0.0] * len(ordered)
+        for start, end, mean, _count in blocks:
+            for index in range(start, end + 1):
+                fitted[index] = mean + index * minimum_gap
+        return fitted
+
+    def _open_ai_grid_cells(self, indexes, sites, angle, layout_hint=None):
+        """No-ROAD/no-FAT fallback: packed shared-edge grid, DXF relocation <=12m."""
+        if not indexes:
+            return {}
+        hint = layout_hint or {}
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        along_shift = max(-12.0, min(12.0, float(hint.get('along_shift_m', 0.0) or 0.0)))
+        normal_shift = max(-12.0, min(12.0, float(hint.get('normal_shift_m', 0.0) or 0.0)))
+        points = []
+        for index in indexes:
+            point = ShapelyPoint(sites[index])
+            points.append((index, point, point.x * tx + point.y * ty, point.x * nx + point.y * ny))
+        points.sort(key=lambda item: (item[3], item[2]))
+
+        # Natural rows remain source-driven; only DXF parcel/label may move.
+        rows = []
+        for item in points:
+            if not rows or abs(item[3] - rows[-1][0]) > 7.5:
+                rows.append([item[3], [item]])
+            else:
+                rows[-1][1].append(item)
+                rows[-1][0] = sum(entry[3] for entry in rows[-1][1]) / len(rows[-1][1])
+        desired_rows = [row[0] for row in rows]
+        packed_rows = self._packed_axis_centers(desired_rows, 10.0)
+        packed_rows = [value + normal_shift for value in packed_rows]
+
+        result = {}
+        placed = []
+        road_solid = self._home_parcel_road_solid()
+        for row_index, (_desired_v, entries) in enumerate(rows):
+            entries.sort(key=lambda item: item[2])
+            desired_u = [entry[2] for entry in entries]
+            centers_u = [value + along_shift for value in self._packed_axis_centers(desired_u, 4.0)]
+            center_v = packed_rows[row_index]
+            lower_mid = (packed_rows[row_index - 1] + center_v) / 2.0 if row_index else center_v - 6.5
+            upper_mid = (center_v + packed_rows[row_index + 1]) / 2.0 if row_index < len(rows) - 1 else center_v + 6.5
+            lower = max(lower_mid, center_v - 6.5)
+            upper = min(upper_mid, center_v + 6.5)
+            if upper - lower < 10.0:
+                continue
+            for column, entry in enumerate(entries):
+                index, source = entry[0], entry[1]
+                center_u = centers_u[column]
+                left_mid = (centers_u[column - 1] + center_u) / 2.0 if column else center_u - 6.5
+                right_mid = (center_u + centers_u[column + 1]) / 2.0 if column < len(entries) - 1 else center_u + 6.5
+                left = max(left_mid, center_u - 6.5)
+                right = min(right_mid, center_u + 6.5)
+                if right - left < 4.0:
+                    continue
+                def xy(u, v):
+                    return (tx * u + nx * v, ty * u + ny * v)
+                parcel = Polygon([xy(left, lower), xy(right, lower), xy(right, upper), xy(left, upper)])
+                if parcel.is_empty or parcel.area < 40.0 or parcel.area > 169.0 + 1e-6:
+                    continue
+                if parcel.distance(source) > 12.0 + 1e-6:
+                    continue
+                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                    continue
+                if any(parcel.intersection(old).area > 1e-7 for old in placed):
+                    continue
+                placed.append(parcel)
+                result[index] = parcel
+        return result
 
     def _road_strip_cells(self, indexes, sites, clip_region, angle, layout_hint=None):
         """Parking-bay style parcels: shared edges, ROAD-front first."""
