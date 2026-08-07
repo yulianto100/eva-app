@@ -4727,8 +4727,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 along=[i[1].x*tx+i[1].y*ty for i in row]
                 for j,item in enumerate(row):
                     idx,point=item[0],item[1]; u=along[j]
-                    left=(along[j-1]+u)/2 if j else u-6.5
-                    right=(u+along[j+1])/2 if j<len(row)-1 else u+6.5
+                    # Midpoint dividers remove gaps: parcels grow toward the
+                    # next source, capped at 13m width. At strip ends, grow
+                    # outward into open local-road envelope up to the same cap.
+                    left=(along[j-1]+u)/2 if j else u-13.0/2
+                    right=(u+along[j+1])/2 if j<len(row)-1 else u+13.0/2
+                    left=max(left, u-13.0/2)
+                    right=min(right, u+13.0/2)
                     if right-left<4.0: continue
                     parcel=Polygon([(tx*left+nx*front,ty*left+ny*front),(tx*right+nx*front,ty*right+ny*front),(tx*right+nx*back,ty*right+ny*back),(tx*left+nx*back,ty*left+ny*back)])
                     if parcel.area<40 or not clip_region.buffer(1e-6).covers(parcel): continue
