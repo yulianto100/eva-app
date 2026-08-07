@@ -817,6 +817,34 @@ def _legacy_formula_source_row(worksheet: gspread.Worksheet, columns: dict[str, 
     return 0
 
 
+def _legacy_empty_formula_row(
+    worksheet: gspread.Worksheet,
+    header_row: int,
+    columns: dict[str, int],
+    hub_id: str,
+) -> int:
+    """Return an emptied legacy row for this hub, preserving its formulas."""
+    hub = normalize_text(hub_id).upper()
+    hub_column = columns.get("olt_code", 0)
+    user_columns = (columns.get("site", 0), columns.get("fdt_code", 0), columns.get("segment", 0))
+    if not hub or not hub_column or not all(user_columns):
+        return 0
+    formulas = worksheet.get_values(value_render_option="FORMULA", major_dimension="ROWS")
+    values = worksheet.get_values(value_render_option="FORMATTED_VALUE", major_dimension="ROWS")
+    for row_number, row in enumerate(values, start=1):
+        if row_number <= header_row:
+            continue
+        formula_row = formulas[row_number - 1] if row_number <= len(formulas) else []
+        formula_hub = normalize_text(
+            formula_row[hub_column - 1] if hub_column <= len(formula_row) else ""
+        ).upper()
+        if hub not in formula_hub:
+            continue
+        if all(not normalize_text(row[column - 1] if column <= len(row) else "") for column in user_columns):
+            return row_number
+    return 0
+
+
 def _append_legacy_formula_row(
     worksheet: gspread.Worksheet,
     header_row: int,
@@ -826,6 +854,11 @@ def _append_legacy_formula_row(
     hub_id = normalize_text(record.get("hub_id")).upper()
     if not normalize_text(record.get("index_code")):
         raise ValueError("SEGMENT wajib diisi untuk template Indramayu/Kuningan.")
+    target_row = _legacy_empty_formula_row(worksheet, header_row, columns, hub_id)
+    if target_row > header_row:
+        _outbound_update_row(worksheet, header_row, columns, target_row, record)
+        return target_row
+
     source_row = _legacy_formula_source_row(worksheet, columns, hub_id)
     if source_row <= header_row:
         raise ValueError(f"Template formula untuk OLT ID {hub_id} tidak ditemukan.")
