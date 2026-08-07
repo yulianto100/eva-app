@@ -340,8 +340,9 @@ def suggest_dxf_visual_parcel_layout(*, preview_png: bytes, fat_angle: float, ro
         'You visually review EVA telecom HP COVER parcel layout. Return ONLY JSON: '
         '{"angle_degrees":number,"width_scale":number,"depth_scale":number,"road_side":1,"confidence":number,"reason":string}. '
         'Image legend: cyan=FAT boundary, red=ROAD exclusion, yellow=fixed HP source points. '
-        'Choose ONE clean shared grid angle. Do not output coordinates or polygons. '
-        'HP points must never move; parcels must stay inside cyan and outside red, not overlap.'
+        'Choose ONE clean shared grid angle and optional signed group shifts in meters. Do not output coordinates or polygons. '
+        'KMZ HP source coordinates are immutable, but the complete DXF parcel+label group may shift up to 12m along/normal to ROAD for clean shared rows. '
+        'Parcels must stay outside red ROAD, share edges where spacing allows, and never overlap.'
     )
     content = [
         {'type': 'text', 'text': json.dumps({'fat_angle_degrees': round(float(fat_angle), 2), 'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None, 'hp_cover_count': int(point_count)})},
@@ -354,12 +355,24 @@ def suggest_dxf_visual_parcel_layout(*, preview_png: bytes, fat_angle: float, ro
         confidence=float(result.get('confidence', 0)); angle=float(result.get('angle_degrees'))
         width=max(0.70, min(1.30, float(result.get('width_scale', 1.0))))
         depth=max(0.70, min(1.30, float(result.get('depth_scale', 1.0))))
-        side=1 if float(result.get('road_side', 1)) >= 0 else -1
+        side_raw = result.get('road_side', 1)
+        if isinstance(side_raw, str):
+            side_text = side_raw.strip().lower()
+            if side_text in {'left', 'above', 'north', 'west', '+', '+1', '1'}:
+                side = 1
+            elif side_text in {'right', 'below', 'south', 'east', '-', '-1'}:
+                side = -1
+            else:
+                side = 1
+        else:
+            side = 1 if float(side_raw) >= 0 else -1
+        normal_shift=max(-12.0, min(12.0, float(result.get('normal_shift_m', 0.0))))
+        along_shift=max(-12.0, min(12.0, float(result.get('along_shift_m', 0.0))))
     except (TypeError, ValueError):
         return None
     if confidence < ai_confidence_min() or not -90 <= angle <= 90:
         return None
-    return {'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth, 'road_side': side, 'confidence': confidence, 'reason': str(result.get('reason') or '')}
+    return {'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth, 'road_side': side, 'normal_shift_m': normal_shift, 'along_shift_m': along_shift, 'confidence': confidence, 'reason': str(result.get('reason') or '')}
 
 
 def suggest_dxf_asset_layout(

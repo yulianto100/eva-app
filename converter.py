@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.math import Matrix44
 from pyproj import Geod, Transformer
+from shapely.affinity import translate as _translate
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, MultiPoint, Point as ShapelyPoint, Polygon
 from shapely.ops import nearest_points, unary_union
 
@@ -1455,6 +1456,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.pending_pole_ids: list[dict] = []
         self.fat_callout_refs: list[dict] = []
         self.home_number_boxes: list[Polygon] = []
+        self.home_number_relocated_indexes: set[int] = set()
         # Pole positions used for snapping nearby slack/joint closure/cable
         # placemarks to the centre of an existing pole icon.
         self.pole_positions: list[Point] = []
@@ -4513,7 +4515,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                             "[3/6] HP COVER AI visual hint accepted: "
                             f"axis {candidate:.1f}°, confidence {float(ai_hint['confidence']):.2f}, "
                             f"road side {int(ai_hint['road_side'])}, "
-                            f"scale {float(ai_hint['width_scale']):.2f}×{float(ai_hint['depth_scale']):.2f}.",
+                            f"scale {float(ai_hint['width_scale']):.2f}×{float(ai_hint['depth_scale']):.2f}, "
+                            f"shift along {float(ai_hint.get('along_shift_m', 0.0)):.1f}m / normal {float(ai_hint.get('normal_shift_m', 0.0)):.1f}m.",
                         )
                 elif pipeline_logger is not None:
                     pipeline_log(
@@ -4527,13 +4530,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # individual parcels and remains within the AI/deterministic ±15° band.
         requested_angle = region_angle
         region_angle = self._solve_hp_block_axis(indexes, sites, site_points, clip_region, requested_angle)
+        ai_layout_hint = ai_orientation or {}
         if pipeline_logger is not None:
             mode = "AI-assisted" if ai_orientation else "deterministic"
             pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} collision-safe axis {region_angle:.1f}° (requested {requested_angle:.1f}°).")
 
         if clip_region is None or clip_region.is_empty:
             clip_region = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).buffer(18.0, cap_style=3, join_style=2)
-        strip_parcels = self._road_strip_cells(indexes, sites, clip_region, region_angle)
+        strip_parcels = self._road_strip_cells(indexes, sites, clip_region, region_angle, ai_layout_hint)
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
@@ -4556,9 +4560,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
             # Compact box parcel. Ownership remains a fit constraint, not a
             # full-area parcel shape, so one HP never claims an entire FAT.
-            if strip_parcel is not None:
-                # Critical routing: accepted strip geometry is final geometry.
-                # Never pass it through compact/Voronoi fitting again.
+            strip_geometry = strip_parcel is not None
+            if strip_geometry:
+                # Accepted strip geometry is final. AI may relocate DXF-only
+                # strip/label <=12m; KMZ source coordinate stays immutable.
                 parcel = strip_parcel
             else:
                 preferred = region_angle
@@ -4581,17 +4586,25 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # Do this after shape generation because row-grid can bypass the
             # block-builder road subtraction.
             try:
-                parcel = parcel.intersection(clip_region)
-                road_solid = self._home_parcel_road_solid()
-                if road_solid is not None and not road_solid.is_empty:
-                    # ROAD + 0.3m cable solid is absolute. Never reopen it for
-                    # an anchor pocket; Run-2 relocates blocked HPs safely.
-                    parcel = self._parcel_piece_containing(parcel.difference(road_solid), site)
+                if strip_geometry:
+                    road_solid = self._home_parcel_road_solid()
+                    if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                        parcel = None
+                    elif parcel is not None and not parcel.is_empty and not parcel.buffer(0.01).covers(site):
+                        if parcel.distance(site) <= 12.0:
+                            self.home_number_relocated_indexes.add(global_idx)
+                        else:
+                            parcel = None
                 else:
-                    parcel = self._parcel_piece_containing(parcel, site)
+                    parcel = parcel.intersection(clip_region)
+                    road_solid = self._home_parcel_road_solid()
+                    if road_solid is not None and not road_solid.is_empty:
+                        parcel = self._parcel_piece_containing(parcel.difference(road_solid), site)
+                    else:
+                        parcel = self._parcel_piece_containing(parcel, site)
             except Exception:
                 continue
-            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
+            if parcel is None or parcel.is_empty or (not strip_geometry and not parcel.buffer(0.01).covers(site)):
                 # Final anchored fallback. Never drop a source HP because a
                 # Voronoi/road clip produced no usable polygon. Build a small
                 # deterministic rectangle around the immutable source point,
@@ -4636,14 +4649,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             try:
                 occupied = [box for box in self.home_number_boxes if box is not None and not box.is_empty]
                 if occupied:
-                    parcel = parcel.difference(unary_union(occupied))
-                parcel = self._parcel_piece_containing(parcel, site)
+                    if strip_geometry and any(parcel.intersection(existing).area > 1e-7 for existing in occupied):
+                        parcel = None
+                    elif not strip_geometry:
+                        parcel = parcel.difference(unary_union(occupied))
+                if parcel is not None and not strip_geometry:
+                    parcel = self._parcel_piece_containing(parcel, site)
             except Exception:
                 parcel = None
             if parcel is None or parcel.is_empty or parcel.area < 24.0:
                 continue
             parcel = parcel.simplify(0.05, preserve_topology=True)
-            parcel = self._parcel_piece_containing(parcel, site)
+            if not strip_geometry:
+                parcel = self._parcel_piece_containing(parcel, site)
             if parcel is None or parcel.is_empty or parcel.area < 24.0:
                 continue
 
@@ -4663,7 +4681,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # HP COVER label is anchored at the original KMZ placemark.
             # Do not substitute polygon centre after clipping; that makes the
             # source HP appear to move in DXF.
-            if not label_polygon.buffer(0.01).covers(site):
+            if not strip_geometry and not label_polygon.buffer(0.01).covers(site):
                 continue
             # Text always sits at final parcel centre. Source coordinates are
             # retained for parcel generation; this only prevents edge labels.
@@ -4723,7 +4741,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             allowed = allowed.difference(road)
         return self._fit_compact_rect(site, allowed, angle)
 
-    def _road_strip_cells(self, indexes, sites, clip_region, angle):
+    def _road_strip_cells(self, indexes, sites, clip_region, angle, layout_hint=None):
         """Parking-bay style parcels: shared edges, ROAD-front first."""
         if not indexes:
             return {}
@@ -4731,6 +4749,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if not roads:
             return {}
         road_solid=self._home_parcel_road_solid(); groups=defaultdict(list)
+        layout_hint = layout_hint or {}
+        along_shift = max(-12.0, min(12.0, float(layout_hint.get('along_shift_m', 0.0) or 0.0)))
+        normal_shift = max(-12.0, min(12.0, float(layout_hint.get('normal_shift_m', 0.0) or 0.0)))
         if clip_region is None or clip_region.is_empty:
             # No FAT mode: local road-side envelope is the only ownership limit.
             pts=MultiPoint([ShapelyPoint(sites[i]) for i in indexes])
@@ -4780,9 +4801,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     right=min(right, u+13.0/2)
                     if right-left<4.0: continue
                     parcel=Polygon([(tx*left+nx*front,ty*left+ny*front),(tx*right+nx*front,ty*right+ny*front),(tx*right+nx*back,ty*right+ny*back),(tx*left+nx*back,ty*left+ny*back)])
+                    if along_shift or normal_shift:
+                        parcel = _translate(parcel, xoff=tx * along_shift + nx * normal_shift, yoff=ty * along_shift + ny * normal_shift)
                     if parcel.area<40 or not clip_region.buffer(1e-6).covers(parcel): continue
                     if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area>1e-7: continue
-                    if not parcel.buffer(1e-6).covers(point): continue
+                    if not parcel.buffer(1e-6).covers(point) and parcel.distance(point) > 12.0: continue
                     if any(parcel.intersection(old).area>1e-7 for old in placed): continue
                     placed.append(parcel); result[idx]=parcel
         return result
