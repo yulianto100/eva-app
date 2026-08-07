@@ -1,4 +1,5 @@
 import json
+import io
 import logging
 import math
 import re
@@ -13,6 +14,7 @@ from typing import Callable, Iterable, Sequence
 import ezdxf
 import osmium
 from ezdxf import bbox
+from PIL import Image, ImageDraw
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.math import Matrix44
 from pyproj import Geod, Transformer
@@ -4491,9 +4493,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # Guardrail: never accept a wild turn more than 15 degrees away from
         # the road/FAT deterministic reference.
         try:
-            preview = self._hp_visual_parcel_svg(clip_region, [site_points[i] for i in indexes])
+            preview = self._hp_visual_parcel_png(clip_region, [site_points[i] for i in indexes])
             ai_hint = suggest_dxf_visual_parcel_layout(
-                preview_svg=preview,
+                preview_png=preview,
                 fat_angle=deterministic_angle,
                 road_angle=deterministic_angle,
                 point_count=len(group_sites),
@@ -4504,6 +4506,21 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 if delta <= 15.0:
                     region_angle = candidate
                     ai_orientation = ai_hint
+                    if pipeline_logger is not None:
+                        pipeline_log(
+                            pipeline_logger,
+                            "info",
+                            "[3/6] HP COVER AI visual hint accepted: "
+                            f"axis {candidate:.1f}°, confidence {float(ai_hint['confidence']):.2f}, "
+                            f"road side {int(ai_hint['road_side'])}, "
+                            f"scale {float(ai_hint['width_scale']):.2f}×{float(ai_hint['depth_scale']):.2f}.",
+                        )
+                elif pipeline_logger is not None:
+                    pipeline_log(
+                        pipeline_logger,
+                        "info",
+                        f"[3/6] HP COVER AI visual hint ignored: axis delta {delta:.1f}° exceeds 15° guard.",
+                    )
         except Exception as exc:
             LOGGER.debug("HP COVER constrained AI axis fallback: %s", exc)
         # Collision solver rotates the whole local block only. It never rotates
@@ -4662,21 +4679,37 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             drawn += 1
         return drawn
 
-    def _hp_visual_parcel_svg(self, region, points):
-        """Small dependency-free visual preview for multimodal parcel review."""
-        if region is None or region.is_empty: return ""
-        minx,miny,maxx,maxy=region.bounds; w=max(maxx-minx, 1.0); h=max(maxy-miny, 1.0)
-        pad=12; scale=min(480/w, 480/h)
-        def xy(x,y): return (pad+(x-minx)*scale, pad+(maxy-y)*scale)
-        def path(poly):
-            coords=list(poly.exterior.coords); return ' '.join((('M' if i==0 else 'L')+f'{xy(x,y)[0]:.1f},{xy(x,y)[1]:.1f}') for i,(x,y) in enumerate(coords))+' Z'
-        fat=''.join(f'<path d="{path(p)}" fill="#00d9ff22" stroke="#00d9ff" stroke-width="2"/>' for p in self._geometry_polygons(region))
-        roads=self._home_parcel_road_solid(); road=''
+    def _hp_visual_parcel_png(self, region, points):
+        """Raster preview for vision providers; SVG data URLs are unsupported by GPT/Gemini routes."""
+        if region is None or region.is_empty:
+            return b""
+        minx, miny, maxx, maxy = region.bounds
+        width, height = max(maxx - minx, 1.0), max(maxy - miny, 1.0)
+        pad, canvas = 16, 512
+        scale = min((canvas - 2 * pad) / width, (canvas - 2 * pad) / height)
+        draw_w = max(1, int(width * scale + 2 * pad))
+        draw_h = max(1, int(height * scale + 2 * pad))
+        image = Image.new("RGB", (draw_w, draw_h), "#111827")
+        draw = ImageDraw.Draw(image, "RGBA")
+
+        def xy(x, y):
+            return (pad + (x - minx) * scale, pad + (maxy - y) * scale)
+
+        for polygon in self._geometry_polygons(region):
+            coords = [xy(x, y) for x, y in polygon.exterior.coords]
+            draw.polygon(coords, fill=(0, 217, 255, 28), outline=(0, 217, 255, 255), width=2)
+        roads = self._home_parcel_road_solid()
         if roads is not None and not roads.is_empty:
-            road=''.join(f'<path d="{path(p)}" fill="#ff333355" stroke="#ff3333" stroke-width="2"/>' for p in self._geometry_polygons(roads.intersection(region.envelope)))
-        dots=''.join(f'<circle cx="{xy(p.x,p.y)[0]:.1f}" cy="{xy(p.x,p.y)[1]:.1f}" r="4" fill="#ffe600" stroke="#111"/>' for p in points)
-        size=int(max(w,h)*scale+pad*2)
-        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
+            for polygon in self._geometry_polygons(roads.intersection(region.envelope)):
+                coords = [xy(x, y) for x, y in polygon.exterior.coords]
+                draw.polygon(coords, fill=(255, 51, 51, 92), outline=(255, 51, 51, 255), width=2)
+        radius = 4
+        for point in points:
+            x, y = xy(point.x, point.y)
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=(255, 230, 0, 255), outline=(17, 17, 17, 255), width=1)
+        out = io.BytesIO()
+        image.save(out, format="PNG", optimize=True)
+        return out.getvalue()
 
     def _parcel_for_strip_or_fallback(self, strip_parcel, site, clip_region, angle):
         """Keep accepted strip geometry intact; compact fit is fallback only."""

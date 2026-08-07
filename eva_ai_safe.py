@@ -329,13 +329,13 @@ def suggest_dxf_parcel_orientation(
     return {"angle_degrees": angle, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
 
 
-def suggest_dxf_visual_parcel_layout(*, preview_svg: str, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
-    """Vision-only parcel hint. SVG shows FAT=cyan, ROAD=red, HP=yellow.
+def suggest_dxf_visual_parcel_layout(*, preview_png: bytes, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
+    """Vision-only parcel hint. PNG shows FAT=cyan, ROAD=red, HP=yellow.
     It returns hints only; converter owns all coordinates and topology."""
-    if not ai_visual_parcel_enabled() or not preview_svg or point_count < 2:
+    if not ai_visual_parcel_enabled() or not preview_png or point_count < 2:
         return None
     import base64
-    image = 'data:image/svg+xml;base64,' + base64.b64encode(preview_svg.encode('utf-8')).decode('ascii')
+    image = 'data:image/png;base64,' + base64.b64encode(preview_png).decode('ascii')
     system = (
         'You visually review EVA telecom HP COVER parcel layout. Return ONLY JSON: '
         '{"angle_degrees":number,"width_scale":number,"depth_scale":number,"road_side":1,"confidence":number,"reason":string}. '
