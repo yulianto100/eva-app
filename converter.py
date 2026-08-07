@@ -4514,11 +4514,15 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             mode = "AI-assisted" if ai_orientation else "deterministic"
             pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} collision-safe axis {region_angle:.1f}° (requested {requested_angle:.1f}°).")
 
+        if clip_region is None or clip_region.is_empty:
+            clip_region = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).buffer(18.0, cap_style=3, join_style=2)
+        strip_parcels = self._road_strip_cells(indexes, sites, clip_region, region_angle)
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
+            strip_parcel = strip_parcels.get(global_idx)
             cell = cell_for_local[local_idx]
-            if cell is None or cell.is_empty:
+            if strip_parcel is None and (cell is None or cell.is_empty):
                 # Row-grid is the safe per-HP fallback. Never substitute the
                 # whole FAT region, which makes parcels overlap.
                 cell = row_grid_parcels.get(global_idx)
@@ -4535,8 +4539,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
             # Compact box parcel. Ownership remains a fit constraint, not a
             # full-area parcel shape, so one HP never claims an entire FAT.
-            preferred = region_angle
-            allowed = cell.intersection(clip_region)
+            if strip_parcel is not None:
+                parcel = strip_parcel
+                allowed = None
+            else:
+                preferred = region_angle
+                allowed = cell.intersection(clip_region)
             road_solid = self._home_parcel_road_solid()
             if road_solid is not None and not road_solid.is_empty:
                 allowed = allowed.difference(road_solid)
@@ -4670,6 +4678,65 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         dots=''.join(f'<circle cx="{xy(p.x,p.y)[0]:.1f}" cy="{xy(p.x,p.y)[1]:.1f}" r="4" fill="#ffe600" stroke="#111"/>' for p in points)
         size=int(max(w,h)*scale+pad*2)
         return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
+
+    def _road_strip_cells(self, indexes, sites, clip_region, angle):
+        """Parking-bay style parcels: shared edges, ROAD-front first."""
+        if not indexes:
+            return {}
+        roads=[r for r in self.road_centerlines if r is not None and not r.is_empty and r.length>2]
+        if not roads:
+            return {}
+        road_solid=self._home_parcel_road_solid(); groups=defaultdict(list)
+        if clip_region is None or clip_region.is_empty:
+            # No FAT mode: local road-side envelope is the only ownership limit.
+            pts=MultiPoint([ShapelyPoint(sites[i]) for i in indexes])
+            clip_region=pts.buffer(18.0, cap_style=3, join_style=2)
+            if road_solid is not None and not road_solid.is_empty:
+                clip_region=clip_region.difference(road_solid)
+        for idx in indexes:
+            point=ShapelyPoint(sites[idx]); road_idx,road=min(enumerate(roads),key=lambda item:point.distance(item[1]))
+            d=road.project(point); eps=min(2.0,max(.25,road.length*.01)); a=road.interpolate(max(0,d-eps)); b=road.interpolate(min(road.length,d+eps))
+            tx,ty=b.x-a.x,b.y-a.y; length=math.hypot(tx,ty)
+            if length<=1e-9: continue
+            tx,ty=tx/length,ty/length; nx,ny=-ty,tx; near=road.interpolate(d)
+            signed=(point.x-near.x)*nx+(point.y-near.y)*ny; side=1 if signed>=0 else -1
+            groups[(road_idx,side)].append((idx,point,d,signed,tx,ty,near))
+        result={}; placed=[]
+        for (_road_idx,side),items in groups.items():
+            # Rows measured normal to ROAD; cells ordered along ROAD.
+            base=min(abs(i[3]) for i in items); rows=defaultdict(list)
+            for item in items: rows[max(0,int((abs(item[3])-base+5)//10))].append(item)
+            back=None
+            for row_no in sorted(rows):
+                row=sorted(rows[row_no],key=lambda i:i[2]); tx=sum(i[4] for i in row)/len(row); ty=sum(i[5] for i in row)/len(row); length=math.hypot(tx,ty)
+                if length<=1e-9: continue
+                tx,ty=tx/length,ty/length; nx,ny=-ty*side,tx*side
+                if back is None:
+                    edges=[]
+                    for _idx,point,_d,_signed,_tx,_ty,near in row:
+                        if road_solid is not None and not road_solid.is_empty:
+                            try:
+                                edge=nearest_points(point,road_solid.boundary)[1]; edges.append(edge.x*nx+edge.y*ny); continue
+                            except Exception: pass
+                        edges.append(near.x*nx+near.y*ny)
+                    front=max(edges) if side>0 else min(edges)
+                else: front=back
+                source_v=[i[1].x*nx+i[1].y*ny for i in row]
+                depth=13.0 if len(row)==1 else 10.0
+                back=max(max(source_v)+.01,front+depth) if side>0 else min(min(source_v)-.01,front-depth)
+                along=[i[1].x*tx+i[1].y*ty for i in row]
+                for j,item in enumerate(row):
+                    idx,point=item[0],item[1]; u=along[j]
+                    left=(along[j-1]+u)/2 if j else u-6.5
+                    right=(u+along[j+1])/2 if j<len(row)-1 else u+6.5
+                    if right-left<4.0: continue
+                    parcel=Polygon([(tx*left+nx*front,ty*left+ny*front),(tx*right+nx*front,ty*right+ny*front),(tx*right+nx*back,ty*right+ny*back),(tx*left+nx*back,ty*left+ny*back)])
+                    if parcel.area<40 or not clip_region.buffer(1e-6).covers(parcel): continue
+                    if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area>1e-7: continue
+                    if not parcel.buffer(1e-6).covers(point): continue
+                    if any(parcel.intersection(old).area>1e-7 for old in placed): continue
+                    placed.append(parcel); result[idx]=parcel
+        return result
 
     def _hp_row_grid_parcels(self, indexes, sites, pending, clip_region, angle):
         """Aligned midpoint cells; never move HP source points."""
