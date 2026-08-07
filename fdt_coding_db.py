@@ -62,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_fdt_olt_catalog_name ON fdt_coding_olt_catalog(ol
 """
 
 OLT_DB_PATH = Path(__file__).resolve().parent / "data" / "OLT.db"
+LEGACY_FDT_SPREADSHEET_ID = "1PNnmDDFgmks0bEkGF4jF8c3Vlv9-hzF3YushyP9xQWs"
 
 
 def attach_olt_catalog_db(conn: sqlite3.Connection) -> None:
@@ -391,6 +392,39 @@ def list_olt_catalog(conn_or_db_path) -> list[dict]:
         if close_conn:
             conn.close()
 
+def upsert_olt_catalog_units(db_path: str | Path, units: Iterable[dict]) -> int:
+    """Store source-verified units in local catalog for Area-filtered form lists."""
+    values = list(units)
+    if not values:
+        return 0
+    now = utc_now()
+    with connect(db_path) as conn:
+        for unit in values:
+            conn.execute(
+                """
+                INSERT INTO fdt_coding_olt_catalog
+                (olt_code, olt_initial, olt_name_initial, olt_hostname, olt_vendor, olt_area, source_row, created_at, updated_at)
+                VALUES (?, ?, ?, ?, '', ?, 0, ?, ?)
+                ON CONFLICT(olt_code) DO UPDATE SET
+                    olt_initial=excluded.olt_initial,
+                    olt_name_initial=excluded.olt_name_initial,
+                    olt_hostname=excluded.olt_hostname,
+                    olt_area=excluded.olt_area,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    normalize_text(unit.get("olt_code")).upper(),
+                    normalize_text(unit.get("olt_initial")).upper(),
+                    normalize_text(unit.get("olt_name_initial")).upper(),
+                    normalize_text(unit.get("olt_hostname")).upper(),
+                    normalize_text(unit.get("olt_area")),
+                    now,
+                    now,
+                ),
+            )
+    return len(values)
+
+
 def create_olt(db_path: str | Path, payload: dict) -> dict:
     olt_initial = normalize_text(payload.get("olt_initial")).upper()
     hub_id = normalize_text(payload.get("hub_id"))
@@ -535,10 +569,13 @@ def find_existing_record(conn: sqlite3.Connection, data: dict) -> sqlite3.Row | 
         row = conn.execute(
             """
             SELECT id FROM fdt_coding_records
-            WHERE source_spreadsheet_id = ? AND olt_initial = ? AND source_row = ?
+            WHERE source_spreadsheet_id = ?
+              AND sheet_name = ?
+              AND olt_initial = ?
+              AND source_row = ?
             LIMIT 1
             """,
-            (data["source_spreadsheet_id"], data["olt_initial"], data["source_row"]),
+            (data["source_spreadsheet_id"], data["sheet_name"], data["olt_initial"], data["source_row"]),
         ).fetchone()
         if row:
             return row
@@ -663,7 +700,9 @@ def create_records(db_path: str | Path, payload: dict) -> list[dict]:
                 "fdt_order": index,
                 "fdt_id": f"{fdt_number:03d}",
                 "fdt_code": f"{fdt_prefix}.{fdt_number:03d}",
-                "index_code": "",
+                # Legacy Indramayu/Kuningan stores SEGMENT in index_code.
+                # Normal templates submit an empty value, unchanged behavior.
+                "index_code": normalize_text(base_payload.get("index_code")),
                 "cluster_initial": fdt_prefix,
             })
             validate_payload(data)
@@ -693,7 +732,7 @@ def update_record(db_path: str | Path, record_id: int, payload: dict) -> dict:
         if fdt_prefix and fdt_id:
             adjusted_payload["fdt_code"] = f"{fdt_prefix}.{fdt_id}"
             adjusted_payload["cluster_initial"] = fdt_prefix
-            adjusted_payload["index_code"] = ""
+            adjusted_payload["index_code"] = normalize_text(adjusted_payload.get("index_code"))
         data = normalize_record_payload(adjusted_payload)
         validate_payload(data)
         assignments = ", ".join(f"{field} = ?" for field in FIELDS) + ", updated_at = ?"
@@ -767,7 +806,7 @@ def update_records(db_path: str | Path, record_ids: Iterable[int], payload: dict
                 "fdt_order": fdt_order,
                 "fdt_id": fdt_id,
                 "fdt_code": f"{fdt_prefix}.{fdt_id}",
-                "index_code": "",
+                "index_code": normalize_text(payload.get("index_code") or row["index_code"]),
                 "cluster_initial": fdt_prefix,
             })
             validate_payload(data)
@@ -812,12 +851,14 @@ def set_record_source_metadata(
 
 def record_to_db_payload(record: FdtCodingRecord, source_spreadsheet_id: str = "") -> dict:
     payload = asdict(record)
-    # User-facing OLT grouping follows the spreadsheet tab name. The
-    # original in-row OLT initial remains searchable via sheet/source fields
-    # if needed, but dropdown grouping should match the spreadsheet tabs.
-    payload["olt_name_initial"] = record.olt_initial
-    payload["olt_initial"] = record.sheet_name
-    payload["source_spreadsheet_id"] = normalize_text(source_spreadsheet_id)
+    source_id = normalize_text(source_spreadsheet_id)
+    # Legacy Indramayu/Kuningan tabs contain multiple parent OLTs. Preserve
+    # parent derived from each row hub; regular sheets retain tab grouping.
+    if source_id == LEGACY_FDT_SPREADSHEET_ID:
+        payload["olt_initial"] = record.olt_initial
+    else:
+        payload["olt_initial"] = record.sheet_name
+    payload["source_spreadsheet_id"] = source_id
     payload["olt_hostname"] = normalize_text(getattr(record, "olt_hostname", "")).upper()
     payload["olt_name_initial"] = normalize_text(getattr(record, "olt_name_initial", "")).upper()
     return payload

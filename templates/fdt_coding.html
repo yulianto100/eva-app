@@ -116,6 +116,8 @@
           <option value="">Semua Area</option>
           <option value="Bekasi">Bekasi</option>
           <option value="Jakarta">Jakarta</option>
+          <option value="Indramayu">Indramayu</option>
+          <option value="Kuningan">Kuningan</option>
         </select>
       </div>
       <div class="fdt-field">
@@ -179,7 +181,7 @@
       </summary>
       <section class="fdt-form" aria-label="FDT coding form">
         <input id="recordId" type="hidden">
-        <div class="fdt-field span-6"><label for="areaArea">AREA</label><select id="areaArea" class="ui-input" required><option value="" selected>Pilih Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option></select></div>
+        <div class="fdt-field span-6"><label for="areaArea">AREA</label><select id="areaArea" class="ui-input" required><option value="" selected>Pilih Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option><option value="Indramayu">Indramayu</option><option value="Kuningan">Kuningan</option></select></div>
         <div class="fdt-field span-2"><label for="oltInitial">OLT</label><select id="oltInitial" class="ui-input" disabled><option value="">Pilih Area dulu</option></select></div>
         <div class="fdt-field span-2"><label for="oltUnit">OLT Unit</label><select id="oltUnit" class="ui-input" disabled><option value="">Pilih OLT dulu</option></select></div>
         <div class="fdt-field span-2"><label for="hubId">OLT ID</label><input id="hubId" class="ui-input" placeholder="Auto dari OLT" readonly></div>
@@ -187,10 +189,11 @@
         <div class="fdt-field span-2"><label for="oltNameInitial">Inisial Name OLT</label><input id="oltNameInitial" class="ui-input" placeholder="Auto dari OLT" readonly></div>
         <div class="fdt-field span-2"><label for="siteName">Nama Cluster</label><input id="siteName" class="ui-input" placeholder="Nama cluster"></div>
         <div class="fdt-field span-2"><label for="clusterInitial">FDT Code</label><input id="clusterInitial" class="ui-input" placeholder="PVMJ14"></div>
+        <div id="legacySegmentField" class="fdt-field span-2" hidden><label for="indexCode">SEGMENT</label><select id="indexCode" class="ui-input"><option value="">Pilih Segment</option><option value="S01">S01</option><option value="S02">S02</option></select></div>
         <div class="fdt-field span-2"><label for="fdtOrder">Total FDT</label><input id="fdtOrder" class="ui-input" type="number" min="1" value="1" placeholder="1"></div>
         <div class="fdt-field span-3"><label for="fdtId">FDT ID</label><textarea id="fdtId" class="ui-input" placeholder="Auto" readonly rows="3"></textarea></div>
         <div class="fdt-field span-3"><label for="fdtCode">Generated FDT Code</label><textarea id="fdtCode" class="ui-input" placeholder="Auto setelah isi Total FDT" readonly rows="3"></textarea></div>
-        <input id="indexCode" type="hidden">
+        <!-- indexCode is hidden unless the selected source uses legacy SEGMENT. -->
         <div class="fdt-actions span-6">
           <button id="saveButton" class="primary-button" type="button">Simpan</button>
           <button id="clearButton" class="secondary-button" type="button">Kosongkan</button>
@@ -264,6 +267,14 @@ function parseFdtIdLines(){
     .map(value=>value.trim())
     .filter(Boolean);
 }
+function isLegacyArea(){ return ['Indramayu','Kuningan'].includes((els.fields.areaArea.value||'').trim()); }
+function setLegacyTemplateMode(){
+  const legacy=isLegacyArea();
+  const field=document.getElementById('legacySegmentField');
+  field.hidden=!legacy;
+  els.fields.indexCode.required=legacy;
+  if(!legacy) els.fields.indexCode.value='';
+}
 function payload(){
   const fdtIds=parseFdtIdLines();
   const selected = els.fields.oltInitial.selectedOptions && els.fields.oltInitial.selectedOptions[0];
@@ -281,7 +292,7 @@ function payload(){
   const currentFdtCodeInput = els.fields.fdtCode.value;
   const payloadFdtCode = els.fields.recordId.value && currentFdtCodeInput ? currentFdtCodeInput.split('\n')[0].trim() : fullFdtCode;
 
-  return { ids:[...selectedIds], olt_initial: els.fields.oltInitial.value, hub_id: fallbackHub, olt_hostname: els.fields.oltHostname.value, olt_name_initial: els.fields.oltNameInitial.value, area: (els.fields.areaArea ? els.fields.areaArea.value : ''), site_name: els.fields.siteName.value.toUpperCase(), total_fdt: els.fields.fdtOrder.value || '1', fdt_order: els.fields.fdtOrder.value || '1', fdt_id: firstFdtId, fdt_ids: fdtIds, fdt_code: payloadFdtCode, index_code: '', cluster_initial: prefix, sheet_name: els.fields.oltInitial.value };
+  return { ids:[...selectedIds], olt_initial: els.fields.oltInitial.value, hub_id: fallbackHub, olt_hostname: els.fields.oltHostname.value, olt_name_initial: els.fields.oltNameInitial.value, area: (els.fields.areaArea ? els.fields.areaArea.value : ''), site_name: els.fields.siteName.value.toUpperCase(), total_fdt: els.fields.fdtOrder.value || '1', fdt_order: els.fields.fdtOrder.value || '1', fdt_id: firstFdtId, fdt_ids: fdtIds, fdt_code: payloadFdtCode, index_code: els.fields.indexCode.value, cluster_initial: prefix, sheet_name: els.fields.oltInitial.value };
 }
 async function fillForm(row){
   document.getElementById('fdtFormPanel').open=true;
@@ -299,13 +310,15 @@ async function fillForm(row){
   els.fields.fdtOrder.value=row.fdt_order||1;
   els.fields.fdtId.value=row.fdt_id||'';
   els.fields.clusterInitial.value=row.cluster_initial||String(row.fdt_code||'').split('.')[0]||'';
-  els.fields.indexCode.value='';
+  els.fields.indexCode.value=row.index_code||'';
+  setLegacyTemplateMode();
   updateGeneratedFdtCodes();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function clearForm(){
   Object.values(els.fields).forEach(el=>el.value='');
   els.fields.fdtOrder.value='1';
+  setLegacyTemplateMode();
   els.fields.fdtId.readOnly=true;
   bulkEditMode=false;
   selectedIds.clear();
@@ -437,6 +450,8 @@ async function startBulkEdit(){
   els.fields.fdtId.readOnly=false;
   els.fields.fdtId.value=rows.map(row=>row.fdt_id||'').filter(Boolean).join('\n');
   els.fields.clusterInitial.value=first.cluster_initial||String(first.fdt_code||'').split('.')[0]||'';
+  els.fields.indexCode.value=first.index_code||'';
+  setLegacyTemplateMode();
   updateGeneratedFdtCodes();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -560,7 +575,7 @@ async function loadRecords(){ els.status.textContent='Memuat...'; const offset=(
 async function refresh(){ await loadSummary(); await loadRecords(); }
 document.getElementById('refreshButton').onclick=refresh;
 document.getElementById('clearButton').onclick=clearForm;
-els.fields.areaArea.onchange=()=>{ loadFormOlts().catch(err=>{ els.status.textContent=`Gagal memuat OLT: ${err.message||err}`; }); };
+els.fields.areaArea.onchange=()=>{ setLegacyTemplateMode(); loadFormOlts().catch(err=>{ els.status.textContent=`Gagal memuat OLT: ${err.message||err}`; }); };
 els.fields.oltInitial.onchange=()=>{ updateHubFromOlt(); loadAvailableFdtIds(); updateGenerateResultPanel(); };
 els.fields.oltUnit.onchange=()=>{ updateHubFromOlt(els.fields.oltUnit.value); loadAvailableFdtIds(); updateGenerateResultPanel(); };
 els.fields.clusterInitial.oninput=updateGeneratedFdtCodes;
@@ -579,6 +594,7 @@ document.getElementById('saveButton').onclick=async()=>{
   try{
     if(!els.fields.areaArea.value) throw new Error('AREA wajib dipilih');
     if(!els.fields.oltInitial.value) throw new Error('OLT wajib dipilih');
+    if(isLegacyArea() && !els.fields.indexCode.value) throw new Error('SEGMENT wajib dipilih untuk Area Indramayu/Kuningan');
     const id=els.fields.recordId.value;
     const isBulk=bulkEditMode && selectedIds.size>0;
     const method=isBulk||id?'PUT':'POST';
@@ -604,6 +620,7 @@ els.bulkEdit.onclick=startBulkEdit;
 els.bulkDelete.onclick=async()=>{ if(!selectedIds.size || els.bulkDelete.disabled) return; if(!confirm(`Hapus ${selectedIds.size} record terpilih?`)) return; const ids=[...selectedIds]; els.bulkDelete.disabled=true; els.bulkDelete.textContent='Menghapus...'; try{ const data=await api('/api/fdt-coding/records/bulk',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})}); selectedIds.clear(); alert(`${data.deleted} record berhasil dihapus`); await refresh(); } finally { els.bulkDelete.textContent='Hapus yang dipilih'; updateBulkActions(); } };
 document.getElementById('importButton').onclick=()=>els.importFile.click();
 els.importFile.onchange=async()=>{ if(!els.importFile.files.length) return; const fd=new FormData(); fd.append('file', els.importFile.files[0]); fd.append('replace','1'); els.status.textContent='Mengimpor...'; const data=await api('/api/fdt-coding/import',{method:'POST',body:fd}); alert(`${data.imported} record berhasil diimpor`); els.importFile.value=''; await refresh(); };
+setLegacyTemplateMode();
 refresh().catch(err=>{ els.status.textContent=err.message; });
 </script>
 

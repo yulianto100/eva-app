@@ -21,6 +21,7 @@ from kmz_standardizer import (
     find_header_columns,
     format_excel_identifier,
     looks_like_fdt_code,
+    normalize_header,
     normalize_text,
     FdtCodingRecord,
 )
@@ -49,6 +50,56 @@ class SyncSource:
     spreadsheet_label: str = ""
 
 
+LEGACY_FDT_SPREADSHEET_ID = "1PNnmDDFgmks0bEkGF4jF8c3Vlv9-hzF3YushyP9xQWs"
+LEGACY_FDT_TABS = {
+    "OLT INDRAMAYU": "Indramayu",
+    "OLT LOHBENER": "Indramayu",
+    "KUNINGAN": "Kuningan",
+}
+# exact hub routing. CWG.100.0201 deliberately absent: user requested skip.
+LEGACY_FDT_HUBS = {
+    "IDM.100.0101": ("OLT INDRAMAYU", "IDM-IDM-OLT1-FH", "IDM", "Indramayu", "OLT INDRAMAYU", "IDM"),
+    "IDM.100.0102": ("OLT INDRAMAYU 02", "IDM-IDM-OLT2-FH", "IDM", "Indramayu", "OLT INDRAMAYU", "IDM"),
+    "IDM.100.0103": ("OLT INDRAMAYU 03", "IDM-IDM-OLT3-FH", "IDM", "Indramayu", "OLT INDRAMAYU", "IDM"),
+    "IDM.100.0201": ("OLT LOHBENER", "IDM-LBN-OLT1-FH", "LBN", "Indramayu", "OLT LOHBENER", "LBN"),
+    "KNG.100.0101": ("OLT KUNINGAN", "KNG-KNG-OLT1-FH", "KNG", "Kuningan", "KUNINGAN", "KNG"),
+    "KNG.100.0201": ("OLT CIAWIGEBANG", "KNG-CWG-OLT1-FH", "CWG", "Kuningan", "KUNINGAN", "KNG"),
+}
+
+
+def _legacy_hub(value: object) -> str:
+    match = re.match(r"^([A-Z]{2,}\.\d{3}\.\d{4})(?:\.|$)", normalize_text(value).upper())
+    return match.group(1) if match else ""
+
+
+def _legacy_hub_details(hub_id: object):
+    return LEGACY_FDT_HUBS.get(normalize_text(hub_id).upper())
+
+
+def _legacy_hub_allowed_for_sheet(hub_id: object, sheet_name: str) -> bool:
+    details = _legacy_hub_details(hub_id)
+    return bool(details and normalize_text(details[4]).upper() == normalize_text(sheet_name).upper())
+
+
+def _legacy_sheet_allowed(spreadsheet_id: str, sheet_name: str) -> bool:
+    if normalize_text(spreadsheet_id) != LEGACY_FDT_SPREADSHEET_ID:
+        return True
+    return normalize_text(sheet_name).upper() in LEGACY_FDT_TABS
+
+
+def _legacy_catalog_units() -> list[dict]:
+    return [
+        {
+            "olt_code": hub_id,
+            "olt_initial": parent,
+            "olt_hostname": hostname,
+            "olt_name_initial": initial,
+            "olt_area": area,
+        }
+        for hub_id, (parent, hostname, initial, area, _tab, _formula_initial) in LEGACY_FDT_HUBS.items()
+    ]
+
+
 DEFAULT_SOURCES: list[SyncSource] = [
     SyncSource(
         name="bekasi",
@@ -59,6 +110,11 @@ DEFAULT_SOURCES: list[SyncSource] = [
         name="jakarta",
         spreadsheet_id="1vajv8JOseMkCVJVHuUG6ZO6ktxZne7K6J6CQAYPnwQY",
         spreadsheet_label="Coding FTTH - Jakarta Area Update 2021",
+    ),
+    SyncSource(
+        name="indramayu-kuningan",
+        spreadsheet_id=LEGACY_FDT_SPREADSHEET_ID,
+        spreadsheet_label="Coding FTTH - Indramayu 2026",
     ),
 ]
 
@@ -183,6 +239,10 @@ def _hash_key(spreadsheet_id: str, sheet_name: str) -> str:
 def _should_skip_sheet(sheet_name: str) -> bool:
     return normalize_text(sheet_name).upper() in IGNORED_SHEET_NAMES
 
+
+def _should_sync_sheet(spreadsheet_id: str, sheet_name: str) -> bool:
+    return not _should_skip_sheet(sheet_name) and _legacy_sheet_allowed(spreadsheet_id, sheet_name)
+
 def _calc_hash(data: list[list[str]]) -> str:
     raw = json.dumps(data, ensure_ascii=False, sort_keys=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -229,13 +289,81 @@ def extract_sheet_area(sheet_name: str, source_label: str = "") -> str:
     return ""
 
 
+def _legacy_header_columns(row_values: list[str]) -> dict[str, int] | None:
+    headers = {index: normalize_header(value) for index, value in enumerate(row_values, start=1)}
+    site = next((index for index, header in headers.items() if header == "SITE"), 0)
+    fdt_code = next((index for index, header in headers.items() if header == "FDT ID"), 0)
+    olt_code = next((index for index, header in headers.items() if header == "OLT CODE"), 0)
+    if not (site and fdt_code and olt_code):
+        return None
+    return {
+        "site": site,
+        "fdt_code": fdt_code,
+        "olt_code": olt_code,
+        "fdt_no": next((index for index, header in headers.items() if header == "NO"), 0),
+        "segment": next((index for index, header in headers.items() if header == "SEGMENT"), 0),
+        "legacy_template": 1,
+        "legacy_last_column": len(row_values),
+    }
+
+
+def _legacy_fdt_code(value: object) -> str:
+    code = normalize_text(value).upper()
+    return code if re.fullmatch(r"[A-Z][A-Z0-9]*(?:\.[A-Z0-9]+)*\.\d{3}", code) else ""
+
+
+def _parse_legacy_sheet_data(sheet_name: str, data: list[list[str]]) -> list[FdtCodingRecord]:
+    layout = next(((index, columns) for index, row in enumerate(data, start=1) if (columns := _legacy_header_columns(row))), None)
+    if not layout:
+        return []
+    header_row, columns = layout
+    records: list[FdtCodingRecord] = []
+    for row_index, row in enumerate(data[header_row:], start=header_row + 1):
+        def cell(key: str) -> str:
+            column = columns.get(key, 0)
+            return normalize_text(row[column - 1] if column and column <= len(row) else "")
+
+        site_name = cell("site")
+        fdt_code = _legacy_fdt_code(cell("fdt_code"))
+        hub_id = _legacy_hub(cell("olt_code"))
+        details = _legacy_hub_details(hub_id)
+        # Parent follows the base OLT CODE, not tab title. A source tab can contain
+        # a row for another valid hub; CWG remains skipped because it has no mapping.
+        if not site_name or not fdt_code or not details:
+            continue
+        parent, hostname, initial, area, _target_tab, _formula_initial = details
+        fdt_id = format_excel_identifier(cell("fdt_no")) or fdt_code.rsplit(".", 1)[-1]
+        prefix = fdt_code.rsplit(".", 1)[0]
+        records.append(FdtCodingRecord(
+            sheet_name=sheet_name,
+            row_number=row_index,
+            site_name=site_name,
+            fdt_order=int(fdt_id) if fdt_id.isdigit() else None,
+            fdt_id=fdt_id,
+            fdt_code=fdt_code,
+            # Legacy has no index column. Preserve segment in this unused core field
+            # so outbound edits can change only B/C/E and leave formulas intact.
+            index_code=cell("segment"),
+            cluster_initial=prefix,
+            area=area,
+            olt_initial=parent,
+            hub_id=hub_id,
+            olt_hostname=hostname,
+            olt_name_initial=initial,
+        ))
+    return records
+
+
 def _parse_sheet_data(
     spreadsheet_id: str,
     sheet_name: str,
     data: list[list[str]],
+    source_label: str = "",
 ) -> list[FdtCodingRecord]:
     if not data:
         return []
+    if normalize_text(spreadsheet_id) == LEGACY_FDT_SPREADSHEET_ID:
+        return _parse_legacy_sheet_data(sheet_name, data)
 
     layout = None
     for index, row in enumerate(data, start=1):
@@ -312,7 +440,7 @@ def _parse_sheet_data(
             olt_initial=olt_initial.upper() if olt_initial else "",
             hub_id=hub_id,
             olt_hostname=olt_hostname.upper() if olt_hostname else "",
-            area=extract_sheet_area(sheet_name, source.spreadsheet_label or source.name),
+            area=extract_sheet_area(sheet_name, source_label),
         ))
 
     return records
@@ -324,6 +452,7 @@ def _sync_incremental_sheet(
     data: list[list[str]],
     db_path: Path,
     hashes: dict[str, str],
+    source_label: str = "",
 ) -> int:
     key = _hash_key(spreadsheet_id, sheet_name)
     current_hash = _calc_hash(data)
@@ -331,7 +460,7 @@ def _sync_incremental_sheet(
     if hashes.get(key) == current_hash:
         return 0
 
-    records = _parse_sheet_data(spreadsheet_id, sheet_name, data)
+    records = _parse_sheet_data(spreadsheet_id, sheet_name, data, source_label=source_label)
     if not records:
         hashes[key] = current_hash
         return 0
@@ -339,7 +468,7 @@ def _sync_incremental_sheet(
     count = fdt_coding_db.replace_records_by_source(
         db_path, records,
         source_spreadsheet_id=spreadsheet_id,
-        olt_initial=sheet_name,
+        source_sheet_name=sheet_name,
     )
     hashes[key] = current_hash
     return count
@@ -355,6 +484,8 @@ def sync_all_incremental(
     db_path = Path(db_path or Config.FDT_CODING_DB_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     sources = list(sources or DEFAULT_SOURCES)
+    if any(source.spreadsheet_id == LEGACY_FDT_SPREADSHEET_ID for source in sources):
+        fdt_coding_db.upsert_olt_catalog_units(db_path, _legacy_catalog_units())
 
     gs_client = _build_gspread_client()
     hashes = _load_sheet_hashes()
@@ -389,7 +520,7 @@ def sync_all_incremental(
         spreadsheet = gs_client.open_by_key(source.spreadsheet_id)
         worksheets = spreadsheet.worksheets()
 
-        ranges = [f"'{ws.title}'" for ws in worksheets if len(ws.title) <= 120 and not _should_skip_sheet(ws.title)]
+        ranges = [f"'{ws.title}'" for ws in worksheets if len(ws.title) <= 120 and _should_sync_sheet(source.spreadsheet_id, ws.title)]
         value_ranges = spreadsheet.values_batch_get(ranges).get("valueRanges", [])
 
         sheet_data: dict[str, list[list[str]]] = {}
@@ -402,17 +533,11 @@ def sync_all_incremental(
 
         for ws in worksheets:
             title = ws.title
-            if _should_skip_sheet(title):
-             skipped_olt = normalize_text(title).upper()
-             # removed = fdt_coding_db.delete_records_by_source(db_path, source.spreadsheet_id, skipped_olt) # DISABLED: prevent data loss
-             try:
-              fdt_coding_db.delete_olt(db_path, skipped_olt, force=True)
-             except Exception:
-              logger.debug("Inbound sync: OLT skip '%s' tidak perlu dihapus dari daftar OLT.", title)
-             skipped += 1
-             continue
+            if not _should_sync_sheet(source.spreadsheet_id, title):
+                skipped += 1
+                continue
             data = sheet_data.get(title, [])
-            c = _sync_incremental_sheet(source.spreadsheet_id, title, data, db_path, hashes)
+            c = _sync_incremental_sheet(source.spreadsheet_id, title, data, db_path, hashes, source_label=source.spreadsheet_label or source.name)
             if c:
                 changed += c
                 logger.debug("  Sheet '%s' changed: %d records", title, c)
@@ -444,7 +569,16 @@ def sync_all_incremental(
 FDT_TEMPLATE_SHEET_ENV = "FDT_TEMPLATE_SHEET_NAME"
 FDT_TEMPLATE_DEFAULT_SHEET = "Template"
 
+def _legacy_shared_sheet_target(olt_code: str) -> tuple[str, str] | None:
+    details = _legacy_hub_details(olt_code)
+    if not details:
+        return None
+    return LEGACY_FDT_SPREADSHEET_ID, details[4]
+
+
 def _source_for_olt_code(olt_code: str) -> SyncSource:
+    if _legacy_hub_details(olt_code):
+        return next(source for source in DEFAULT_SOURCES if source.spreadsheet_id == LEGACY_FDT_SPREADSHEET_ID)
     prefix = normalize_text(olt_code).upper().split(".", 1)[0]
     if prefix == "JKT":
         for source in DEFAULT_SOURCES:
@@ -475,6 +609,10 @@ def _hub_parts(olt_code: str) -> tuple[str, str, str]:
     return "", "", ""
 
 def delete_olt_sheet(olt_initial: str, olt_code: str = "") -> dict:
+    legacy_target = _legacy_shared_sheet_target(olt_code)
+    if legacy_target:
+        # One shared source tab carries several legacy OLTs. Never delete it.
+        return {"deleted": False, "reason": "protected_legacy_shared_sheet", "sheet_name": legacy_target[1]}
     sheet_name = normalize_text(olt_initial).upper()
     if not sheet_name:
         return {"deleted": False, "reason": "missing_sheet_name"}
@@ -505,6 +643,10 @@ def create_olt_sheet_from_template(olt: dict) -> dict:
     if not olt_name or not olt_code:
         return {"created": False, "reason": "missing_olt_name_or_id"}
 
+    legacy_target = _legacy_shared_sheet_target(olt_code)
+    if legacy_target:
+        # Legacy uses pre-existing shared tabs, never generate a standalone OLT tab.
+        return {"created": False, "reason": "protected_legacy_shared_sheet", "sheet_name": legacy_target[1]}
     source = _source_for_olt_code(olt_code)
     client = _build_gspread_client()
     spreadsheet = client.open_by_key(source.spreadsheet_id)
@@ -661,6 +803,45 @@ def _gs_write_cell(worksheet, row: int, col: int, value: object) -> None:
     worksheet.update(cell, [[cell_val]], value_input_option="RAW")
 
 
+def _legacy_formula_source_row(worksheet: gspread.Worksheet, columns: dict[str, int], hub_id: str) -> int:
+    """Find same-hub formula row to clone for a legacy create."""
+    hub = normalize_text(hub_id).upper()
+    column = columns.get("olt_code", 0)
+    if not hub or not column:
+        return 0
+    values = worksheet.get_values(value_render_option="FORMULA", major_dimension="ROWS")
+    for row_number, row in enumerate(values, start=1):
+        formula = normalize_text(row[column - 1] if column <= len(row) else "").upper()
+        if hub in formula:
+            return row_number
+    return 0
+
+
+def _append_legacy_formula_row(
+    worksheet: gspread.Worksheet,
+    header_row: int,
+    columns: dict[str, int],
+    record: dict,
+) -> int:
+    hub_id = normalize_text(record.get("hub_id")).upper()
+    if not normalize_text(record.get("index_code")):
+        raise ValueError("SEGMENT wajib diisi untuk template Indramayu/Kuningan.")
+    source_row = _legacy_formula_source_row(worksheet, columns, hub_id)
+    if source_row <= header_row:
+        raise ValueError(f"Template formula untuk OLT ID {hub_id} tidak ditemukan.")
+    target_row = _next_append_row(worksheet, header_row, columns)
+    last_column = int(columns.get("legacy_last_column") or 10)
+    last_cell = rowcol_to_a1(source_row, last_column)
+    last_column_letter = re.sub(r"\d+$", "", last_cell)
+    worksheet.copy_range(
+        f"A{source_row}:{last_column_letter}{source_row}",
+        f"A{target_row}:{last_column_letter}{target_row}",
+        paste_type="PASTE_NORMAL",
+    )
+    _outbound_update_row(worksheet, header_row, columns, target_row, record)
+    return target_row
+
+
 def _outbound_update_row(
     worksheet: gspread.Worksheet,
     header_row: int,
@@ -668,8 +849,13 @@ def _outbound_update_row(
     row_number: int,
     record: dict,
 ) -> None:
+    if columns.get("legacy_template"):
+        # Legacy formula columns A,D,F:J remain formula-owned. Only user cells B/C/E change.
+        field_columns = (("site_name", "site"), ("fdt_code", "fdt_code"), ("index_code", "segment"))
+    else:
+        field_columns = tuple(_DB_TO_SHEET_COLUMN_MAP.items())
     updates = []
-    for db_field, sheet_key in _DB_TO_SHEET_COLUMN_MAP.items():
+    for db_field, sheet_key in field_columns:
         col = columns.get(sheet_key, 0)
         if col < 1:
             continue
@@ -680,7 +866,7 @@ def _outbound_update_row(
     if updates:
         worksheet.batch_update(updates, value_input_option="RAW")
     fdt_col = columns.get("fdt_no", 0)
-    if fdt_col > 0:
+    if fdt_col > 0 and not columns.get("legacy_template"):
         worksheet.format(rowcol_to_a1(row_number, fdt_col), {"numberFormat": {"type": "TEXT"}})
 
 
@@ -690,7 +876,7 @@ def _find_header_layout_for_sheet(worksheet: gspread.Worksheet, max_header_scan:
         major_dimension="ROWS",
     )
     for row_index, row in enumerate(rows[:max_header_scan], start=1):
-        columns = find_header_columns(row)
+        columns = _legacy_header_columns(row) or find_header_columns(row)
         if columns:
             return row_index, columns
     return None
@@ -701,6 +887,10 @@ def _default_source_for_record(db_path: Path, record: dict) -> tuple[str, str]:
     spreadsheet_id = normalize_text(record.get("source_spreadsheet_id"))
     if spreadsheet_id and sheet_name:
         return spreadsheet_id, sheet_name
+
+    legacy_details = _legacy_hub_details(record.get("hub_id"))
+    if legacy_details:
+        return LEGACY_FDT_SPREADSHEET_ID, legacy_details[4]
 
     olt_initial = normalize_text(record.get("olt_initial")).upper()
     if olt_initial:
@@ -798,9 +988,13 @@ def sync_outbound_create_record(record_id: int, db_path: str | Path | None = Non
                     return False
 
                 header_row, columns = layout
-                data_row = _next_append_row(worksheet, header_row, columns)
-                record = fdt_coding_db.set_record_source_metadata(db_path, record_id, spreadsheet_id, sheet_name, data_row) or record
-                _outbound_update_row(worksheet, header_row, columns, data_row, record)
+                if columns.get("legacy_template"):
+                    data_row = _append_legacy_formula_row(worksheet, header_row, columns, record)
+                    record = fdt_coding_db.set_record_source_metadata(db_path, record_id, spreadsheet_id, sheet_name, data_row) or record
+                else:
+                    data_row = _next_append_row(worksheet, header_row, columns)
+                    record = fdt_coding_db.set_record_source_metadata(db_path, record_id, spreadsheet_id, sheet_name, data_row) or record
+                    _outbound_update_row(worksheet, header_row, columns, data_row, record)
                 logger.info("Outbound sync create: record %d -> sheet '%s' row %d.", record_id, sheet_name, data_row)
                 return True
             except Exception as exc:
@@ -910,6 +1104,20 @@ def _record_matches_sheet_row(row: list[str], columns: dict[str, int], record: d
         return False
     return bool(rec_code and (rec_fdt or rec_site))
 
+def _clear_record_row(worksheet: gspread.Worksheet, columns: dict[str, int], row_number: int) -> None:
+    if columns.get("legacy_template"):
+        # Legacy rows carry formula columns A,D,F:J. Clear user-managed B/C/E only.
+        updates = [
+            {"range": rowcol_to_a1(row_number, column), "values": [[""]]}
+            for column in (columns.get("site", 0), columns.get("fdt_code", 0), columns.get("segment", 0))
+            if column > 0
+        ]
+        if updates:
+            worksheet.batch_update(updates, value_input_option="RAW")
+        return
+    worksheet.delete_rows(row_number)
+
+
 def _clear_record_rows(worksheet: gspread.Worksheet, columns: dict[str, int], record: dict, preferred_row: int = 0) -> list[int]:
     values = worksheet.get_values(value_render_option="FORMATTED_VALUE", major_dimension="ROWS")
 
@@ -917,7 +1125,7 @@ def _clear_record_rows(worksheet: gspread.Worksheet, columns: dict[str, int], re
     if preferred_row > 0 and preferred_row <= len(values):
         preferred_values = values[preferred_row - 1]
         if _record_matches_sheet_row(preferred_values, columns, record):
-            worksheet.delete_rows(preferred_row)
+            _clear_record_row(worksheet, columns, preferred_row)
             return [preferred_row]
         logger.warning(
             "Outbound sync delete: source_row %d content mismatch for record %s, will search exact single match instead.",
@@ -931,7 +1139,7 @@ def _clear_record_rows(worksheet: gspread.Worksheet, columns: dict[str, int], re
         if _record_matches_sheet_row(row, columns, record)
     ]
     if len(matches) == 1:
-        worksheet.delete_rows(matches[0])
+        _clear_record_row(worksheet, columns, matches[0])
         return matches
     if len(matches) > 1:
         logger.error(
