@@ -4268,25 +4268,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                         continue
                     if road_solid is not None and not road_solid.is_empty and road_solid.buffer(0.01).covers(candidate_anchor):
                         continue
-                    # Compact 6x10m base, centered on relocated retry anchor.
-                    # Prefer a broad 10x12m slot for relocated source; shrink
-                    # only when the road/FAT/cable safe space requires it.
-                    parcel = Polygon([
-                        (candidate_anchor.x - 5.0, candidate_anchor.y - 6.0),
-                        (candidate_anchor.x + 5.0, candidate_anchor.y - 6.0),
-                        (candidate_anchor.x + 5.0, candidate_anchor.y + 6.0),
-                        (candidate_anchor.x - 5.0, candidate_anchor.y + 6.0),
-                    ]).intersection(fat)
+                    # Try intact modules, largest first. Never intersect or
+                    # carve a parcel into fragments.
+                    allowed = fat
                     if road_solid is not None and not road_solid.is_empty:
-                        parcel = parcel.difference(road_solid)
-                    for existing in self.home_number_boxes:
-                        if existing is not None and not existing.is_empty:
-                            parcel = parcel.difference(existing)
-                    protected_sources = [ShapelyPoint(sites[j]).buffer(3.0) for j in range(len(sites)) if j != idx]
-                    if protected_sources:
-                        parcel = parcel.difference(unary_union(protected_sources))
-                    parcel = self._parcel_piece_containing(parcel, candidate_anchor)
-                    if parcel is None or parcel.is_empty or parcel.area < 24.0:
+                        allowed = allowed.difference(road_solid)
+                    if self.home_number_boxes:
+                        allowed = allowed.difference(unary_union(self.home_number_boxes))
+                    allowed = allowed.buffer(0)
+                    retry_angle = self._nearest_road_angle((candidate_anchor.x, candidate_anchor.y))
+                    if retry_angle is None:
+                        retry_angle = self._polygon_label_rotation(fat)
+                    parcel = self._fit_compact_parcel_ladder(candidate_anchor, allowed, retry_angle)
+                    if parcel is None:
                         continue
                     polys = self._geometry_polygons(parcel)
                     label_polygon = max(polys, key=lambda poly: poly.area, default=None)
@@ -4709,6 +4703,67 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 except Exception: continue
                 if not cell.is_empty and cell.area>=KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS: out[idx]=cell
         return out
+
+    def _fit_compact_parcel_ladder(self, anchor, allowed, angle):
+        """Return one intact compact parcel; never draw clipped fragments."""
+        if allowed is None or allowed.is_empty:
+            return None
+        site = anchor if isinstance(anchor, ShapelyPoint) else ShapelyPoint(anchor)
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        # User floor: 4x10. Smaller legal fallback only after every 4m-wide
+        # module fails; ceiling remains 13x13.
+        modules = (
+            (13.0, 13.0), (10.0, 13.0), (8.0, 13.0), (6.0, 13.0),
+            (4.0, 10.0), (4.0, 9.0), (4.0, 8.0), (4.0, 7.0), (4.0, 6.0),
+            (3.0, 10.0), (3.0, 9.0), (2.0, 10.0),
+        )
+        for width, depth in modules:
+            hw, hd = width / 2.0, depth / 2.0
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-tx*0+ty*hw+ny*hd),
+            ])
+            # Correct final corner separately to keep explicit readable axes.
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-ty*hw+ny*hd),
+            ])
+            if allowed.buffer(1e-6).covers(parcel):
+                return parcel
+        return None
+
+    def _fit_compact_parcel_ladder(self, anchor, allowed, angle):
+        """Return one intact compact parcel; never draw clipped fragments."""
+        if allowed is None or allowed.is_empty:
+            return None
+        site = anchor if isinstance(anchor, ShapelyPoint) else ShapelyPoint(anchor)
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        # User floor: 4x10. Smaller legal fallback only after every 4m-wide
+        # module fails; ceiling remains 13x13.
+        modules = (
+            (13.0, 13.0), (10.0, 13.0), (8.0, 13.0), (6.0, 13.0),
+            (4.0, 10.0), (4.0, 9.0), (4.0, 8.0), (4.0, 7.0), (4.0, 6.0),
+            (3.0, 10.0), (3.0, 9.0), (2.0, 10.0),
+        )
+        for width, depth in modules:
+            hw, hd = width / 2.0, depth / 2.0
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-ty*hw+ny*hd),
+            ])
+            if allowed.buffer(1e-6).covers(parcel):
+                return parcel
+        return None
 
     def _fit_compact_rect(self, site, allowed, angle, width=6.0, depth=10.0):
         """Fit largest intact house rectangle without producing slivers.
