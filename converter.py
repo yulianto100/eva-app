@@ -4540,22 +4540,21 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # Compact box parcel. Ownership remains a fit constraint, not a
             # full-area parcel shape, so one HP never claims an entire FAT.
             if strip_parcel is not None:
+                # Critical routing: accepted strip geometry is final geometry.
+                # Never pass it through compact/Voronoi fitting again.
                 parcel = strip_parcel
-                allowed = None
             else:
                 preferred = region_angle
                 allowed = cell.intersection(clip_region)
-            road_solid = self._home_parcel_road_solid()
-            if road_solid is not None and not road_solid.is_empty:
-                allowed = allowed.difference(road_solid)
-            if self.home_number_boxes:
-                allowed = allowed.difference(unary_union(self.home_number_boxes))
-            # Every other HP source reserves a 3m minimum parcel opportunity.
-            # Own source stays valid; no parcel may cover a neighbour source.
-            other_hp_buffers = [site_points[j].buffer(3.0) for j in indexes if j != global_idx]
-            if other_hp_buffers:
-                allowed = allowed.difference(unary_union(other_hp_buffers))
-            parcel = self._fit_compact_rect(site, allowed, preferred)
+                road_solid = self._home_parcel_road_solid()
+                if road_solid is not None and not road_solid.is_empty:
+                    allowed = allowed.difference(road_solid)
+                if self.home_number_boxes:
+                    allowed = allowed.difference(unary_union(self.home_number_boxes))
+                other_hp_buffers = [site_points[j].buffer(3.0, cap_style=3, join_style=2) for j in indexes if j != global_idx]
+                if other_hp_buffers:
+                    allowed = allowed.difference(unary_union(other_hp_buffers))
+                parcel = self._fit_compact_rect(site, allowed, preferred)
             # If no shared-axis rectangle fits, leave this HP for retry/label
             # fallback. Never introduce a per-cell arbitrary rectangle angle.
             if parcel is None or parcel.is_empty:
@@ -4678,6 +4677,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         dots=''.join(f'<circle cx="{xy(p.x,p.y)[0]:.1f}" cy="{xy(p.x,p.y)[1]:.1f}" r="4" fill="#ffe600" stroke="#111"/>' for p in points)
         size=int(max(w,h)*scale+pad*2)
         return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
+
+    def _parcel_for_strip_or_fallback(self, strip_parcel, site, clip_region, angle):
+        """Keep accepted strip geometry intact; compact fit is fallback only."""
+        if strip_parcel is not None and not strip_parcel.is_empty:
+            return strip_parcel
+        if clip_region is None or clip_region.is_empty:
+            return None
+        allowed = clip_region
+        road = self._home_parcel_road_solid()
+        if road is not None and not road.is_empty:
+            allowed = allowed.difference(road)
+        return self._fit_compact_rect(site, allowed, angle)
 
     def _road_strip_cells(self, indexes, sites, clip_region, angle):
         """Parking-bay style parcels: shared edges, ROAD-front first."""
