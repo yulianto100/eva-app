@@ -2458,16 +2458,16 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
         name = normalize_text(raw_name).upper()
         if not name:
             return name
-        # Block labels use compact code forms, including dotted lots (B2.19).
-        # They are infrastructure identifiers, not customer/place names.
-        dotted_block = re.fullmatch(r"[A-Z]{1,2}\d+\.\d+", name)
-        if name.startswith("NN-") and dotted_block is None:
-            dotted_block = re.fullmatch(r"[A-Z]{1,2}\d+\.\d+", name[3:])
-            if dotted_block:
+        # HP block + home number code: B2.19, B2-19, B2/19.
+        # This is not a customer/place label, so never add NN-.
+        block_homenumber = re.fullmatch(r"[A-Z]{1,2}\d+[./-]\d+", name)
+        if name.startswith("NN-") and block_homenumber is None:
+            block_homenumber = re.fullmatch(r"[A-Z]{1,2}\d+[./-]\d+", name[3:])
+            if block_homenumber:
                 return name[3:]
             return name
         if (
-            dotted_block
+            block_homenumber
             or name.startswith(("MR.", "EXT.", "FDT", "FAT", "XXX-", "BLK", "BLOCK"))
             or "SLACK" in name
             or "HANGER" in name
