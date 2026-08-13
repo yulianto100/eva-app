@@ -175,6 +175,7 @@ const state = {
   astriMatch: null,
   astriSearchItems: [],
   astriTargetType: "cluster",
+  astriWorkOrderStatus: null,
   osmFiles: [],
   kmlFiles: [],
   kmlFolders: [],
@@ -3436,7 +3437,10 @@ async function parseJsonResponse(response) {
     payload = {};
   }
   if (!response.ok) {
-    throw new Error(payload.error || "Request gagal diproses.");
+    const error = new Error(payload.error || "Request gagal diproses.");
+    error.payload = payload;
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -5924,12 +5928,8 @@ function ensureAstriPanel() {
     document.getElementById("astriVerifyButton")?.addEventListener("click", verifyAstriOutputs);
     document.getElementById("astriUnverifyButton")?.addEventListener("click", unverifyAstriOutputs);
     document.getElementById("astriDownloadLatestButton")?.addEventListener("click", downloadAstriLatestDocuments);
-    document.getElementById("astriScheduleButton")?.addEventListener("click", openAstriScheduleForm);
-    document.getElementById("astriAddBoqButton")?.addEventListener("click", () => {
-      if (isAstriSubfeederTarget()) { subfeederAction("addboq"); }
-      else if (isAstriFeederTarget()) { feederAction("addboq"); }
-      else { clusterAction("addboq"); }
-    });
+    document.getElementById("astriScheduleButton")?.addEventListener("click", () => runAstriMutableAction("schedule"));
+    document.getElementById("astriAddBoqButton")?.addEventListener("click", () => runAstriMutableAction("addboq"));
     document.getElementById("astriStatusFilter")?.addEventListener("change", () => {
       state.astriStatusFilterValue = document.getElementById("astriStatusFilter")?.value || "";
       searchAstriTargets();
@@ -5960,6 +5960,7 @@ function onAstriTargetTypeChange(event) {
   state.astriTargetType = event.currentTarget.value || "cluster";
   state.astriMatch = null;
   state.astriSearchItems = [];
+  applyAstriWorkOrderStatus(null);
   document.getElementById("astriClusterSelect")?.classList.add("hidden");
   document.getElementById("astriMatchBox")?.classList.add("hidden");
   document.getElementById("astriOpenLink")?.classList.add("hidden");
@@ -5982,6 +5983,116 @@ function refreshAstriPanelButtonStyles() {
       }
     }
   });
+  applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+}
+
+function showAstriWorkOrderStatus(status, locked = false) {
+  const label = status?.latest_status_label || status?.latest_status_name || "Tidak diketahui";
+  const code = status?.cluster_code || state.astriMatch?.cluster_code || "-";
+  const wo = status?.work_order_number || state.astriMatch?.work_order_number || "-";
+  const message = locked
+    ? `${code} | ${wo}\nStatus sudah Successful. Approve Schedule dan Add BOQ tidak dapat dijalankan.`
+    : `${code} | ${wo}\nStatus: ${label}`;
+  if (window.showNotification) {
+    window.showNotification({
+      title: "Status WO ASTRI",
+      message,
+      severity: locked ? "warning" : "info",
+    }, { timeoutMs: 5200 });
+  } else if (typeof showPopup === "function") {
+    showPopup(message, locked);
+  }
+}
+
+function applyAstriWorkOrderStatus(status) {
+  state.astriWorkOrderStatus = status || null;
+  const locked = Boolean(status?.successful || status?.unavailable);
+  ["astriScheduleButton", "astriAddBoqButton"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.disabled = locked;
+    button.setAttribute("aria-disabled", locked ? "true" : "false");
+    button.title = status?.successful
+      ? "Status WO ASTRI sudah Successful"
+      : status?.unavailable
+        ? "Status WO ASTRI belum dapat diverifikasi"
+        : "";
+    button.style.opacity = locked ? "0.5" : "";
+    button.style.cursor = locked ? "not-allowed" : "";
+  });
+}
+
+async function refreshAstriWorkOrderStatus({ notify = false, matchOverride = null } = {}) {
+  const match = matchOverride || state.astriMatch || {};
+  if (!match.matched || !match.cluster_code || !match.work_order_number) {
+    applyAstriWorkOrderStatus(null);
+    throw new Error("Cari dan pilih match ASTRI dulu.");
+  }
+  const scope = match.target_type || state.astriTargetType || "cluster";
+  const query = new URLSearchParams({
+    scope,
+    cluster_code: match.cluster_code || "",
+    subfeeder_code: match.subfeeder_code || "",
+    feeder_code: match.feeder_code || "",
+    work_order_number: match.work_order_number || "",
+  });
+  try {
+    const status = await fetch(`/api/astri/work-order/status?${query}`, { credentials: "include", cache: "no-store" }).then(parseJsonResponse);
+    applyAstriWorkOrderStatus(status);
+    state.astriMatch = {
+      ...match,
+      latest_status_label: status.latest_status_label,
+      latest_status_name: status.latest_status_name,
+    };
+    if (notify || status.successful) showAstriWorkOrderStatus(status, status.successful);
+    return status;
+  } catch (error) {
+    applyAstriWorkOrderStatus({ unavailable: true });
+    if (window.showNotification) {
+      window.showNotification({
+        title: "Status WO ASTRI",
+        message: error.message || "Status tidak dapat diverifikasi. Action dibatalkan.",
+        severity: "error",
+      });
+    }
+    throw error;
+  }
+}
+
+function handleAstriMutationError(error) {
+  const status = error?.payload?.wo_status;
+  if (status?.successful) {
+    applyAstriWorkOrderStatus(status);
+    showAstriWorkOrderStatus(status, true);
+    return true;
+  }
+  if (window.showNotification) {
+    window.showNotification({
+      title: "Action ASTRI dibatalkan",
+      message: error?.message || "Request gagal diproses.",
+      severity: "error",
+    });
+  }
+  return false;
+}
+
+async function runAstriMutableAction(action) {
+  let status;
+  try {
+    status = await refreshAstriWorkOrderStatus({ notify: true });
+  } catch (_error) {
+    return;
+  }
+  if (status.successful) return;
+  if (action === "schedule") {
+    openAstriScheduleForm();
+  } else if (isAstriSubfeederTarget()) {
+    subfeederAction("addboq");
+  } else if (isAstriFeederTarget()) {
+    feederAction("addboq");
+  } else {
+    clusterAction("addboq");
+  }
 }
 
 function syncAstriTargetTypeFromScope() {
@@ -6033,6 +6144,8 @@ async function searchAstriTargets() {
     state.astriStatusFilterValue = status;
     if (!select) return;
     if (!items.length) {
+      state.astriMatch = null;
+      applyAstriWorkOrderStatus(null);
       select.classList.add("hidden");
       if (result) result.textContent = "Data ASTRI tidak ditemukan.";
       return;
@@ -6065,6 +6178,17 @@ function selectAstriSearchResult() {
   if (!item) return;
   state.astriMatch = item;
   renderAstriMatch(item);
+  const selectedStatus = {
+    scope: item.target_type || state.astriTargetType || "cluster",
+    cluster_code: item.cluster_code || "",
+    work_order_number: item.work_order_number || "",
+    latest_status_label: item.latest_status_label || "",
+    latest_status_name: item.latest_status_name || "",
+    successful: (item.latest_status_label || "").trim().toLowerCase() === "successful"
+      || (item.latest_status_name || "").trim().toLowerCase() === "successful",
+  };
+  applyAstriWorkOrderStatus(selectedStatus);
+  if (selectedStatus.successful) showAstriWorkOrderStatus(selectedStatus, true);
 }
 
 async function refreshAstriStatus() {
@@ -6116,18 +6240,32 @@ function renderAstriMatch(payload) {
     box.classList.remove("hidden");
     box.innerHTML = `<strong>Match tidak ditemukan.</strong><br><span>Query: ${escapeHtml(payload?.query || "")}</span>`;
     link?.classList.add("hidden");
+    applyAstriWorkOrderStatus(null);
     return;
   }
+  const statusLabel = payload.latest_status_label || payload.latest_status_name || "-";
   box.classList.remove("hidden");
   box.innerHTML = `
     <strong>${escapeHtml(payload.cluster_code)} - ${escapeHtml(payload.cluster_name)}</strong><br>
     <span>WO: ${escapeHtml(payload.work_order_number)}</span><br>
+    <span>Status WO: <strong>${escapeHtml(statusLabel)}</strong></span><br>
     <span>Vendor: ${escapeHtml(payload.vendor_label || payload.vendor_name || "-")}</span><br>
     <span>${(payload.target_type === "feeder" ? "Route Length" : "HP")}: ${escapeHtml(payload.target_type === "feeder" ? (payload.route_length || "-") : (payload.homepass || "-"))} | Net: ${escapeHtml(payload.net_type || "-")}</span>
   `;
   if (link) {
     link.href = payload.requirement_url;
     link.classList.remove("hidden");
+  }
+  if (payload.latest_status_label || payload.latest_status_name) {
+    applyAstriWorkOrderStatus({
+      scope: payload.target_type || state.astriTargetType || "cluster",
+      cluster_code: payload.cluster_code || "",
+      work_order_number: payload.work_order_number || "",
+      latest_status_label: payload.latest_status_label || "",
+      latest_status_name: payload.latest_status_name || "",
+      successful: (payload.latest_status_label || "").trim().toLowerCase() === "successful"
+        || (payload.latest_status_name || "").trim().toLowerCase() === "successful",
+    });
   }
 }
 
@@ -6428,6 +6566,7 @@ async function openAstriScheduleForm() {
           <button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button>
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button>
         </div>`);
+      form.insertAdjacentHTML("afterbegin", `<input type="hidden" name="__eva_scope" value="${escapeHtml(state.astriMatch?.target_type || state.astriTargetType || "cluster")}"><input type="hidden" name="__eva_cluster_code" value="${escapeHtml(state.astriMatch?.cluster_code || "")}"><input type="hidden" name="__eva_work_order_number" value="${escapeHtml(state.astriMatch?.work_order_number || "")}">`);
       form.addEventListener("submit", submitAstriScheduleForm);
     } else {
       const fieldHtml = fields.map((f) => {
@@ -6441,7 +6580,8 @@ async function openAstriScheduleForm() {
         const readonly = f.readonly ? " readonly" : "";
         return `<label class="text-xs font-bold text-zinc-700">${label}<input type="${escapeHtml(f.type)}" name="${escapeHtml(f.name)}" value="${val}" class="mt-1 w-full ${astriInput}"${readonly} placeholder="${escapeHtml(f.placeholder)}"></label>`;
       }).join("");
-      content.innerHTML = `<form id="eva-astri-approve-schedule-form" class="grid gap-3 md:grid-cols-2">${fieldHtml}<div class="col-span-full mt-2 flex justify-end gap-2"><button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button><button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button></div></form>`;
+      const evaStatusFields = `<input type="hidden" name="__eva_scope" value="${escapeHtml(state.astriMatch?.target_type || state.astriTargetType || "cluster")}"><input type="hidden" name="__eva_cluster_code" value="${escapeHtml(state.astriMatch?.cluster_code || "")}"><input type="hidden" name="__eva_work_order_number" value="${escapeHtml(state.astriMatch?.work_order_number || "")}">`;
+      content.innerHTML = `<form id="eva-astri-approve-schedule-form" class="grid gap-3 md:grid-cols-2">${evaStatusFields}${fieldHtml}<div class="col-span-full mt-2 flex justify-end gap-2"><button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button><button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button></div></form>`;
       document.getElementById("eva-astri-approve-schedule-form")?.addEventListener("submit", submitAstriScheduleForm);
     }
     // Search textbox for large ASTRI OLT/Feeder lists. Keeps original select as
@@ -6587,10 +6727,17 @@ async function submitAstriScheduleForm(event) {
   event.preventDefault();
   const result = document.getElementById("astriUploadResult");
   const isSubfeeder = isAstriSubfeederTarget();
+  const isFeeder = isAstriFeederTarget();
   if (!state.astriMatch?.matched) return;
+  try {
+    const status = await refreshAstriWorkOrderStatus();
+    if (status.successful) return;
+  } catch (_error) {
+    return;
+  }
   if (result) result.textContent = "Submitting Approve Schedule ke ASTRI...";
   try {
-    const url = isSubfeeder ? "/api/astri/subfeeder/schedule/approve" : "/api/astri/schedule/approve";
+    const url = isSubfeeder ? "/api/astri/subfeeder/schedule/approve" : isFeeder ? "/api/astri/feeder/schedule/approve" : "/api/astri/schedule/approve";
     const payload = await fetch(url, {
       method: "POST",
       body: new FormData(event.currentTarget),
@@ -6598,11 +6745,13 @@ async function submitAstriScheduleForm(event) {
     if (payload.ok) {
       if (result) result.textContent = `Approve Schedule submitted (${payload.status_code}).`;
       document.getElementById("astriScheduleModal")?.classList.add("hidden");
+      await refreshAstriWorkOrderStatus({ notify: true }).catch(() => null);
     } else {
       const reason = payload.reason || "";
       if (result) result.textContent = reason ? `Approve Schedule gagal: ${reason}` : `Approve Schedule gagal (${payload.status_code}).`;
     }
   } catch (error) {
+    handleAstriMutationError(error);
     if (result) result.textContent = error.message;
   }
 }
@@ -7056,6 +7205,13 @@ async function onAstriBoqManualFileUpload(event) {
 async function submitAstriBoq(items, type) {
   const isSubfeeder = type === "subfeeder";
   const isFeeder = type === "feeder";
+  const activeBoqMatch = state.astriBoqMatch || state.astriMatch || {};
+  try {
+    const status = await refreshAstriWorkOrderStatus({ matchOverride: activeBoqMatch });
+    if (status.successful) return;
+  } catch (_error) {
+    return;
+  }
   const resultId = isSubfeeder ? "astriSubfeederResult" : "astriClusterResult";
   const result = document.getElementById(resultId);
   const content = document.getElementById(isSubfeeder ? "astriSubfeederContent" : "astriClusterContent");
@@ -7080,10 +7236,10 @@ async function submitAstriBoq(items, type) {
         : isFeeder
         ? `/api/astri/feeder/boq/submit/${encodeURIComponent(state.jobId)}`
         : `/api/astri/boq/submit/${encodeURIComponent(state.jobId)}`;
-      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged };
-    } else if (state.astriMatch?.matched) {
+      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged, match: activeBoqMatch };
+    } else if (activeBoqMatch?.matched) {
       url = isSubfeeder ? "/api/astri/subfeeder/boq/submit" : isFeeder ? "/api/astri/feeder/boq/submit" : "/api/astri/boq/submit";
-      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged, match: state.astriMatch };
+      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged, match: activeBoqMatch };
     } else {
       if (result) result.textContent = "Match ASTRI tidak ditemukan.";
       return;
@@ -7110,8 +7266,10 @@ async function submitAstriBoq(items, type) {
     if (payload.ok) {
       const mId = isSubfeeder ? "astriSubfeederModal" : "astriClusterModal";
       setTimeout(() => document.getElementById(mId)?.classList.add("hidden"), 2000);
+      await refreshAstriWorkOrderStatus({ notify: true }).catch(() => null);
     }
   } catch (error) {
+    handleAstriMutationError(error);
     if (result) result.textContent = error.message;
   }
 }

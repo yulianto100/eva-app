@@ -979,6 +979,113 @@ def search_astri_feeders(record: dict, query_raw: str, status: str = "") -> list
             break
     return items[:100]
 
+
+ASTRI_SUCCESSFUL_STATUS_LABEL = "Successful"
+ASTRI_SUCCESSFUL_STATUS_NAME = "successful"
+ASTRI_WORK_ORDER_SCOPES = {"cluster", "subfeeder", "feeder"}
+
+
+def astri_status_is_successful(latest_status_label: str = "", latest_status_name: str = "") -> bool:
+    """Match only ASTRI's canonical terminal status; never match Unsuccessful."""
+    return (
+        str(latest_status_label or "").strip().casefold() == ASTRI_SUCCESSFUL_STATUS_LABEL.casefold()
+        or str(latest_status_name or "").strip().casefold() == ASTRI_SUCCESSFUL_STATUS_NAME.casefold()
+    )
+
+
+def _astri_work_order_identity(match: dict, scope: str) -> tuple[str, str]:
+    if scope == "feeder":
+        code = match.get("feeder_code") or match.get("cluster_code")
+    elif scope == "subfeeder":
+        code = match.get("subfeeder_code") or match.get("cluster_code")
+    else:
+        code = match.get("cluster_code")
+    return str(code or "").strip(), str(match.get("work_order_number") or "").strip()
+
+
+def fetch_astri_work_order_status(record: dict, match: dict, scope: str = "cluster") -> dict:
+    """Read the current status from ASTRI and require an exact code + WO match."""
+    normalized_scope = str(scope or "cluster").strip().lower()
+    if normalized_scope not in ASTRI_WORK_ORDER_SCOPES:
+        raise ValueError("Scope ASTRI tidak valid.")
+    code, work_order_number = _astri_work_order_identity(match or {}, normalized_scope)
+    if not code or not work_order_number:
+        raise ValueError("Kode dan work_order_number diperlukan untuk cek status WO ASTRI.")
+
+    search_fn = {
+        "cluster": search_astri_clusters_v3,
+        "subfeeder": search_astri_subfeeders,
+        "feeder": search_astri_feeders,
+    }[normalized_scope]
+    items = search_fn(record, code)
+    code_key = code.casefold()
+    wo_key = work_order_number.casefold()
+    live = next(
+        (
+            item
+            for item in items
+            if _astri_work_order_identity(item, normalized_scope)[0].casefold() == code_key
+            and _astri_work_order_identity(item, normalized_scope)[1].casefold() == wo_key
+        ),
+        None,
+    )
+    if not live:
+        raise LookupError(f"Status WO ASTRI tidak ditemukan untuk {code} / {work_order_number}.")
+
+    latest_status_label = str(live.get("latest_status_label") or "").strip()
+    latest_status_name = str(live.get("latest_status_name") or "").strip()
+    if not latest_status_label and not latest_status_name:
+        raise LookupError(f"Status WO ASTRI kosong untuk {code} / {work_order_number}.")
+    return {
+        "scope": normalized_scope,
+        "cluster_code": code,
+        "work_order_number": work_order_number,
+        "latest_status_label": latest_status_label,
+        "latest_status_name": latest_status_name,
+        "successful": astri_status_is_successful(latest_status_label, latest_status_name),
+    }
+
+
+def astri_work_order_guard(record: dict, match: dict, scope: str):
+    """Fail closed before Approve Schedule/Add BOQ when live status is unavailable or Successful."""
+    try:
+        status = fetch_astri_work_order_status(record, match, scope)
+    except ValueError as exc:
+        return jsonify({
+            "error": str(exc),
+            "code": "ASTRI_WO_STATUS_INPUT_INVALID",
+        }), 400
+    except Exception as exc:
+        LOGGER.warning("ASTRI WO status unavailable: scope=%s match=%s error=%s", scope, match, exc)
+        return jsonify({
+            "error": "Status WO ASTRI tidak dapat diverifikasi. Action dibatalkan; coba refresh atau login ulang.",
+            "code": "ASTRI_WO_STATUS_UNAVAILABLE",
+        }), 503
+    if status["successful"]:
+        return jsonify({
+            "error": "Status WO di ASTRI sudah Successful. Approve Schedule dan Add BOQ dikunci.",
+            "code": "ASTRI_WO_SUCCESSFUL",
+            "wo_status": status,
+        }), 409
+    return None
+
+
+def astri_schedule_match_from_form(form_data: dict, scope: str) -> dict:
+    code_aliases = {
+        "cluster": ("cluster[cluster_code]", "__eva_cluster_code"),
+        "subfeeder": ("work_order[subfeeder_code]", "subfeeder[subfeeder_code]", "__eva_cluster_code"),
+        "feeder": ("osp_route[feeder_code]", "work_order[feeder_code]", "__eva_cluster_code"),
+    }
+    code = next((str(form_data.get(key) or "").strip() for key in code_aliases[scope] if form_data.get(key)), "")
+    work_order_number = str(form_data.get("work_order[number]") or form_data.get("__eva_work_order_number") or "").strip()
+    return {"cluster_code": code, "work_order_number": work_order_number}
+
+
+def astri_public_form_data(form_data: dict) -> dict:
+    """Do not forward EVA-only status identifiers to ASTRI."""
+    return {key: value for key, value in form_data.items() if not key.startswith("__eva_")}
+
+
 def astri_job_upload_files(job: dict) -> dict[str, tuple[Path, str]]:
     files: dict[str, tuple[Path, str]] = {}
     kmz_entries = job.get("standard_kmz_outputs") or []
@@ -2149,6 +2256,29 @@ def api_astri_search():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
+
+@app.route("/api/astri/work-order/status")
+def api_astri_work_order_status():
+    try:
+        record = require_astri_session()
+        scope = (request.args.get("scope") or "cluster").strip().lower()
+        match = {
+            "cluster_code": request.args.get("cluster_code", "").strip(),
+            "subfeeder_code": request.args.get("subfeeder_code", "").strip(),
+            "feeder_code": request.args.get("feeder_code", "").strip(),
+            "work_order_number": request.args.get("work_order_number", "").strip(),
+        }
+        return jsonify(fetch_astri_work_order_status(record, match, scope))
+    except ValueError as exc:
+        return jsonify({"error": str(exc), "code": "ASTRI_WO_STATUS_INPUT_INVALID"}), 400
+    except Exception as exc:
+        LOGGER.warning("ASTRI WO status endpoint unavailable: %s", exc)
+        return jsonify({
+            "error": "Status WO ASTRI tidak dapat diverifikasi. Coba refresh atau login ulang.",
+            "code": "ASTRI_WO_STATUS_UNAVAILABLE",
+        }), 503
+
+
 @app.route("/api/astri/upload/<job_id>", methods=["POST"])
 def api_astri_upload(job_id: str):
     job = get_job(job_id)
@@ -2684,9 +2814,16 @@ def api_astri_boq_submit(job_id: str):
         record = require_astri_session()
         payload = request.get_json(silent=True) or {}
         cluster_name = payload.get("cluster_name") or cluster_name_for_job(job)
-        match = astri_match_payload(find_astri_cluster(record, cluster_name), cluster_name)
+        supplied_match = payload.get("match") or {}
+        if supplied_match.get("cluster_code") and supplied_match.get("work_order_number"):
+            match = {**supplied_match, "matched": True}
+        else:
+            match = astri_match_payload(find_astri_cluster(record, cluster_name), cluster_name)
         if not match.get("matched"):
             return jsonify({"error": "Cluster ASTRI tidak ditemukan.", "match": match}), 404
+        guard = astri_work_order_guard(record, match, "cluster")
+        if guard:
+            return guard
         files = astri_job_upload_files(job)
         if "boq" not in files:
             return jsonify({"error": "Output BOQ EVA tidak tersedia.", "match": match}), 400
@@ -2715,6 +2852,9 @@ def api_astri_boq_submit_nojob():
         if not match.get("cluster_code") or not match.get("work_order_number"):
             return jsonify({"error": "Data match ASTRI tidak lengkap."}), 400
         match["matched"] = True
+        guard = astri_work_order_guard(record, match, "cluster")
+        if guard:
+            return guard
         create_boq = astri_create_boq_link(record, match)
         items = payload.get("items") or []
         if not items:
@@ -3144,9 +3284,13 @@ def api_astri_subfeeder_schedule_form():
 def api_astri_subfeeder_schedule_approve():
     try:
         record = require_astri_session()
+        form_data = request.form.to_dict(flat=True)
+        guard = astri_work_order_guard(record, astri_schedule_match_from_form(form_data, "subfeeder"), "subfeeder")
+        if guard:
+            return guard
         response = record["session"].post(
             f"{ASTRI_BASE_URL}/process/material/subfeeder/drm/schedule/approve",
-            data=request.form.to_dict(flat=True),
+            data=astri_public_form_data(form_data),
             allow_redirects=False,
             timeout=60,
         )
@@ -3237,11 +3381,18 @@ def api_astri_subfeeder_boq_submit(job_id: str):
         record = require_astri_session()
         payload = request.get_json(silent=True) or {}
         cluster_name = payload.get("cluster_name") or cluster_name_for_job(job)
-        code = cluster_name.split("-")[0].strip() if cluster_name else ""
-        items_list = search_astri_subfeeders(record, code) if code else []
-        match = items_list[0] if items_list else {"matched": False, "query": cluster_name}
+        supplied_match = payload.get("match") or {}
+        if supplied_match.get("cluster_code") and supplied_match.get("work_order_number"):
+            match = {**supplied_match, "matched": True}
+        else:
+            code = cluster_name.split("-")[0].strip() if cluster_name else ""
+            items_list = search_astri_subfeeders(record, code) if code else []
+            match = items_list[0] if items_list else {"matched": False, "query": cluster_name}
         if not match.get("matched"):
             return jsonify({"error": "Subfeeder ASTRI tidak ditemukan.", "match": match}), 404
+        guard = astri_work_order_guard(record, match, "subfeeder")
+        if guard:
+            return guard
         files = astri_job_upload_files(job)
         if "boq" not in files:
             return jsonify({"error": "Output BOQ EVA tidak tersedia.", "match": match}), 400
@@ -3265,6 +3416,9 @@ def api_astri_subfeeder_boq_submit_nojob():
         if not match.get("cluster_code") or not match.get("work_order_number"):
             return jsonify({"error": "Data match ASTRI tidak lengkap."}), 400
         match["matched"] = True
+        guard = astri_work_order_guard(record, match, "subfeeder")
+        if guard:
+            return guard
         create_boq = astri_create_subfeeder_boq_link(record, match)
         items = payload.get("items") or []
         if not items:
@@ -3562,9 +3716,13 @@ def api_astri_feeder_schedule_form():
 def api_astri_feeder_schedule_approve():
     try:
         record = require_astri_session()
+        form_data = request.form.to_dict(flat=True)
+        guard = astri_work_order_guard(record, astri_schedule_match_from_form(form_data, "feeder"), "feeder")
+        if guard:
+            return guard
         response = record["session"].post(
             f"{ASTRI_BASE_URL}/process/material/feeder/drm/schedule/approve",
-            data=request.form.to_dict(flat=True),
+            data=astri_public_form_data(form_data),
             allow_redirects=False,
             timeout=60,
         )
@@ -3652,11 +3810,18 @@ def api_astri_feeder_boq_submit(job_id: str):
         record = require_astri_session()
         payload = request.get_json(silent=True) or {}
         cluster_name = payload.get("cluster_name") or cluster_name_for_job(job)
-        code = cluster_name.split("-")[0].strip() if cluster_name else ""
-        items_list = search_astri_feeders(record, code) if code else []
-        match = items_list[0] if items_list else {"matched": False, "query": cluster_name}
+        supplied_match = payload.get("match") or {}
+        if supplied_match.get("cluster_code") and supplied_match.get("work_order_number"):
+            match = {**supplied_match, "matched": True}
+        else:
+            code = cluster_name.split("-")[0].strip() if cluster_name else ""
+            items_list = search_astri_feeders(record, code) if code else []
+            match = items_list[0] if items_list else {"matched": False, "query": cluster_name}
         if not match.get("matched"):
             return jsonify({"error": "Feeder ASTRI tidak ditemukan.", "match": match}), 404
+        guard = astri_work_order_guard(record, match, "feeder")
+        if guard:
+            return guard
         files = astri_job_upload_files(job)
         if "boq" not in files:
             return jsonify({"error": "Output BOQ EVA tidak tersedia.", "match": match}), 400
@@ -3680,6 +3845,9 @@ def api_astri_feeder_boq_submit_nojob():
         if not match.get("cluster_code") or not match.get("work_order_number"):
             return jsonify({"error": "Data match ASTRI tidak lengkap."}), 400
         match["matched"] = True
+        guard = astri_work_order_guard(record, match, "feeder")
+        if guard:
+            return guard
         create_boq = astri_create_feeder_boq_link(record, match)
         items = payload.get("items") or []
         if not items:
@@ -3729,9 +3897,12 @@ def api_astri_schedule_approve_direct():
     try:
         record = require_astri_session()
         form_data = request.form.to_dict(flat=True)
+        guard = astri_work_order_guard(record, astri_schedule_match_from_form(form_data, "cluster"), "cluster")
+        if guard:
+            return guard
         response = record["session"].post(
             f"{ASTRI_BASE_URL}/process/material/drm/schedule/approve",
-            data=form_data,
+            data=astri_public_form_data(form_data),
             allow_redirects=False,
             timeout=60,
         )
@@ -3757,9 +3928,12 @@ def api_astri_schedule_approve(job_id: str):
     try:
         record = require_astri_session()
         form_data = request.form.to_dict(flat=True)
+        guard = astri_work_order_guard(record, astri_schedule_match_from_form(form_data, "cluster"), "cluster")
+        if guard:
+            return guard
         response = record["session"].post(
             f"{ASTRI_BASE_URL}/process/material/drm/schedule/approve",
-            data=form_data,
+            data=astri_public_form_data(form_data),
             allow_redirects=False,
             timeout=60,
         )
