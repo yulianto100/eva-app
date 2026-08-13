@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import math
 import os
 import re
 import logging
@@ -329,37 +330,63 @@ def suggest_dxf_parcel_orientation(
     return {"angle_degrees": angle, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
 
 
-def suggest_dxf_visual_parcel_layout(*, preview_svg: str, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
-    """Vision-only parcel hint. SVG shows FAT=cyan, ROAD=red, HP=yellow.
+def suggest_dxf_visual_parcel_layout(*, preview_png: bytes, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
+    """Vision-only parcel hint. PNG shows FAT=cyan, ROAD=red, HP=yellow.
     It returns hints only; converter owns all coordinates and topology."""
-    if not ai_visual_parcel_enabled() or not preview_svg or point_count < 2:
+    if not ai_visual_parcel_enabled() or not preview_png or point_count < 2:
         return None
     import base64
-    image = 'data:image/svg+xml;base64,' + base64.b64encode(preview_svg.encode('utf-8')).decode('ascii')
+    image = 'data:image/png;base64,' + base64.b64encode(preview_png).decode('ascii')
     system = (
         'You visually review EVA telecom HP COVER parcel layout. Return ONLY JSON: '
-        '{"angle_degrees":number,"width_scale":number,"depth_scale":number,"road_side":1,"confidence":number,"reason":string}. '
-        'Image legend: cyan=FAT boundary, red=ROAD exclusion, yellow=fixed HP source points. '
-        'Choose ONE clean shared grid angle. Do not output coordinates or polygons. '
-        'HP points must never move; parcels must stay inside cyan and outside red, not overlap.'
+        '{"angle_degrees":number,"width_scale":number,"depth_scale":number,'
+        '"along_shift_m":number,"normal_shift_m":number,"confidence":number,"reason":string}. '
+        'Image legend: cyan=local boundary, red=ROAD exclusion, yellow=fixed HP source points, green=legal deterministic cells. '
+        'Choose ONE clean shared grid angle. Optional shifts translate the entire local strip, never individual HP. '
+        'Do not output coordinates or polygons. Keep angle within 15 degrees of supplied ROAD/FAT reference; '
+        'width/depth scales must be 1.0..1.3; each source must stay within 12m of its final cell; '
+        'cells must stay outside red and never overlap.'
     )
     content = [
-        {'type': 'text', 'text': json.dumps({'fat_angle_degrees': round(float(fat_angle), 2), 'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None, 'hp_cover_count': int(point_count)})},
+        {'type': 'text', 'text': json.dumps({
+            'fat_angle_degrees': round(float(fat_angle), 2),
+            'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None,
+            'hp_cover_count': int(point_count),
+            'constraints': '4x10m minimum, 13x13m maximum, ROAD positive-area overlap forbidden',
+        })},
         {'type': 'image_url', 'image_url': {'url': image}},
     ]
-    result = _post_json([{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], max_tokens=160, timeout=min(ai_timeout(), 20))
+    result = _post_json([{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], max_tokens=180, timeout=min(ai_timeout(), 20))
     if not result:
         return None
     try:
-        confidence=float(result.get('confidence', 0)); angle=float(result.get('angle_degrees'))
-        width=max(0.70, min(1.30, float(result.get('width_scale', 1.0))))
-        depth=max(0.70, min(1.30, float(result.get('depth_scale', 1.0))))
-        side=1 if float(result.get('road_side', 1)) >= 0 else -1
+        confidence = float(result.get('confidence', 0))
+        angle = float(result.get('angle_degrees'))
+        width = max(1.0, min(1.30, float(result.get('width_scale', 1.0))))
+        depth = max(1.0, min(1.30, float(result.get('depth_scale', 1.0))))
+        along = float(result.get('along_shift_m', 0.0) or 0.0)
+        normal = float(result.get('normal_shift_m', 0.0) or 0.0)
+        road_side = 1 if float(result.get('road_side', 1) or 1) >= 0 else -1
     except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (confidence, angle, width, depth, along, normal)):
         return None
     if confidence < ai_confidence_min() or not -90 <= angle <= 90:
         return None
-    return {'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth, 'road_side': side, 'confidence': confidence, 'reason': str(result.get('reason') or '')}
+    shift = math.hypot(along, normal)
+    if shift > 12.0:
+        along *= 12.0 / shift
+        normal *= 12.0 / shift
+    return {
+        'angle_degrees': angle,
+        'width_scale': width,
+        'depth_scale': depth,
+        'along_shift_m': along,
+        'normal_shift_m': normal,
+        'road_side': road_side,
+        'confidence': confidence,
+        'reason': str(result.get('reason') or '').strip(),
+    }
 
 
 def suggest_dxf_asset_layout(

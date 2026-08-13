@@ -399,6 +399,7 @@ STYLE_SPECS: dict[str, KmzStyleSpec] = {
     "fdt_96c": KmzStyleSpec("eva_fdt_96c", "#FF0000", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "fdt_72c": KmzStyleSpec("eva_fdt_72c", "#550000", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "fdt_48c": KmzStyleSpec("eva_fdt_48c", "#AA00FF", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
+    "fdt_ext": KmzStyleSpec("eva_fdt_ext", "#FFFFFF", f"{GOOGLE_KML_SHAPES}/cross-hairs.png", icon_scale="0.8"),
     "pole_9m_4inch": KmzStyleSpec("eva_pole_9m_4inch", "#FF0000", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
     "pole_7m_4inch": KmzStyleSpec("eva_pole_7m_4inch", "#00FF00", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
     "pole_7m_3inch": KmzStyleSpec("eva_pole_7m_3inch", "#00FFFF", f"{GOOGLE_KML_SHAPES}/placemark_circle.png", icon_scale="0.8"),
@@ -604,6 +605,21 @@ def canonical_folder_match(source_folder: str, network_type: str | None, scope_t
     Uses normalize_folder_name to handle commas→dashes."""
     from converter import canonical_standard_folder
     norm_source = normalize_folder_name(source_folder)
+    # UG vendor templates often spell SUBDUCT as SUB DUCT. Normalize
+    # aliases before folder routing and style selection.
+    ug_aliases = {
+        "SUB DUCT 32/28": "SUBDUCT 32/28",
+        "SUB DUCT 40/34": "SUBDUCT 40/34",
+        "SUB DUCT 3RD PARTY": "SUBDUCT 3RD PARTY",
+        "GALVANIZED": "GALVANIS",
+        "PVC 4 INCH": "PVC 4INCH",
+        "T-WAY": "T-WAY",
+        "T-WEY": "T-WAY",
+        "TWEY": "T-WAY",
+    }
+    alias = ug_aliases.get(normalize_text(source_folder).upper())
+    if alias:
+        return alias
     # First try standard converter resolution
     canonical = canonical_standard_folder(source_folder)
     if canonical:
@@ -1477,7 +1493,7 @@ def looks_like_fdt_placemark(placemark: ET.Element, folder_stack: Sequence[str])
 
     if re.search(r"\bFDT\b", upper_text):
         return True
-    if nearest_standard_folder(folder_stack) == "FDT" and name.upper() in {"XXX", "FDT", "FDT XXX"}:
+    if nearest_standard_folder(folder_stack) == "FDT" and name.upper() in {"EXT", "XXX", "FDT", "FDT XXX"}:
         return True
 
     has_fdt_code = looks_like_fdt_code(name) and not find_fat_code(name)
@@ -2519,6 +2535,34 @@ def normalize_hp_cover_child_folders(hp_cover_folder: ET.Element, namespace: str
     folder_children.sort(key=lambda child: normalize_text(direct_child_text_by_name(child, "name")).upper())
     hp_cover_folder[:] = metadata_children + folder_children + other_children
     _normalize_placemark_names_in(hp_cover_folder)
+    # Assign sequential NN- numbers to untitled HP COVER placemarks.
+    untitled = []
+    existing = set()
+    for pm in list(hp_cover_folder.iter(f"{{{namespace}}}Placemark")):
+        name_el = direct_child_by_name(pm, "name")
+        text = (name_el.text or "").strip() if name_el is not None else ""
+        normalized = normalize_text(text).upper()
+        if not normalized or normalized == "UNTITLED":
+            untitled.append(pm)
+        elif normalized.startswith("NN-"):
+            existing.add(normalized)
+    next_index = 1
+    used = set()
+    for pm in untitled:
+        while True:
+            candidate = f"NN-{next_index}"
+            if candidate not in existing and candidate not in used:
+                break
+            next_index += 1
+        name_el = direct_child_by_name(pm, "name")
+        if name_el is None:
+            name_el = ET.SubElement(pm, f"{{{namespace}}}name")
+        old = name_el.text or ""
+        name_el.text = candidate
+        used.add(candidate)
+        existing.add(candidate)
+        changes.append({"from": old, "to": candidate, "folder": "HP COVER"})
+        next_index += 1
 
 def normalize_hp_cover_folders(
     element: ET.Element,
@@ -3125,6 +3169,99 @@ def move_hp_cover_overflow_outside_boundary(
     return moved
 
 
+def assign_all_hp_cover_to_boundary(
+    project_folder: ET.Element,
+    namespace: str,
+    fat_areas: Sequence[OrganizerFatAreaRef],
+    changes: list[dict],
+) -> int:
+    """Route HP COVER points into BOUNDARY FAT buckets by containment.
+
+    A containing polygon wins across LINE/FDT boundaries; the legacy same-line
+    nearest-polygon fallback remains for points outside every polygon.
+    """
+    all_areas = [area for area in fat_areas if area.polygon]
+    moved = 0
+    for line_folder in list(project_folder):
+        if local_name(line_folder.tag) != "Folder":
+            continue
+        line_name = normalize_text(direct_child_text_by_name(line_folder, "name"))
+        if not LINE_ORDER_PATTERN.search(line_name):
+            continue
+        hp_cover = direct_child_folder_by_name(line_folder, "HP COVER")
+        if hp_cover is None:
+            continue
+        line_areas = [
+            area for area in all_areas
+            if format_line_folder_name(area.line_order, area.fdt_order) == line_name
+        ]
+        if not line_areas:
+            continue
+
+        parents: list[tuple[ET.Element, ET.Element]] = []
+        def collect(parent: ET.Element) -> None:
+            for child in list(parent):
+                kind = local_name(child.tag)
+                if kind == "Placemark" and placemark_has_point(child):
+                    parents.append((parent, child))
+                elif kind == "Folder":
+                    collect(child)
+        collect(hp_cover)
+
+        targets: dict[tuple[str, str], ET.Element] = {}
+        for source_parent, placemark in parents:
+            point = placemark_point_coordinate(placemark)
+            if point is None:
+                continue
+            inside = [area for area in all_areas if point_in_polygon(point, area.polygon)]
+            target_area = min(
+                inside or line_areas,
+                key=lambda area: (
+                    hp_cover_fat_folder_name(area.fat_code or area.name),
+                    area.line_order,
+                    area.fdt_order,
+                    point_polygon_distance_meter(point, area.polygon),
+                ),
+            )
+            bucket_name = hp_cover_fat_folder_name(target_area.fat_code or target_area.name)
+            # Never produce a generic HP bucket when a named BOUNDARY FAT exists.
+            if not bucket_name or bucket_name.upper() in {"UNCATEGORIZED", "UNKNOWN", "UNCLASSIFIED"}:
+                continue
+            target_line_name = format_line_folder_name(target_area.line_order, target_area.fdt_order)
+            key = (target_line_name, bucket_name.upper())
+            target = targets.get(key)
+            if target is None:
+                target_hp_cover = hp_cover
+                if target_line_name != line_name:
+                    target_line = ensure_line_folder(project_folder, namespace, target_area.line_order, target_area.fdt_order)
+                    target_hp_cover = ensure_folder(target_line, namespace, "HP COVER")
+                target = direct_child_folder_by_name(target_hp_cover, bucket_name)
+                if target is None:
+                    target = ensure_folder(target_hp_cover, namespace, bucket_name)
+                targets[key] = target
+            if source_parent is target:
+                continue
+            source_parent.remove(placemark)
+            target.append(placemark)
+            moved += 1
+            changes.append({
+                "name": normalize_text(direct_child_text_by_name(placemark, "name")),
+                "from": " / ".join([line_name, "HP COVER"]),
+                "to": " / ".join([target_line_name, "HP COVER", bucket_name]),
+                "reason": "HP COVER routed by containing BOUNDARY FAT polygon",
+            })
+
+        # Empty legacy bucket folders may be removed; no placemark is removed.
+        for child in list(hp_cover):
+            if local_name(child.tag) != "Folder":
+                continue
+            if any(local_name(x.tag) == "Placemark" for x in list(child)):
+                continue
+            if any(local_name(x.tag) == "Folder" for x in list(child)):
+                continue
+            hp_cover.remove(child)
+    return moved
+
 def assign_uncategorized_hp_cover_to_boundary(
     project_folder: ET.Element,
     namespace: str,
@@ -3294,23 +3431,22 @@ def collect_organizer_fdt_refs(
     placemark_refs: Sequence[OrganizerPlacemarkRef],
     records: Sequence[FdtCodingRecord],
 ) -> list[OrganizerFdtRef]:
+    """Collect physical FDT ordinals from placemark order, not coding IDs.
+
+    ``FdtCodingRecord.fdt_order`` may contain a spreadsheet/site ID such as
+    156.  That value is useful for coding/BOQ lookup only; it must never become
+    the physical parent-folder ordinal.  Explicit ``FDT N`` source labels stay
+    authoritative.  Otherwise the ordered FDT placemarks are FDT 1, FDT 2, ...
+    """
     refs: list[OrganizerFdtRef] = []
     for placemark_ref in placemark_refs:
         placemark = placemark_ref.element
         point = placemark_point_coordinate(placemark)
-        if point is None:
-            continue
-        if not looks_like_fdt_placemark(placemark, placemark_ref.folder_stack):
+        if point is None or not looks_like_fdt_placemark(placemark, placemark_ref.folder_stack):
             continue
         name = normalize_text(direct_child_text_by_name(placemark, "name"))
-        order = extract_fdt_order(" ".join([*placemark_ref.folder_stack, name]))
-        if not order:
-            for index, record in enumerate(records, start=1):
-                if record.fdt_code and record.fdt_code.upper() in name.upper():
-                    order = record.fdt_order or index
-                    break
-        if not order:
-            order = len(refs) + 1
+        explicit_order = extract_fdt_order(" ".join([*placemark_ref.folder_stack, name]))
+        order = explicit_order if explicit_order is not None else len(refs) + 1
         refs.append(OrganizerFdtRef(order=order, point=point))
     return refs
 
@@ -3709,6 +3845,11 @@ def organizer_target_path(
     hp_cover_folder_context = has_hp_cover_folder_context(folder_stack)
     point = placemark_point_coordinate(placemark)
 
+    # T-WAY is a project-level UG folder, not a LINE child folder.
+    # Accept legacy spellings, but emit one literal folder name.
+    if any(normalize_text(folder).upper() in {"T-WAY", "T-WEY", "TWEY"} for folder in folder_stack):
+        return ["T-WAY"]
+
     if point is not None:
         is_legacy_fat_name = bool(LEGACY_FAT_FDT_NAME_PATTERN.search(name))
         upper_name = name.upper()
@@ -3863,7 +4004,7 @@ def organizer_target_path(
     if source_folder in {"SLACK HANGER", *NEW_POLE_STYLE_BY_FOLDER.keys()}:
         return [line_prefix, source_folder]
     if "TWEY" in upper_name or "T-WAY" in upper_name or "T-WEY" in upper_name:
-        return ["TWEY"]
+        return ["T-WAY"]
     if "HH" in upper_name or "HANDHOLE" in upper_name or "PEDESTAL" in upper_name:
         if "EXT" in upper_name:
             return [line_prefix, "EXISTING HH 40X40X60"]
@@ -3969,9 +4110,9 @@ def organize_kmz_placemarks(
     ensure_folder(project_folder, namespace, "FDT")
     _reorder_cluster_parent_folders(project_folder, namespace, network_type)
     normalize_hp_cover_folders(project_folder, namespace, changes)
-    assign_uncategorized_hp_cover_to_boundary(project_folder, namespace, fat_areas, changes)
-    move_hp_cover_overflow_outside_boundary(project_folder, namespace, fat_areas, changes)
-    rescue_hp_uncover_inside_available_boundary(project_folder, namespace, fat_areas, changes)
+    # All HP COVER points go to named BOUNDARY FAT buckets. Do not demote
+    # points to HP UNCOVER because of an arbitrary capacity threshold.
+    assign_all_hp_cover_to_boundary(project_folder, namespace, fat_areas, changes)
 
 
 
@@ -4271,9 +4412,12 @@ def walk_kml_for_standardization(
 
 
 def record_for_fdt_order(records: Sequence[FdtCodingRecord], order: int) -> FdtCodingRecord | None:
-    explicit = [record for record in records if record.fdt_order == order]
-    if explicit:
-        return explicit[0]
+    """Resolve a physical FDT ordinal to its coding record.
+
+    ``order`` is always the generated physical position (1-based). Never
+    compare it with ``FdtCodingRecord.fdt_order``: that field may be a source
+    spreadsheet/BOQ ID such as 156, not the physical FDT position.
+    """
     if 1 <= order <= len(records):
         return records[order - 1]
     return None
@@ -4288,6 +4432,18 @@ def record_for_fdt_code(records: Sequence[FdtCodingRecord], fdt_code: str) -> Fd
         if normalize_text(record.fdt_code).upper() == target:
             return record
     return None
+
+
+def record_for_fdt_placemark(
+    records: Sequence[FdtCodingRecord],
+    placemark: FdtPlacemarkRef,
+) -> FdtCodingRecord | None:
+    """Resolve coding by the placemark code; ordinal remains physical-only."""
+    source_code = existing_fdt_code_from_name(placemark.current_name)
+    by_code = record_for_fdt_code(records, source_code)
+    if by_code is not None:
+        return by_code
+    return record_for_fdt_order(records, placemark.source_order)
 
 
 def record_cluster_initial(record: FdtCodingRecord) -> str:
@@ -4507,6 +4663,121 @@ def standardize_handhole_placemark_names(
             }
         )
 
+
+def _ug_direct_point_placemarks(folder: ET.Element) -> list[ET.Element]:
+    return [x for x in list(folder) if local_name(x.tag) == 'Placemark' and placemark_has_point(x)]
+def _ug_cable_order_key(point, cable_lines):
+    best=(10**6, float('inf'), float('inf'))
+    for cable_index, line in enumerate(cable_lines or []):
+        progress=0.0
+        for start,end in zip(line, line[1:]):
+            distance=_point_to_segment_distance_meter(point, start, end)
+            along=_project_distance_along_segment(point, start, end)
+            candidate=(cable_index, distance, progress+along)
+            if (candidate[1], candidate[0], candidate[2]) < (best[1], best[0], best[2]):
+                best=candidate
+            progress+=_haversine_distance_meter(start, end)
+    return (best[0], best[2])
+def _ug_line_distribution_lines(line_folder):
+    lines=[]
+    def walk(elem, active=False):
+        name=normalize_text(direct_child_text_by_name(elem, 'name') or '')
+        is_active=active or name == 'DISTRIBUTION CABLE'
+        for child in list(elem):
+            tag=local_name(child.tag)
+            if tag == 'Folder':
+                walk(child, is_active)
+            elif is_active and tag == 'Placemark' and placemark_has_line(child):
+                coords=[]
+                for node in child.iter():
+                    if local_name(node.tag) == 'LineString':
+                        text=direct_child_text_by_name(node, 'coordinates') or ''
+                        part=parse_kml_coordinates(text)
+                        if len(part)>=2:
+                            lines.append(part)
+    walk(line_folder)
+    return lines
+
+def ensure_ug_hh80_fdt_only(root, namespace, changes, record=None):
+    """UG: HH80 only at FDT anchor; make one when an FDT lacks it."""
+    import copy
+    code=(record_cluster_initial(record) if record else "") or "LPCCDS"
+    created=0
+    def points(folder):
+        return [x for x in list(folder) if local_name(x.tag)=="Placemark" and placemark_has_point(x)]
+    def walk(elem):
+        nonlocal created
+        if local_name(elem.tag)=="Folder":
+            line_name=normalize_text(direct_child_text_by_name(elem,"name") or "")
+            if LINE_ORDER_PATTERN.search(line_name):
+                fdt=direct_child_folder_by_name(elem,"FDT")
+                hh80=direct_child_folder_by_name(elem,"NEW HH 80X80X130")
+                if fdt is not None:
+                    if hh80 is None: hh80=ensure_folder(elem,namespace,"NEW HH 80X80X130")
+                    existing=points(hh80)
+                    for fdt_pm in points(fdt):
+                        fp=placemark_point_coordinate(fdt_pm)
+                        if fp is None: continue
+                        if any((lambda hp: hp is not None and _haversine_distance_meter(fp,hp)<=1.0)(placemark_point_coordinate(h)) for h in existing): continue
+                        pm=copy.deepcopy(fdt_pm)
+                        name=ensure_direct_child(pm,"name",namespace)
+                        name.text=f"MR.{code}.HH{len(existing)+1:03d}"
+                        hh80.append(pm); existing.append(pm); created+=1
+                        changes.append({"type":"auto_hh80_from_fdt","from":"FDT","to":name.text,"reason":"UG FDT requires one HH80 within 1m."})
+            if line_name in {"NEW HH 80X80X130","EXISTING HH 80X80X130"} and not LINE_ORDER_PATTERN.search(line_name):
+                # Non-line HH80 folders are source debris; remove their points.
+                for pm in points(elem):
+                    elem.remove(pm)
+                    changes.append({"type":"remove_stray_hh80","from":normalize_text(direct_child_text_by_name(pm,"name") or ""),"reason":"UG HH80 only belongs to FDT."})
+        for child in list(elem):
+            if local_name(child.tag) in {"Document","Folder"}: walk(child)
+    walk(root)
+    return created
+
+def ensure_ug_hh40_and_order_names(root, namespace, changes, record=None) -> int:
+    created=0
+    def walk(elem):
+        nonlocal created
+        if local_name(elem.tag)!='Folder':
+            for child in list(elem): walk(child)
+            return
+        line_name=normalize_text(direct_child_text_by_name(elem,'name') or '')
+        if LINE_ORDER_PATTERN.search(line_name):
+            fat_folder=direct_child_folder_by_name(elem,'FAT')
+            hh40_folder=direct_child_folder_by_name(elem,'NEW HH 40X40X60')
+            if fat_folder is not None:
+                if hh40_folder is None: hh40_folder=ensure_folder(elem,namespace,'NEW HH 40X40X60')
+                for fat in _ug_direct_point_placemarks(fat_folder):
+                    fat_pt=placemark_point_coordinate(fat)
+                    if fat_pt is None: continue
+                    if any(placemark_point_coordinate(h) is not None and _haversine_distance_meter(fat_pt, placemark_point_coordinate(h)) <= 1.0 for h in _ug_direct_point_placemarks(hh40_folder)):
+                        continue
+                    import copy
+                    clone=copy.deepcopy(fat)
+                    name_el=ensure_direct_child(clone,'name',namespace); name_el.text='AUTO HH40'
+                    hh40_folder.append(clone); created+=1
+                    changes.append({'type':'ug_auto_hh40_from_fat','from':line_name+' / FAT','to':line_name+' / NEW HH 40X40X60','reason':'No HH40 within 1.0m of FAT; auto-created beside FAT.'})
+            lines=_ug_line_distribution_lines(elem)
+            entries=[]
+            for folder_name,suffix in (('NEW HH 40X40X60','HH'),('NEW HH 20X20X20','HHPIT')):
+                folder=direct_child_folder_by_name(elem,folder_name)
+                if folder is None: continue
+                for pm in _ug_direct_point_placemarks(folder):
+                    point=placemark_point_coordinate(pm)
+                    if point is not None: entries.append((folder_name,suffix,pm,point))
+            counters={'HH':0,'HHPIT':0}
+            for folder_name,suffix,pm,point in sorted(entries, key=lambda x: (x[1], *_ug_cable_order_key(x[3], lines))):
+                counters[suffix]+=1
+                new_name='MR.'+((record_cluster_initial(record) if record else 'LPCCDS') or 'LPCCDS')+'.'+suffix+str(counters[suffix]).zfill(3)
+                name_el=ensure_direct_child(pm,'name',namespace)
+                old=normalize_text(name_el.text)
+                if old!=new_name:
+                    name_el.text=new_name
+                    changes.append({'type':'ug_handhole_distribution_order','from':old,'to':new_name,'folder':folder_name,'reason':'Numbered by nearest distribution-cable progress.'})
+        for child in list(elem): walk(child)
+    walk(root)
+    return created
+
 def standard_bare_ext_partner_pole_name(
     name: str,
     cluster_initial: str,
@@ -4665,6 +4936,100 @@ def _iter_cluster_cable_placemarks(element: ET.Element, folder_stack: list[str])
             })
     return cables
 
+
+def _iter_cluster_sling_placemarks(element: ET.Element, folder_stack: list[str]) -> list[dict]:
+    """Collect SLING WIRE LineStrings; each is a branch from Distribution Cable."""
+    slings: list[dict] = []
+    for child in list(element):
+        tag = local_name(child.tag)
+        if tag in {"Document", "Folder"}:
+            next_stack = folder_stack + ([normalize_text(direct_child_text_by_name(child, "name"))] if tag == "Folder" else [])
+            slings.extend(_iter_cluster_sling_placemarks(child, next_stack))
+            continue
+        if tag != "Placemark" or nearest_standard_folder(folder_stack) != "SLING WIRE":
+            continue
+        lines = placemark_linestrings(child)
+        if lines:
+            slings.append({"element": child, "lines": lines, "order": len(slings)})
+    return slings
+
+
+def _line_distance_and_progress(point: tuple[float, float], lines: Sequence[Sequence[tuple[float, float]]]) -> tuple[float, float]:
+    """Nearest distance and along-path progress across a KML multi-LineString."""
+    best_distance, best_along = float("inf"), 0.0
+    running = 0.0
+    for line in lines or []:
+        if len(line) < 2:
+            continue
+        for start, end in zip(line, line[1:]):
+            length = _haversine_distance_meter(start, end)
+            distance = _point_to_segment_distance_meter(point, start, end)
+            if distance < best_distance:
+                best_distance = distance
+                best_along = running + _project_distance_along_segment(point, start, end)
+            running += length
+    return best_distance, best_along
+
+
+def _cluster_pole_order_with_sling(
+    cables: Sequence[dict], poles: Sequence[dict], slings: Sequence[dict], record: FdtCodingRecord,
+    used_pole_numbers: dict[str, set[int]], fdt_entries: Sequence[dict] | None = None,
+) -> dict[int, str]:
+    """Walk trunk Distribution Cable, inserting each SLING WIRE at its physical tap point.
+
+    A pole is assigned to a sling only when that sling is materially closer than
+    the trunk. This preserves main-cable poles and prevents branch projections
+    from scrambling their order.
+    """
+    branch_radius = 30.0
+    items = []
+    sling_meta = []
+    for sling in slings:
+        best = (float("inf"), 0, 0.0)
+        for ci, cable in enumerate(cables):
+            # Either sling endpoint can be the tap. Use closest endpoint.
+            endpoints = [line[0] for line in sling.get("lines", []) if line] + [line[-1] for line in sling.get("lines", []) if line]
+            for endpoint in endpoints:
+                d, along = _line_distance_and_progress(endpoint, cable.get("lines", []))
+                if d < best[0]: best = (d, ci, along)
+        if best[0] <= branch_radius:
+            sling_meta.append((sling, best[1], best[2]))
+    for pole in poles:
+        trunk_candidates = [_line_distance_and_progress(pole["point"], c.get("lines", [])) for c in cables]
+        trunk_idx, (trunk_dist, trunk_along) = min(enumerate(trunk_candidates), key=lambda x: x[1][0]) if trunk_candidates else (-1, (float("inf"), 0.0))
+        chosen = None
+        for sling, cable_idx, tap_along in sling_meta:
+            sling_dist, sling_along = _line_distance_and_progress(pole["point"], sling.get("lines", []))
+            # Must truly belong to branch, not merely sit near its tap.
+            if sling_dist <= branch_radius and sling_dist + 1.0 < trunk_dist:
+                candidate = (sling_dist, cable_idx, tap_along, sling_along)
+                if chosen is None or candidate < chosen:
+                    chosen = candidate
+        if chosen:
+            _distance, cable_idx, tap_along, sling_along = chosen
+            key = (cable_idx, tap_along, 1, sling_along, int(pole["order"]))
+        elif trunk_idx >= 0 and trunk_dist <= branch_radius:
+            key = (trunk_idx, trunk_along, 0, 0.0, int(pole["order"]))
+        else:
+            key = (999999, 0.0, 9, 0.0, int(pole["order"]))
+        items.append((key, pole))
+    items.sort(key=lambda item: item[0])
+    assigned = {}
+    # Preserve existing behaviour: nearest FDT pole gets first number per kind.
+    first_by_kind = {}
+    if fdt_entries:
+        for _key, pole in items:
+            counter = _pole_counter_key(record, pole["kind"], False)
+            distance = min(_haversine_distance_meter(pole["point"], (x["lon"], x["lat"])) for x in fdt_entries)
+            if counter not in first_by_kind or distance < first_by_kind[counter][0]:
+                first_by_kind[counter] = (distance, pole)
+    for _counter, (_distance, pole) in first_by_kind.items():
+        assigned[pole["id"]] = next_project_pole_code(_counter, used_pole_numbers)
+    for _key, pole in items:
+        if pole["id"] in assigned: continue
+        counter = _pole_counter_key(record, pole["kind"], False)
+        assigned[pole["id"]] = next_project_pole_code(counter, used_pole_numbers)
+    return assigned
 
 def _project_distance_along_segment(
     point: tuple[float, float],
@@ -5388,6 +5753,9 @@ def _compute_cluster_pole_path_order(
                 cable["order"],
             ),
         )
+    slings = _iter_cluster_sling_placemarks(element, [])
+    if slings:
+        return _cluster_pole_order_with_sling(cables, poles, slings, record, used_pole_numbers, fdt_entries)
     return _walk_cables_assign_pole_numbers(
         cables, poles, record, used_pole_numbers, False,
         fdt_entries=fdt_entries,
@@ -5772,7 +6140,10 @@ def standardize_fdt_placemarks(
         return changes, warnings
 
     for placemark in fdt_placemarks:
-        record = record_for_fdt_order(records, placemark.source_order)
+        # Resolve the coding by source code first. The physical ordinal is
+        # only the placemark position (1, 2, ...), never the numeric suffix
+        # inside a code such as BRON03.156.
+        record = record_for_fdt_placemark(records, placemark)
         if not record:
             warnings.append(f"Tidak ada kode FDT spreadsheet untuk FDT urutan {placemark.source_order}.")
             continue
@@ -5799,12 +6170,14 @@ def standardize_fdt_placemarks(
                 else:
                     description_element.text = capacity_note
 
-        if old_name != record.fdt_code:
-            name_element.text = record.fdt_code
+        ext_fdt = bool(re.search(r"\bEXT\b", old_name, re.IGNORECASE))
+        target_fdt_name = f"EXT.{record.fdt_code}" if ext_fdt else record.fdt_code
+        if old_name != target_fdt_name:
+            name_element.text = target_fdt_name
             changes.append(
                 {
                     "from": old_name,
-                    "to": record.fdt_code,
+                    "to": target_fdt_name,
                     "fdt_order": placemark.source_order,
                     "source_sheet": record.sheet_name,
                     "source_row": record.row_number,
@@ -6228,6 +6601,7 @@ def standardize_distribution_cable_placemarks(
     feeder_slack_count: int = 0,
     feeder_context: dict | None = None,
     scope_type: str | None = None,
+    network_type: str | None = None,
 ) -> None:
     """Standardize CABLE / DISTRIBUTION CABLE placemark names + descriptions.
 
@@ -6266,6 +6640,7 @@ def standardize_distribution_cable_placemarks(
                 feeder_slack_count,
                 feeder_context,
                 scope_type,
+                network_type,
             )
             continue
 
@@ -6360,13 +6735,20 @@ def standardize_distribution_cable_placemarks(
         else:
             boq_total = distribution_boq_totals.get((line_order, fdt_order, capacity), {})
             description_total_meter = int(boq_total.get("quantity") or fallback_total_meter)
-        network_type = detect_network_type(old_name, old_description, " ".join(folder_stack))
+        # The conversion selection is authoritative. Legacy UG source files often
+        # carry stale AE tokens in cable names/descriptions.
+        selected_network_type = normalize_text(network_type).upper()
+        cable_network_type = (
+            selected_network_type
+            if selected_network_type in {"AE", "UG"}
+            else detect_network_type(old_name, old_description, " ".join(folder_stack))
+        )
         hub_id = record_hub_id(record) if record else ""
         if is_feeder:
             is_subfeeder_scope = normalize_scope_type(scope_type) == "Subfeeder"
             if is_subfeeder_scope:
                 olt_code = hub_id or "XXX.XXX.XXXX"
-                new_name = f"{olt_code} - {fdt_code} - SUBFEEDER CABLE (FO {capacity}) - {network_type} - {description_total_meter}m"
+                new_name = f"{olt_code} - {fdt_code} - SUBFEEDER CABLE (FO {capacity}) - {cable_network_type} - {description_total_meter}m"
             else:
                 matched_olt_code = normalize_text(feeder_context.get("matched_olt_code", "")).upper() if feeder_context else ""
                 olt_code = matched_olt_code or "XXX.XXX.XXXX"
@@ -6374,10 +6756,10 @@ def standardize_distribution_cable_placemarks(
                 if not segment_num:
                     feeder_context["segment_index"] = feeder_context.get("segment_index", 0) + 1
                     segment_num = feeder_context["segment_index"]
-                new_name = f"{olt_code} - MAINFEEDER CABLE SEGMENT {segment_num} (FO {capacity}) - {network_type} - {description_total_meter}m"
+                new_name = f"{olt_code} - MAINFEEDER CABLE SEGMENT {segment_num} (FO {capacity}) - {cable_network_type} - {description_total_meter}m"
             new_description = format_feeder_distribution_description(route_meter, line_fat_count, description_total_meter)
         else:
-            new_name = f"{fdt_code} - CABLE LINE {line_order} (FO {capacity}) - {network_type} - {description_total_meter}m"
+            new_name = f"{fdt_code} - CABLE LINE {line_order} (FO {capacity}) - {cable_network_type} - {description_total_meter}m"
             new_description = format_distribution_description(route_meter, line_fat_count, description_total_meter)
 
         description_element = ensure_direct_child(child, "description", namespace)
@@ -6412,6 +6794,8 @@ def style_key_for_placemark(
 
     name = direct_child_text_by_name(placemark, "name")
     if source_folder == "FDT" and placemark_has_point(placemark):
+        if re.match(r"^EXT\.", normalize_text(name or ""), re.IGNORECASE):
+            return "fdt_ext", {"ext": True}
         fdt_order = fdt_order_by_placemark.get(id(placemark), 1)
         fat_count = fat_counts_by_fdt.get(fdt_order, 0)
         if not fat_count and len(fdt_order_by_placemark) == 1:
@@ -6480,7 +6864,7 @@ def style_key_for_placemark(
     if source_folder == "PEDESTAL HANDHOLE" and placemark_has_point(placemark):
         return "pedestal_handhole", {}
 
-    if source_folder == "TWEY" and placemark_has_point(placemark):
+    if source_folder == "T-WAY" and placemark_has_point(placemark):
         return "twey", {}
 
     if source_folder in {"DISTRIBUTION CABLE", "CABLE"} and placemark_has_line(placemark):
@@ -6629,10 +7013,8 @@ def standardize_kml_styles(
         if child_name != "Placemark":
             continue
         source_folder = nearest_standard_folder(folder_stack)
-        # HH standardization in this workflow only changes folder/name. Keep
-        # the source icon/style exactly as supplied by the KMZ.
-        if handhole_sequence_spec(source_folder):
-            continue
+        # All canonical placemarks, including HH/UG assets, must use the
+        # standard template style; never preserve vendor source icons.
         boundary_polygon_folder = nearest_boundary_polygon_folder(folder_stack)
         if boundary_polygon_folder and placemark_has_geometry(child, {"Polygon"}):
             apply_boundary_fat_default_polygon_style(child, boundary_polygon_folder, namespace, changes)
@@ -6646,6 +7028,32 @@ def standardize_kml_styles(
         )
         if style_key and source_folder:
             apply_standard_style(child, style_key, namespace, source_folder, metadata, changes)
+
+
+def force_tway_folder_and_placemark_names(root: ET.Element, namespace: str) -> int:
+    """Use literal T-WAY output name and label every contained Placemark T-WAY."""
+    renamed = 0
+
+    def walk(element: ET.Element, inside_tway: bool = False) -> None:
+        nonlocal renamed
+        for child in list(element):
+            child_name = local_name(child.tag)
+            if child_name == "Folder":
+                folder_name = normalize_text(direct_child_text_by_name(child, "name")).upper()
+                is_tway_folder = folder_name in {"T-WAY", "T-WEY", "TWEY"}
+                child_inside_tway = inside_tway or is_tway_folder
+                if is_tway_folder:
+                    ensure_direct_child(child, "name", namespace).text = "T-WAY"
+                walk(child, child_inside_tway)
+            elif child_name == "Placemark" and inside_tway:
+                ensure_direct_child(child, "name", namespace).text = "T-WAY"
+                renamed += 1
+            elif child_name == "Document":
+                walk(child, inside_tway)
+
+    walk(root)
+    return renamed
+
 
 def serialize_kml(root: ET.Element) -> bytes:
     namespace = kml_namespace(root)
@@ -7270,6 +7678,15 @@ def standardize_kmz_file(
     fat_name_changes: list[dict] = []
     standardize_fat_placemark_names(root, [], matched_records, namespace, fat_name_changes)
     name_changes.extend(fat_name_changes)
+    if not is_feeder:
+        # BOUNDARY FAT can be rehomed/deduplicated after the initial organizer
+        # pass. Rebuild spatial refs from that final tree before routing HP so a
+        # point follows its actual containing polygon, even across LINE/FDT.
+        project_folder = find_project_container(root, namespace, project_folder_name)
+        if project_folder is not None:
+            final_placemark_refs = collect_organizer_placemarks(root, [])
+            final_fat_areas = collect_organizer_fat_areas(final_placemark_refs, [])
+            assign_all_hp_cover_to_boundary(project_folder, namespace, final_fat_areas, organizer_changes)
     warnings = [*spreadsheet_warnings, *warnings]
     if using_default_coding:
         warnings.insert(0, "Coding FDT tidak match di spreadsheet; memakai default XXX.")
@@ -7321,6 +7738,7 @@ def standardize_kmz_file(
         feeder_slack_count,
         feeder_cable_context,
         detected_scope,
+        network_type,
     )
     ensure_standard_style_definitions(root, namespace)
     fdt_order_by_placemark = {id(placemark.element): placemark.source_order for placemark in fdt_placemarks}
@@ -7370,6 +7788,12 @@ def standardize_kmz_file(
     # HH sequence. Number HH80 first, then continue in HH40. HH20 uses its own
     # HHPIT sequence, and NEW/EXISTING counters remain independent.
     standardize_handhole_placemark_names(root, matched_record, namespace, name_changes, detected_scope)
+    if normalize_text(network_type).upper() == "UG":
+        ensure_ug_hh80_fdt_only(root, namespace, name_changes, matched_record)
+        ensure_ug_hh40_and_order_names(root, namespace, name_changes, matched_record)
+
+    # Final name pass: folder and every descendant Placemark use literal T-WAY.
+    tway_placemarks_renamed = force_tway_folder_and_placemark_names(root, namespace)
 
     qc_result = ai_qc_standardize_result(
         root,
@@ -7403,6 +7827,7 @@ def standardize_kmz_file(
         "placemark_organized": len(organizer_changes),
         "distribution_cable_standardized": len(distribution_cable_changes),
         "style_standardized": len(style_changes),
+        "tway_placemarks_renamed": tway_placemarks_renamed,
         "description_removed": description_removed,
         "folder_unwrapped": len(wrapper_changes),
         "fat_counts_by_fdt": dict(sorted(fat_counts_by_fdt.items())),

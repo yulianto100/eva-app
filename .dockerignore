@@ -15,3 +15,5 @@ static/downloads/
 
 tests/
 *.bak*
+geofabrik-*
+geofabrik.restore

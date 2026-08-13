@@ -3765,8 +3765,9 @@ async function uploadSelectedFile() {
     }
     if (state.astriMatch?.matched) {
       formData.append("astri_cluster_code", state.astriMatch.cluster_code || "");
-      if (state.astriMatch.province) formData.append("province", state.astriMatch.province);
-      if (state.astriMatch.area_name) formData.append("area_name", state.astriMatch.area_name);
+      // Popup values are authoritative. ASTRI match only supplies missing values.
+      if (state.astriMatch.province && !locationOverrides?.province) formData.append("province", state.astriMatch.province);
+      if (state.astriMatch.area_name && !locationOverrides?.area_name) formData.append("area_name", state.astriMatch.area_name);
     }
     if (locationOverrides?.province) formData.append("province", locationOverrides.province);
     if (locationOverrides?.city) formData.append("city", locationOverrides.city);
@@ -6966,10 +6967,21 @@ async function mergeAstriSupplierMap(items) {
           cluster_code: m.cluster_code || "",
           feeder_code: m.feeder_code || "",
           work_order_number: m.work_order_number || "",
-          vendor_label: m.vendor_label || "",
+          ...(state.astriBoqScope === "feeder" ? {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_label || "",
+            osp_route_area: m.osp_route_area || m.area || "",
+            osp_route_area_plant_code: m.osp_route_area_plant_code || m.area_plant_code || "",
+          } : state.astriBoqScope === "subfeeder" ? {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_label || "",
+            cluster_area: m.cluster_area || m.area || "",
+            cluster_area_plant_code: m.cluster_area_plant_code || m.area_plant_code || "",
+          } : {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_name || m.vendor_label || "",
+            vendor_label: m.vendor_label || "",
+            area: m.area || "",
+            area_plant_code: m.area_plant_code || "",
+          }),
           cluster_name: m.cluster_name || "",
-          area: m.area || "",
-          area_plant_code: m.area_plant_code || "",
         });
         url = `/api/astri/boq/supplier-map?${q}`;
       }

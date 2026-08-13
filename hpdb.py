@@ -758,50 +758,38 @@ def collect_hpdb_placemarks(element, folder_stack: list[str], placemarks: list[H
 
 
 def assign_fdt_number_by_sorted_suffix(fdt_placemarks: Sequence[HpdbPlacemark], pipeline_logger=None) -> tuple[dict[int, HpdbFdt], int, int, list[HpdbIssue]]:
+    """Assign physical FDT ordinals in source order.
+
+    A trailing number in a code such as ``BRON03.156`` is the FDT ID/code
+    used for coding and BOQ. It is not the physical ordinal and must not be
+    sorted, counted, or compared with ``HPDB_MAX_FDT``. Every FDT point
+    placemark is one physical FDT: first point = FDT 1, second = FDT 2, etc.
+    """
     issues: list[HpdbIssue] = []
-    grouped: dict[int, list[HpdbPlacemark]] = {}
-    skipped_invalid = 0
-    for placemark in fdt_placemarks:
-        suffix = extract_fdt_suffix_number(placemark.name)
-        pipeline_log(pipeline_logger, "INFO", f"Found FDT placemark: {placemark.name}")
-        if suffix is None:
-            skipped_invalid += 1
-            issues.append(
-                HpdbIssue(
-                    status="Warning",
-                    source_folder="FDT",
-                    parent_line_fdt="FDT unknown",
-                    item=placemark.name or "FDT",
-                    message=f"FDT suffix could not be extracted from placemark {placemark.name or '-'}",
-                )
-            )
-            continue
-        pipeline_log(pipeline_logger, "INFO", f"Extracted FDT suffix: {suffix:03d}")
-        grouped.setdefault(suffix, []).append(placemark)
-
-    if grouped:
-        pipeline_log(pipeline_logger, "INFO", "Sorting FDT placemarks by numeric suffix")
-
     fdt_map: dict[int, HpdbFdt] = {}
     skipped_over_max = 0
-    for fdt_number, suffix in enumerate(sorted(grouped), start=1):
-        placemark = grouped[suffix][0]
+
+    for fdt_number, placemark in enumerate(fdt_placemarks, start=1):
+        fdt_code = normalize_fdt_code(placemark.name)
+        suffix = extract_fdt_suffix_number(placemark.name)
+        pipeline_log(pipeline_logger, "INFO", f"Found FDT placemark: {placemark.name}")
+
         if fdt_number > HPDB_MAX_FDT:
-            skipped_over_max += len(grouped[suffix])
+            skipped_over_max += 1
             issues.append(
                 HpdbIssue(
                     status="Warning",
                     source_folder="FDT",
                     parent_line_fdt=f"FDT {fdt_number}",
-                    item=placemark.name or f"FDT suffix {suffix}",
+                    item=placemark.name or "FDT",
                     fdt=fdt_number,
+                    fdt_code=fdt_code,
                     message=f"FDT number exceeds maximum HPDB support: {HPDB_MAX_FDT}",
                 )
             )
             pipeline_log(pipeline_logger, "WARNING", f"FDT number exceeds maximum HPDB support: {HPDB_MAX_FDT}")
             continue
 
-        fdt_code = normalize_fdt_code(placemark.name)
         fdt_map[fdt_number] = HpdbFdt(
             fdt_number=fdt_number,
             name=placemark.name,
@@ -813,20 +801,7 @@ def assign_fdt_number_by_sorted_suffix(fdt_placemarks: Sequence[HpdbPlacemark], 
         )
         pipeline_log(pipeline_logger, "INFO", f"Assigned {placemark.name} as FDT {fdt_number}")
 
-        if len(grouped[suffix]) > 1:
-            issues.append(
-                HpdbIssue(
-                    status="Warning",
-                    source_folder="FDT",
-                    parent_line_fdt=f"FDT {fdt_number}",
-                    item=placemark.name or f"FDT suffix {suffix}",
-                    fdt=fdt_number,
-                    fdt_code=fdt_code,
-                    message=f"Duplicate FDT suffix detected for FDT {fdt_number}",
-                )
-            )
-
-    return fdt_map, len(grouped) + skipped_invalid, skipped_over_max, issues
+    return fdt_map, len(fdt_placemarks), skipped_over_max, issues
 
 
 def parse_fdt_folder(placemarks: Sequence[HpdbPlacemark], pipeline_logger=None) -> tuple[dict[int, HpdbFdt], int, int, list[HpdbIssue]]:

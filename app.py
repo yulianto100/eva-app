@@ -582,6 +582,7 @@ def astri_match_payload(row: dict | None, cluster_name: str) -> dict:
         "work_order_number": row.get("Number", ""),
         "pr_number": row.get("PR Number", row.get("Purchase Requisition Number", "")),
         "vendor_label": row.get("Assigned Vendor Label", ""),
+        "assigned_vendor_name": row.get("Assigned Vendor Name", ""),
         "vendor_name": row.get("Assigned Vendor Name", ""),
         "area": area,
         "area_name": area,
@@ -596,6 +597,7 @@ def astri_cluster_match_payload_v3(row: dict, query: str = "") -> dict:
     name = row.get("target_cluster_name", "") or row.get("name", "")
     wo = row.get("number", "")
     vendor = row.get("assigned_vendor_label", "")
+    assigned_vendor = row.get("assigned_vendor_name", "")
     area = row.get("target_cluster_area", "")
     return {
         "matched": True,
@@ -607,7 +609,8 @@ def astri_cluster_match_payload_v3(row: dict, query: str = "") -> dict:
         "work_order_number": wo,
         "pr_number": row.get("purchase_requisition_number", ""),
         "vendor_label": vendor,
-        "vendor_name": row.get("assigned_vendor_name", "") or vendor,
+        "assigned_vendor_name": assigned_vendor,
+        "vendor_name": assigned_vendor or vendor,
         "area": area,
         "area_name": area,
         "province": province_for_city(area),
@@ -705,6 +708,7 @@ def astri_subfeeder_match_payload(row: dict, query: str = "") -> dict:
     name = row.get("target_subfeeder_name", "")
     wo = row.get("number", "")
     vendor = row.get("assigned_vendor_label", "")
+    assigned_vendor = row.get("assigned_vendor_name", "")
     return {
         "matched": True,
         "target_type": "subfeeder",
@@ -716,7 +720,8 @@ def astri_subfeeder_match_payload(row: dict, query: str = "") -> dict:
         "work_order_number": wo,
         "pr_number": row.get("target_subfeeder_purchase_requisition_number", "") or row.get("purchase_requisition_number", ""),
         "vendor_label": vendor,
-        "vendor_name": vendor,
+        "assigned_vendor_name": assigned_vendor,
+        "vendor_name": assigned_vendor or vendor,
         "area": row.get("target_subfeeder_area", ""),
         "area_plant_code": row.get("target_subfeeder_area_plant_code", ""),
         "homepass": row.get("target_subfeeder_drm_homepass", ""),
@@ -850,6 +855,7 @@ def astri_feeder_match_payload(row: dict, query: str = "") -> dict:
         "vendor_label",
         "vendor_name",
     )
+    assigned_vendor = _feeder_row_value(row, "assigned_vendor_name", "vendor_name")
     area = _feeder_row_value(
         row,
         "target_osp_route_area",
@@ -876,7 +882,8 @@ def astri_feeder_match_payload(row: dict, query: str = "") -> dict:
             "pr_number",
         ),
         "vendor_label": vendor,
-        "vendor_name": vendor,
+        "assigned_vendor_name": assigned_vendor,
+        "vendor_name": assigned_vendor or vendor,
         "area": area,
         "homepass": "",
         "route_length": _feeder_row_value(
@@ -1533,10 +1540,15 @@ def astri_create_boq_link(record: dict, match: dict) -> dict:
     if not code:
         return {"enabled": False, "error": "Kode ASTRI kosong."}
 
-    vendor = str(match.get("vendor_label") or match.get("assigned_vendor_name") or match.get("vendor_name") or "").strip()
-    # ASTRI insert endpoint requires vendor slug, e.g. indo_tunas_makmur;
-    # display name "Indo Tunas Makmur" makes ASTRI return internal for every BOQ row.
-    vendor = re.sub(r"[^a-z0-9]+", "_", vendor.lower()).strip("_")
+    assigned_vendor = str(match.get("assigned_vendor_name") or "").strip()
+    if assigned_vendor:
+        # ASTRI's assigned_vendor_name is an exact key. Preserve significant
+        # trailing underscores, e.g. buana_menara_indonesia_.
+        vendor = assigned_vendor
+    else:
+        vendor = str(match.get("vendor_name") or match.get("vendor_label") or "").strip()
+        # Display labels need slug normalization only as a fallback.
+        vendor = re.sub(r"[^a-z0-9]+", "_", vendor.lower()).strip("_")
     wo = str(match.get("work_order_number") or match.get("wo") or "").strip()
     area = str(match.get("area") or match.get("cluster_area") or match.get("osp_route_area") or "").strip()
     plant = get_astri_plant_code(
@@ -1632,39 +1644,11 @@ def fetch_astri_subfeeder_requirement_page(record: dict, match: dict) -> str:
     return response.text
 
 def astri_create_feeder_boq_link(record: dict, match: dict) -> dict:
-    response = record["session"].get(
-        f"{ASTRI_BASE_URL}/material/feeder/drm/list/v3",
-        params={"limit": -1},
-        timeout=120,
-    )
-    response.raise_for_status()
-    pattern = r'<a[^>]+/material/feeder/boq-drm/insert[^>]*' + re.escape(match["cluster_code"]) + r'[^>]*>.*?</a>'
-    found = re.search(pattern, response.text, flags=re.I | re.S)
-    if not found:
-        return {"enabled": False, "error": "Create BOQ feeder link tidak ditemukan di ASTRI."}
-    tag = found.group(0)
-    href_match = re.search(r'href=("|\')([^"\']+)\1', tag, flags=re.I)
-    href = html.unescape(href_match.group(2)) if href_match else ""
-    enabled = "disabled" not in tag.lower()
-    return {"enabled": enabled, "href": href, "url": f"{ASTRI_BASE_URL}{href}" if href.startswith("/") else href}
+    return astri_create_boq_link(record, {**match, "scope": "feeder"})
 
 
 def astri_create_subfeeder_boq_link(record: dict, match: dict) -> dict:
-    code = match.get("cluster_code", "")
-    vendor = match.get("vendor_label", match.get("assigned_vendor_name", "")).lower().replace(" ", "_")
-    area = match.get("area", "")
-    won = match.get("work_order_number", "")
-    plant = match.get("area_plant_code", match.get("cluster_area_plant_code", ""))
-    parts = [
-        f"cluster_code={code}",
-        f"assigned_vendor_name={vendor}",
-        f"cluster_area={area}",
-        f"work_order_number={won}",
-        f"assigned_subcont_vendor_name=",
-        f"cluster_area_plant_code={plant}",
-    ]
-    href = f"/material/subfeeder/boq-drm/insert?{'&'.join(parts)}"
-    return {"enabled": True, "href": href, "url": f"{ASTRI_BASE_URL}{href}", "error": ""}
+    return astri_create_boq_link(record, {**match, "scope": "subfeeder"})
 
 def preview_eva_boq_file(path: Path) -> list[dict]:
     from openpyxl import load_workbook
@@ -1800,6 +1784,103 @@ def _idr(value: str) -> str:
         return str(value or "").strip()
     return f"{n:,}".replace(",", ".")
 
+
+
+def _numlike(value) -> float:
+    try:
+        txt = str(value or "").replace(".", "").replace(",", ".").strip()
+        return float(txt) if txt else 0.0
+    except Exception:
+        return 0.0
+
+
+def _boq_item_qty(item: dict) -> float:
+    return _numlike(item.get("quantity_material") or item.get("qty_material") or item.get("material_qty") or item.get("material")) + _numlike(item.get("quantity_service") or item.get("qty_service") or item.get("service_qty") or item.get("service"))
+
+
+def _boq_item_code(item: dict) -> str:
+    return re.sub(r"\D+", "", str(item.get("material_number") or item.get("code") or item.get("material_code") or ""))
+
+
+def _is_internal_supplier_value(value) -> bool:
+    return "internal" in str(value or "").strip().lower().replace("_", " ")
+
+
+
+def _astri_form_supplier_map_from_parse_data(parse_data: list[tuple[str, str]]) -> dict[str, str]:
+    suppliers: dict[str, str] = {}
+    for name, value in parse_data or []:
+        m = re.match(r"boq\[(\d+)\]\[vendor_name\]", str(name or ""))
+        if m and str(value or "").strip():
+            suppliers[m.group(1)] = str(value or "").strip()
+    return suppliers
+
+
+def eva_ai_autofix_boq_payload(parsed_items: list[dict], parse_data: list[tuple[str, str]], permit_rt_rw: str = "", vendor_from_url: str = "") -> dict:
+    """Fast EVA-AI/autofix layer for common Add BOQ regressions.
+    It uses live ASTRI form data first, deterministic fixes second; no ASTRI submit here.
+    """
+    supplier_map = _astri_form_supplier_map_from_parse_data(parse_data)
+    fixes=[]
+    fixed=[]
+    for item in parsed_items or []:
+        data=dict(item)
+        code=_boq_item_code(data)
+        if code and not str(data.get('vendor_name') or '').strip():
+            supplier=supplier_map.get(code) or vendor_from_url
+            if supplier:
+                data['vendor_name']=supplier
+                fixes.append(f"supplier_fix:{code}->{supplier}")
+        desc=str(data.get('description', data.get('short_text',''))).upper()
+        if permit_rt_rw and permit_rt_rw.strip() not in {'', '0', '0,00', '0.00'}:
+            if code == '500002155' or 'RT/RW' in desc or 'COMMUNITY PERMIT' in desc:
+                data['quantity_service']='1'
+                data['quantity_material']=''
+                data['override_price_service']=str(permit_rt_rw)
+                fixes.append(f"permit_fix:{code or desc[:20]}->{permit_rt_rw}")
+        fixed.append(data)
+    return {'items': fixed, 'fixes': fixes, 'supplier_map_count': len(supplier_map)}
+
+def astri_boq_qa_gate(*, input_items: list[dict], parsed_items: list[dict], pr_description: str, permit_rt_rw: str, vendor_from_url: str = "") -> dict:
+    """Deterministic Add BOQ safety gate. EVA-AI may explain anomalies later,
+    but this gate blocks known regressions before ASTRI submit."""
+    issues=[]; warnings=[]
+    src=[i for i in (input_items or []) if _boq_item_qty(i)>0]
+    parsed=[i for i in (parsed_items or []) if _boq_item_qty(i)>0 or "500002155" in _boq_item_code(i) or "RT/RW" in str(i.get("description","")).upper()]
+    if src and len(parsed) < max(1, int(len(src)*0.85)):
+        warnings.append(f"Parsed BOQ lebih sedikit: source {len(src)} row, ASTRI parsed {len(parsed)} row. Periksa merge material/service sebelum submit.")
+    if len(parsed)==0:
+        issues.append("ASTRI parse menghasilkan 0 item; submit diblokir supaya material BOQ tidak hilang.")
+    missing_vendor=[]
+    internal_desc=[]
+    permit_seen=False
+    for it in parsed:
+        code=_boq_item_code(it)
+        desc=str(it.get("description") or it.get("short_text") or "")
+        vendor=str(it.get("vendor_name") or it.get("supplier") or "").strip()
+        if not vendor and not vendor_from_url:
+            missing_vendor.append(code or desc[:40] or "UNKNOWN")
+        if _is_internal_supplier_value(vendor):
+            internal_desc.append(desc.strip() or code or "Internal item")
+        if code=="500002155" or "RT/RW" in desc.upper() or "COMMUNITY PERMIT" in desc.upper():
+            permit_seen=True
+            if permit_rt_rw and permit_rt_rw.strip() not in {"", "0", "0,00", "0.00"}:
+                if _numlike(it.get("quantity_service")) != 1:
+                    issues.append("Permit RT/RW ada nominal tapi quantity_service bukan 1.")
+                if _numlike(it.get("override_price_service")) <= 0:
+                    issues.append("Permit RT/RW ada nominal tapi override_price_service kosong/0.")
+    if missing_vendor:
+        issues.append("Supplier kosong untuk item: " + ", ".join(missing_vendor[:8]))
+    if permit_rt_rw and permit_rt_rw.strip() not in {"", "0", "0,00", "0.00"} and not permit_seen:
+        warnings.append("permit_rt_rw dikirim tapi item permit RT/RW tidak ditemukan di parsed BOQ.")
+    desc=(pr_description or "").strip()
+    if internal_desc and "Exclude" not in desc:
+        issues.append("PR Description salah: ada supplier internal tapi tidak memakai Exclude list.")
+    if not internal_desc and "All Material Provide By Vendor" not in desc:
+        warnings.append("PR Description tidak berisi 'All Material Provide By Vendor' padahal tidak ada supplier internal.")
+    if re.search(r"\b2(?:60|65|\.65)\s*%", desc) and "2.65%" not in desc:
+        issues.append("PPh/permit description terdeteksi janggal; pastikan display 2.65%, bukan 265%.")
+    return {"ok": not issues, "issues": issues, "warnings": warnings, "source_rows": len(src), "parsed_rows": len(parsed)}
 
 def build_auto_pr_description(scope: str, match: dict, items: list[dict], permit_rt_rw: str = "", pph_pct: float = 0.0, donation_nominal: str = "", donation_vendor: str = "") -> str:
     scope = (scope or "cluster").lower()
@@ -2720,7 +2801,9 @@ def submit_astri_boq_items(record: dict, create_boq: dict, items: list[dict], pr
         code = str(item.get("code", "")).strip()
         if not code:
             continue
-        is_service = code.startswith("5")
+        # BOQ spreadsheet columns are authoritative: D=material, E=service.
+        # SAP material-number prefixes are not a material/service classifier.
+        is_service = bool(item.get("service_qty")) and not bool(item.get("material_qty"))
         parse_data.append((f"boq[{code}][quantity_material]", str(item.get("material_qty", "") or "")))
         parse_data.append((f"boq[{code}][quantity_service]", str(item.get("service_qty", "") or "")))
         parse_data.append((f"boq[{code}][equipment_name]", code))
@@ -2760,6 +2843,16 @@ def _submit_astri_parsed(record: dict, parse_data: list, items: list[dict], pr_d
     parse_response.raise_for_status()
     parsed_items = parse_response.json()
     LOGGER.warning("Parsed %d items: %s", len(parsed_items), parsed_items[0] if parsed_items else "none")
+    autofix = eva_ai_autofix_boq_payload(parsed_items, parse_data, permit_rt_rw=permit_rt_rw, vendor_from_url=vendor_from_url)
+    parsed_items = autofix.get("items") or parsed_items
+    if autofix.get("fixes"):
+        LOGGER.warning("EVA-AI BOQ autofix applied: %s", autofix)
+    qa = astri_boq_qa_gate(input_items=items, parsed_items=parsed_items, pr_description=pr_description, permit_rt_rw=permit_rt_rw, vendor_from_url=vendor_from_url)
+    if not qa.get("ok"):
+        LOGGER.error("ASTRI BOQ QA blocked submit: %s", qa)
+        return {"success": False, "blocked_by_eva_ai_qa": True, "error": "EVA-AI QA: BOQ submit diblokir karena payload berisiko.", "qa": qa, "inserted": []}
+    if qa.get("warnings"):
+        LOGGER.warning("ASTRI BOQ QA warnings: %s", qa)
     url_prefix = "subfeeder/" if is_subfeeder else ("feeder/" if is_feeder else "")
     insert_url = f"{ASTRI_BASE_URL}/process/material/{url_prefix}boq-drm/insert/v2"
     pd = dict(parse_data)
@@ -3192,16 +3285,34 @@ def api_astri_boq_supplier_map_nojob():
         scope = (request.args.get("scope", "").strip() or "cluster").lower()
         feeder_code = request.args.get("feeder_code", "").strip()
         cluster_code = request.args.get("cluster_code", "").strip()
+        if scope == "feeder":
+            area = request.args.get("osp_route_area", "").strip()
+            plant = request.args.get("osp_route_area_plant_code", "").strip()
+            vendor = request.args.get("assigned_vendor_name", "").strip()
+        elif scope == "subfeeder":
+            area = request.args.get("cluster_area", "").strip()
+            plant = request.args.get("cluster_area_plant_code", "").strip()
+            vendor = request.args.get("assigned_vendor_name", "").strip()
+        else:
+            area = request.args.get("area", "").strip()
+            plant = request.args.get("area_plant_code", "").strip()
+            vendor = request.args.get("assigned_vendor_name", "").strip()
+            vendor_label = request.args.get("vendor_label", "").strip()
         match = {
             "matched": True,
             "scope": scope,
             "cluster_code": cluster_code or feeder_code,
             "feeder_code": feeder_code or cluster_code,
             "work_order_number": request.args.get("work_order_number", "").strip(),
-            "vendor_label": request.args.get("vendor_label", "").strip(),
+            "vendor_label": vendor_label if scope == "cluster" else vendor,
+            "assigned_vendor_name": vendor,
             "cluster_name": request.args.get("cluster_name", "").strip(),
-            "area": request.args.get("area", "").strip(),
-            "area_plant_code": request.args.get("area_plant_code", "").strip(),
+            "area": area,
+            "cluster_area": area if scope != "feeder" else "",
+            "osp_route_area": area if scope == "feeder" else "",
+            "area_plant_code": plant,
+            "cluster_area_plant_code": plant if scope != "feeder" else "",
+            "osp_route_area_plant_code": plant if scope == "feeder" else "",
         }
         if not match["cluster_code"] and not match["feeder_code"]:
             return jsonify({"error": "cluster_code/feeder_code kosong."}), 400
@@ -8227,7 +8338,8 @@ def _apply_admin_overrides(base: dict, form: dict) -> dict:
     out = dict(base or {})
     aliases = {"subdistrict": "sub_district", "postalcode": "postal_code", "Area": "area_name"}
     for key in ("province", "city", "regency_city", "district", "subdistrict", "sub_district", "postal_code", "postalcode", "area_name", "Area"):
-        value = str(form.get(key, "")).strip()
+        values = form.getlist(key) if hasattr(form, "getlist") else [form.get(key, "")]
+        value = next((str(item).strip() for item in reversed(values) if str(item).strip()), "")
         if not value:
             continue
         target = aliases.get(key, key)

@@ -376,7 +376,7 @@ function updateGenerateResultPanel(){
   const lines=[];
   // FDT names + codes
   for(let i=0;i<total;i++){
-    const fdtLabel=`${siteName||'CLUSTER'} - FDT ${i+1}`;
+    const fdtLabel=total===1 ? (siteName||'CLUSTER') : `${siteName||'CLUSTER'} - FDT ${i+1}`;
     const fdtCode=codes[i]||`${clusterInitial}.${String(i+1).padStart(3,'0')}`;
     lines.push(fdtLabel);
     lines.push(fdtCode);
@@ -396,7 +396,8 @@ function updateGenerateResultPanel(){
   // OLT info
   if(oltLabel){
     lines.push('');
-    lines.push(`OLT ${oltLabel}`);
+    const normalizedOltLabel=`OLT ${oltLabel.replace(/^(?:OLT\s*)+/i,'').trim()}`;
+    lines.push(normalizedOltLabel);
   }
   // Homepass ID
   if(hubId){
