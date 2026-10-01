@@ -1,0 +1,5 @@
+{
+  "converter_sha256": "70b325b48a53d9aef42714319938bc70ae11f75ff75a111f1ba5aa9028b75c63",
+  "production_host": "eva-new",
+  "purpose": "Verified preimage only; no runtime state or credentials"
+}
