@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EVA Admin Login</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#020617;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;padding:16px}.card{width:100%;max-width:380px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.35)}h1{margin:0 0 6px;font-size:22px}.muted{color:#cbd5e1;font-size:13px;margin:0 0 20px}.err{background:rgba(239,68,68,.22);color:#fecaca;padding:10px 12px;border-radius:10px;font-size:14px;margin-bottom:14px}label{display:block;font-size:14px;margin:0 0 8px}input{box-sizing:border-box;width:100%;border:0;border-radius:12px;padding:12px 14px;font-size:15px}button{width:100%;margin-top:18px;border:0;border-radius:12px;background:#10b981;color:#020617;padding:12px 14px;font-weight:800;cursor:pointer}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+</head>
+<body>
+  <form method="post" class="card">
+    <h1>EVA Admin</h1>
+    <p class="muted">{{ request.host }}</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <label>Password</label>
+    <input name="password" type="password" autofocus required>
+    <button>Login</button>
+  </form>
+</body>
+</html>

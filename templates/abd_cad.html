@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ABD CAD · EVA by DYENA</title>
+  <style>
+    :root { font: 14px/1.5 system-ui, sans-serif; color: #263a34; background: #f4f8f6; --line: #dce7e1; --muted: #60746b; --green: #087456; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    body.embedded { height: 100dvh; overflow: hidden; }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--line); background: #fff; }
+    a { color: var(--green); }
+    main { max-width: 1000px; margin: auto; }
+    .embedded main { height: 100%; display: flex; flex-direction: column; }
+    h1 { margin: 20px 24px 0; font-size: 22px; }
+    h2, p { margin: 0; }
+    button, input, select { font: inherit; }
+    button { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; background: #fff; color: #294c3f; font-weight: 600; cursor: pointer; }
+    button:hover:not(:disabled) { border-color: #88b9a2; background: #f0f8f3; }
+    button:disabled { color: #77867e; background: #edf2ef; cursor: not-allowed; }
+    button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid #49a984; outline-offset: 2px; }
+    input, select { width: 100%; min-width: 0; height: 44px; border: 1px solid #cbdad2; border-radius: 7px; padding: 8px 11px; color: #253c31; background: #fff; }
+    input[type="number"] { font-variant-numeric: tabular-nums; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px 16px; }
+    .toolbar h2 { font-size: 16px; font-weight: 650; }
+    .toolbar p { margin-top: 3px; font-size: 13px; color: var(--muted); }
+    #fdtCount { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
+    #addFdt { white-space: nowrap; }
+    form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    .workspace { flex: 1; min-height: 0; overflow: auto; padding: 0 24px 20px; scrollbar-gutter: stable; }
+    #fdtFields { display: grid; gap: 16px; }
+    .fdt-row { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .fdt-heading { display: flex; align-items: flex-end; gap: 16px; padding: 16px 18px; background: #f8fbf9; border-bottom: 1px solid var(--line); }
+    .fdt-name { display: grid; gap: 6px; min-width: 0; flex: 1; max-width: 300px; font-weight: 600; font-size: 12px; }
+    .fdt-name input { font: 600 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .2px; background: #fff; }
+    .fdt-summary { margin-left: auto; align-self: flex-end; padding-bottom: 12px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .remove-fdt svg { display: none; }
+    .toggle-fdt[aria-expanded="false"] svg { transform: rotate(180deg); }
+    .fdt-row:has(.fdt-body[hidden]) .fdt-heading { border-bottom: 0; }
+    .remove-fdt { border-color: transparent; color: var(--muted); background: transparent; font-size: 12px; }
+    .line-head, .line-row { display: grid; grid-template-columns: 110px minmax(96px,1fr) minmax(140px,1.4fr) 44px; align-items: center; gap: 16px; }
+    .line-head { padding: 13px 18px 7px; font-size: 11px; font-weight: 650; letter-spacing: .7px; color: var(--muted); }
+    .line-row { margin: 0 18px; padding: 8px 0; border-bottom: 1px solid #eff3f0; }
+    .line-tag { font: 600 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; color: #285b45; letter-spacing: .5px; }
+    .icon-button { display: grid; place-items: center; width: 44px; min-width: 44px; padding: 0; border-color: transparent; color: #6d7e75; background: transparent; }
+    .icon-button svg { width: 17px; height: 17px; }
+    .line-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px; }
+    .add-line { border-color: transparent; color: var(--green); background: transparent; padding-left: 0; padding-right: 8px; font-size: 13px; }
+    .line-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    details { margin-top: 14px; color: var(--muted); font-size: 12px; }
+    summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 44px; font-weight: 600; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '+'; font-size: 16px; width: 12px; }
+    details[open] summary::before { content: '−'; }
+    details p { padding: 0 0 8px 20px; max-width: 680px; line-height: 1.7; }
+    .form-footer { flex-shrink: 0; border-top: 1px solid var(--line); background: #fff; padding: 14px 24px; }
+    .footer-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    #batchSummary { font-weight: 600; font-size: 13px; }
+    .output-hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .primary { background: var(--green); border-color: var(--green); color: #fff; min-width: 194px; }
+    .primary:hover:not(:disabled) { background: #066547; border-color: #066547; }
+    #generate { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 275px; height: 44px; white-space: nowrap; transition: background-color .18s ease, transform .18s ease; }
+    #generate:active:not(:disabled) { transform: translateY(1px); }
+    #generate[data-state="pending"]:disabled { background: var(--green); border-color: var(--green); color: #fff; cursor: progress; }
+    #generate[data-state="pending"]::before { content: ''; width: 14px; height: 14px; flex: none; border: 2px solid #ffffff70; border-top-color: #fff; border-radius: 50%; animation: abd-action-spin .9s linear infinite; }
+    #generate[data-state="success"] { background: #086647; border-color: #086647; }
+    #generate[data-state="error"] { background: #fff; border-color: #b98782; color: #803c35; }
+    @keyframes abd-action-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #generate { transition: none; } #generate[data-state="pending"]::before { animation: none; border-top-color: #fff; } }
+    #abdCadStatus:empty { display: none; }
+    #abdCadStatus { margin: 0 0 10px; font-size: 13px; }
+    #abdCadStatus[data-error="true"] { color: #963d36; }
+    [hidden] { display: none !important; }
+    @media (max-width: 520px) {
+      .toolbar { padding: 16px 14px 12px; gap: 10px; }
+      .toolbar h2 { font-size: 15px; }
+      .toolbar p { max-width: 190px; font-size: 12px; }
+      #fdtCount { display: block; margin-left: 0; margin-top: 2px; }
+      #addFdt { padding: 9px 11px; font-size: 12px; }
+      .workspace { padding: 0 12px 14px; scrollbar-gutter: auto; }
+      .fdt-heading { padding: 12px; gap: 8px; display: grid; grid-template-columns: minmax(0,1fr) 44px 44px; }
+      .fdt-summary { grid-row: 2; grid-column: 1 / -1; margin: 0; padding: 0; font-size: 11px; }
+      .remove-fdt span { display: none; }
+      .remove-fdt svg { display: block; width: 17px; height: 17px; }
+      .fdt-name { max-width: none; }
+      .remove-fdt { grid-row: 1; grid-column: 2; width: 44px; display: grid; place-items: center; padding: 0; }
+      .toggle-fdt { grid-row: 1; grid-column: 3; }
+      .line-head, .line-row { grid-template-columns: 44px minmax(56px,1fr) minmax(82px,1.5fr) 44px; gap: 7px; }
+      .line-head { padding: 12px 12px 4px; font-size: 10px; letter-spacing: .3px; }
+      .line-row { margin: 0 12px; padding: 6px 0; }
+      .line-tag { font-size: 11px; letter-spacing: 0; }
+      .line-row input, .line-row select { font-size: 14px; padding-left: 7px; padding-right: 4px; }
+      .line-footer { padding: 6px 12px; }
+      .form-footer { padding: 12px 14px; }
+      .footer-actions { flex-wrap: wrap; gap: 10px; }
+      .footer-actions > div { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .output-hint { margin: 0; font-size: 11px; }
+      .primary { width: 100%; }
+      #generate { width: 100%; }
+    }
+  </style>
+  <script src="{{ url_for('static', filename='js/abd-cad.js') }}?v=abd-total-fat-20260927-v1" defer></script>
+</head>
+{% set embedded = request.args.get('embedded') == '1' %}
+<body{% if embedded %} class="embedded"{% endif %}>
+  {% if not embedded %}<header><a href="/">← EVA by DYENA</a></header>{% endif %}
+  <main>
+    {% if not embedded %}<h1>ABD CAD</h1>{% endif %}
+    <div class="toolbar">
+      <div><h2>Konfigurasi FDT <span id="fdtCount">1 dari 10 FDT</span></h2><p>Atur LINE, jumlah FAT, kapasitas kabel.</p></div>
+      <button id="addFdt" type="button">+ Tambah FDT</button>
+    </div>
+    <form id="abdCadForm" novalidate>
+      <div class="workspace">
+        <div id="fdtFields"></div>
+        <details>
+          <summary>Batas &amp; mapping</summary>
+          <p>Maksimal 10 FDT, masing-masing 1–5 LINE (A–E). Maksimal FAT per LINE: 12 core = 5, 24 core = 10, 36 core = 15, 48 core = 20. Total 1–36 FAT per FDT.</p>
+          <p>Penomoran G/output berlanjut dari LINE A hingga E. Aturan core/tube sama untuk semua LINE.</p>
+        </details>
+      </div>
+      <footer class="form-footer">
+        <p id="abdCadStatus" aria-live="polite" role="status"></p>
+        <div class="footer-actions">
+          <div><p id="batchSummary">1 FDT · 2 LINE</p><p class="output-hint">1 DWG + 1 Excel · sheet per FDT</p></div>
+          <button id="generate" class="primary" type="submit" aria-describedby="batchSummary">Buat DWG + Excel</button>
+        </div>
+      </footer>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ecfdf5">
+  <title>Panduan Operasional EVA</title>
+  <style>
+    :root {
+      --ink: #10231d;
+      --muted: #557066;
+      --line: #cde7db;
+      --canvas: #ecfdf5;
+      --paper: #ffffff;
+      --soft: #f6fffa;
+      --brand: #08795b;
+      --brand-dark: #04533e;
+      --brand-soft: #d9f8e9;
+      --amber: #9a5b00;
+      --amber-soft: #fff5d9;
+      --blue: #175b91;
+      --blue-soft: #eaf5ff;
+      --red: #9f2330;
+      --red-soft: #fff0f1;
+      --shadow: 0 18px 48px rgba(10, 88, 63, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: radial-gradient(circle at 100% 0, #d9f8e9 0, transparent 29rem), var(--canvas);
+      font: 15px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--brand-dark); font-weight: 750; text-underline-offset: 3px; }
+    a:hover { color: var(--brand); }
+    code, kbd {
+      font: 700 .86em/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #145940;
+      background: #e8f8ef;
+      border: 1px solid #ccebd9;
+      border-radius: 6px;
+      padding: .12rem .34rem;
+    }
+    kbd { color: #315246; background: #f7fffa; box-shadow: 0 1px 0 #bdd9ca; }
+    :focus-visible { outline: 3px solid #52c594; outline-offset: 3px; }
+
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+    .site-head {
+      border-bottom: 1px solid rgba(118, 176, 148, .36);
+      background: rgba(255, 255, 255, .78);
+      backdrop-filter: blur(15px);
+    }
+    .site-head__row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 70px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
+    .brand-mark {
+      display: grid; place-items: center; width: 37px; height: 37px; border: 1px solid #a7dfc4;
+      border-radius: 12px; color: var(--brand-dark); background: linear-gradient(145deg, #f8fffb, #d4f7e3);
+      box-shadow: inset 0 1px 0 #fff;
+      font-size: 12px; font-weight: 900; letter-spacing: -.08em;
+    }
+    .brand-copy strong { display: block; font-size: 14px; line-height: 1.1; letter-spacing: -.02em; }
+    .brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .back-link { display: inline-flex; align-items: center; min-height: 38px; padding: 0 13px; border: 1px solid #b8ddcb; border-radius: 11px; background: #fff; text-decoration: none; font-size: 13px; }
+
+    .hero { padding: 45px 0 28px; }
+    .eyebrow { margin: 0 0 10px; color: var(--brand); font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, h3 { margin: 0; color: var(--ink); line-height: 1.18; letter-spacing: -.035em; }
+    h1 { max-width: 800px; font-size: clamp(31px, 6vw, 54px); }
+    h2 { font-size: clamp(22px, 3vw, 30px); }
+    h3 { font-size: 16px; }
+    .hero__lead { max-width: 760px; margin: 15px 0 0; color: #345448; font-size: clamp(16px, 2vw, 19px); }
+    .hero__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 15px; border: 1px solid #0b7f5d; border-radius: 12px; background: var(--brand); color: #fff; text-decoration: none; font-size: 13px; font-weight: 850; }
+    .button:hover { color: #fff; background: var(--brand-dark); }
+    .button--quiet { border-color: #b8ddcb; background: rgba(255,255,255,.88); color: var(--brand-dark); }
+    .button--quiet:hover { color: var(--brand-dark); background: #f5fff9; }
+
+    .quick-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--line); box-shadow: var(--shadow); }
+    .quick-item { min-height: 103px; padding: 17px; background: rgba(255,255,255,.91); }
+    .quick-item b { display: grid; place-items: center; width: 25px; height: 25px; margin-bottom: 9px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-dark); font-size: 12px; }
+    .quick-item strong { display: block; font-size: 13px; }
+    .quick-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+    .docs-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 28px; padding: 36px 0 64px; }
+    .toc { align-self: start; position: sticky; top: 18px; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
+    .toc strong { display: block; margin: 1px 9px 8px; color: var(--muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+    .toc a { display: block; padding: 7px 9px; border-radius: 8px; color: #416256; text-decoration: none; font-size: 13px; font-weight: 700; }
+    .toc a:hover { color: var(--brand-dark); background: var(--brand-soft); }
+    .docs { min-width: 0; }
+    .doc-section { scroll-margin-top: 22px; padding: 29px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,.91); box-shadow: 0 8px 28px rgba(10,88,63,.055); }
+    .doc-section + .doc-section { margin-top: 20px; }
+    .section-head { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; }
+    .section-number { display: grid; flex: 0 0 auto; place-items: center; width: 31px; height: 31px; border: 1px solid #9ad7bb; border-radius: 10px; background: var(--brand-soft); color: var(--brand-dark); font-size: 12px; font-weight: 900; }
+    .section-head p { margin: 6px 0 0; color: var(--muted); }
+    p { margin: 0 0 13px; }
+    ul, ol { margin: 12px 0; padding-left: 21px; }
+    li + li { margin-top: 6px; }
+    .steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .step { display: grid; grid-template-columns: 35px minmax(0, 1fr); gap: 12px; padding: 14px; border: 1px solid #d8ebe2; border-radius: 13px; background: var(--soft); }
+    .step__count { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; background: var(--brand); font-size: 12px; font-weight: 900; }
+    .step strong { display: block; margin-top: 1px; }
+    .step p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+    .note { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #b5e1ca; border-radius: 13px; background: #effcf4; color: #21563f; font-size: 13px; }
+    .note b { color: #0e6848; }
+    .note--amber { border-color: #efd69a; background: var(--amber-soft); color: #705006; }
+    .note--amber b { color: #875400; }
+    .note--blue { border-color: #bddcf1; background: var(--blue-soft); color: #265a80; }
+    .note--red { border-color: #f0c2c7; background: var(--red-soft); color: #7e2430; }
+    .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+    .mini-card { padding: 16px; border: 1px solid #d9ebe2; border-radius: 14px; background: #fbfffc; }
+    .mini-card h3 { margin-bottom: 7px; }
+    .mini-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .chip { display: inline-flex; align-items: center; min-height: 24px; margin: 2px 4px 2px 0; padding: 2px 8px; border: 1px solid #c5e8d5; border-radius: 999px; background: #f4fff8; color: #216648; font-size: 11px; font-weight: 800; }
+    .table-wrap { overflow-x: auto; border: 1px solid #d6e9df; border-radius: 13px; }
+    table { width: 100%; min-width: 610px; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 13px; border-bottom: 1px solid #deeee6; text-align: left; vertical-align: top; }
+    th { color: #426458; background: #f3fcf7; font-size: 11px; letter-spacing: .055em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td p:last-child { margin-bottom: 0; }
+    .folder-list { columns: 2; gap: 18px; margin: 10px 0 0; padding: 0; list-style: none; }
+    .folder-list li { break-inside: avoid; margin: 0 0 6px; }
+    details { overflow: hidden; border: 1px solid #d6e9df; border-radius: 13px; background: #fcfffd; }
+    details + details { margin-top: 10px; }
+    summary { position: relative; padding: 14px 42px 14px 15px; cursor: pointer; color: #173d2d; font-size: 14px; font-weight: 850; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { position: absolute; top: 12px; right: 15px; content: "+"; color: var(--brand); font-size: 21px; font-weight: 500; }
+    details[open] summary { border-bottom: 1px solid #d6e9df; background: #f3fcf7; }
+    details[open] summary::after { content: "−"; }
+    .details-body { padding: 15px; color: #46675b; font-size: 13px; }
+    .details-body > :last-child { margin-bottom: 0; }
+    .module-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 11px; }
+    .module { padding: 15px; border: 1px solid #d6e9df; border-radius: 13px; background: var(--soft); }
+    .module strong { display: block; color: #175138; }
+    .module span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .faq { margin: 0; padding: 0; list-style: none; }
+    .faq li { padding: 13px 0; border-bottom: 1px solid #e0eee7; }
+    .faq li:last-child { border: 0; padding-bottom: 0; }
+    .faq b { display: block; color: #193f2f; }
+    .faq span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .glossary { display: grid; grid-template-columns: 145px minmax(0,1fr); gap: 0; margin: 0; border: 1px solid #d6e9df; border-radius: 13px; overflow: hidden; }
+    .glossary dt, .glossary dd { margin: 0; padding: 11px 13px; border-bottom: 1px solid #dceee5; }
+    .glossary dt { background: #f4fcf8; color: #276148; font-weight: 850; }
+    .glossary dd { color: var(--muted); }
+    .glossary dt:last-of-type, .glossary dd:last-child { border-bottom: 0; }
+    .foot { padding: 0 0 40px; color: #587467; font-size: 12px; }
+
+    @media (max-width: 850px) {
+      .quick-strip { grid-template-columns: repeat(2, 1fr); }
+      .docs-layout { grid-template-columns: 1fr; gap: 18px; padding-top: 23px; }
+      .toc { position: static; display: flex; gap: 6px; overflow-x: auto; padding: 8px; white-space: nowrap; }
+      .toc strong { display: none; }
+      .toc a { flex: 0 0 auto; padding: 7px 10px; background: #f7fffa; }
+    }
+    @media (max-width: 580px) {
+      body { font-size: 14px; }
+      .shell { width: min(100% - 24px, 1180px); }
+      .site-head__row { min-height: 62px; }
+      .brand-copy span { display: none; }
+      .back-link { min-height: 34px; padding: 0 10px; font-size: 12px; }
+      .hero { padding: 32px 0 22px; }
+      .quick-item { min-height: 92px; padding: 13px; }
+      .doc-section { padding: 20px 16px; border-radius: 17px; }
+      .section-head { gap: 10px; }
+      .two-col, .module-grid { grid-template-columns: 1fr; }
+      .folder-list { columns: 1; }
+      .glossary { grid-template-columns: 108px minmax(0,1fr); font-size: 12px; }
+      .glossary dt, .glossary dd { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-head">
+    <div class="shell site-head__row">
+      <a class="brand" href="/" aria-label="Kembali ke EVA">
+        <span class="brand-mark" aria-hidden="true">EVA</span>
+        <span class="brand-copy"><strong>Engineering Vector Automation</strong><span>Panduan operasional</span></span>
+      </a>
+      <a class="back-link" href="/">← Kembali ke EVA</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="shell hero" aria-labelledby="pageTitle">
+      <p class="eyebrow">Panduan pengguna · EVA</p>
+      <h1 id="pageTitle">Dari file desain sampai hasil siap pakai.</h1>
+      <p class="hero__lead">Gunakan panduan ini untuk menyiapkan KML/KMZ, memilih output, memantau konversi, memakai ASTRI, dan mengoperasikan modul pendukung EVA tanpa menebak-nebak alurnya.</p>
+      <div class="hero__actions">
+        <a class="button" href="#mulai">Mulai cepat</a>
+        <a class="button button--quiet" href="#astri">Panduan ASTRI</a>
+        <a class="button button--quiet" href="#masalah">Atasi masalah</a>
+      </div>
+    </section>
+
+    <section class="shell quick-strip" aria-label="Alur EVA ringkas">
+      <article class="quick-item"><b>1</b><strong>Unggah</strong><span>KML/KMZ desain. ROAD tidak diunggah manual.</span></article>
+      <article class="quick-item"><b>2</b><strong>Atur</strong><span>Pilih cakupan, AE/UG, dan output.</span></article>
+      <article class="quick-item"><b>3</b><strong>Proses</strong><span>Periksa checklist, lalu jalankan job.</span></article>
+      <article class="quick-item"><b>4</b><strong>Validasi</strong><span>Cek preview, log, hasil, lalu unduh.</span></article>
+    </section>
+
+    <div class="shell docs-layout">
+      <nav class="toc" aria-label="Daftar isi">
+        <strong>Daftar isi</strong>
+        <a href="#mulai">Mulai cepat</a>
+        <a href="#konversi">Konversi utama</a>
+        <a href="#sumber">File & folder</a>
+        <a href="#lokasi">Wilayah & ROAD</a>
+        <a href="#hasil">Hasil & validasi</a>
+        <a href="#astri">ASTRI</a>
+        <a href="#modul">Modul pendukung</a>
+        <a href="#masalah">Troubleshooting</a>
+        <a href="#istilah">Istilah</a>
+      </nav>
+
+      <div class="docs">
+        <section id="mulai" class="doc-section" aria-labelledby="mulaiTitle">
+          <div class="section-head">
+            <span class="section-number">01</span>
+            <div><h2 id="mulaiTitle">Mulai cepat</h2><p>Alur standar untuk satu file desain.</p></div>
+          </div>
+          <ol class="steps">
+            <li class="step"><span class="step__count">1</span><div><strong>Unggah file desain</strong><p>Pilih <code>.kml</code> atau <code>.kmz</code>. Unggah data desain saja; EVA mengambil data ROAD dari server OSM.</p></div></li>
+            <li class="step"><span class="step__count">2</span><div><strong>Pilih konfigurasi</strong><p>Tentukan cakupan <b>Cluster</b>, <b>Feeder</b>, atau <b>Subfeeder</b>; lalu tipe jaringan <b>AE</b> atau <b>UG</b> dan format output.</p></div></li>
+            <li class="step"><span class="step__count">3</span><div><strong>Pilih wilayah bila diminta</strong><p>Untuk DXF, HPDB, atau ASTRI, isi Provinsi sampai Postal Code pada popup <b>Pilih Wilayah</b>. Nilai ini ikut menjadi data administrasi output.</p></div></li>
+            <li class="step"><span class="step__count">4</span><div><strong>Jalankan proses</strong><p>Pastikan tombol <b>Mulai Proses</b> aktif. Baca alasan di bawah tombol jika masih terkunci, lalu jalankan satu job.</p></div></li>
+            <li class="step"><span class="step__count">5</span><div><strong>Periksa sebelum memakai hasil</strong><p>Cek Ringkasan Hasil, Preview, warning, dan log. Setelah sesuai, unduh output atau lanjutkan workflow ASTRI.</p></div></li>
+          </ol>
+          <p class="note"><b>Aturan kerja:</b> jangan membuat job kedua untuk file yang sama saat job pertama masih antre atau berjalan. Pantau dari <b>Monitor Aktivitas</b>.</p>
+        </section>
+
+        <section id="konversi" class="doc-section" aria-labelledby="konversiTitle">
+          <div class="section-head">
+            <span class="section-number">02</span>
+            <div><h2 id="konversiTitle">Konversi utama</h2><p>Arti pilihan pada panel Unggah Data.</p></div>
+          </div>
+          <div class="two-col">
+            <article class="mini-card"><h3>Cakupan</h3><p><b>Cluster</b> untuk distribution dari FDT ke homepass. <b>Feeder</b> dan <b>Subfeeder</b> untuk backbone dari OLT menuju FDT.</p></article>
+            <article class="mini-card"><h3>Tipe jaringan</h3><p><b>AE</b> untuk aerial/tiang. <b>UG</b> untuk underground/kabel tanam. Pilih sesuai kondisi proyek, bukan hanya berdasarkan nama file.</p></article>
+          </div>
+          <div class="table-wrap" style="margin-top:14px">
+            <table>
+              <thead><tr><th>Output</th><th>Kegunaan</th><th>Catatan operasi</th></tr></thead>
+              <tbody>
+                <tr><td><b>DXF (CAD)</b></td><td>Gambar CAD hasil konversi.</td><td>Memerlukan lokasi agar sumber ROAD OSM dan data administrasi mengikuti wilayah proyek. Status bisa terkunci bila fitur DXF tidak diaktifkan.</td></tr>
+                <tr><td><b>BOQ (Excel)</b></td><td>Bill of Quantity: material, jumlah, dan ringkasan.</td><td>Pilih saat membutuhkan perhitungan material. Periksa warning BOQ sebelum dipakai untuk proses lanjutan.</td></tr>
+                <tr><td><b>ASTRI (Excel)</b></td><td>Workbook ASTRI, termasuk data HPDB dan BOQ NRO sesuai output yang aktif.</td><td>Pilih wilayah lengkap agar nilai administrasi, termasuk postal code, ikut benar.</td></tr>
+                <tr><td><b>HPDB (Excel)</b></td><td>Master data homepass, FDT, FAT, dan homepass.</td><td>Gunakan untuk pemeriksaan data homepass dan output database.</td></tr>
+                <tr><td><b>KMZ Standar</b></td><td>KMZ/KML yang sudah distandardisasi.</td><td>Untuk mode KMZ Standar tunggal, unggah tepat satu file KML/KMZ. Nama dan struktur diproses memakai rule EVA serta coding FDT aktif.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note note--blue"><b>Multi-output:</b> jika memilih lebih dari satu output, EVA membuat hasil gabungan dalam ZIP. Cek setiap file di dalam ZIP sebelum disebarkan.</p>
+        </section>
+
+        <section id="sumber" class="doc-section" aria-labelledby="sumberTitle">
+          <div class="section-head">
+            <span class="section-number">03</span>
+            <div><h2 id="sumberTitle">File desain & struktur folder</h2><p>Siapkan sumber sebelum mengunggah supaya validasi dan standardisasi tidak menghasilkan placeholder atau warning yang tidak perlu.</p></div>
+          </div>
+          <div class="two-col">
+            <article class="mini-card"><h3>File diterima</h3><p><span class="chip">.kml</span><span class="chip">.kmz</span><br>Gunakan satu file desain yang paling lengkap dan terbaru. Jangan memasukkan file ROAD OSM sebagai file desain.</p></article>
+            <article class="mini-card"><h3>Yang diperiksa</h3><p>Nama folder, tipe geometri, asset, kabel, FDT/FAT, homepass, serta data pendukung sesuai scope dan tipe jaringan yang dipilih.</p></article>
+          </div>
+          <details open style="margin-top:14px">
+            <summary>Folder umum Cluster AE</summary>
+            <div class="details-body">
+              <p>Pastikan folder berikut dipakai bila asset tersebut memang ada pada desain. Nama final mengikuti standardisasi EVA.</p>
+              <ul class="folder-list">
+                <li><code>BOUNDARY FAT</code></li><li><code>FAT</code></li><li><code>HP COVER</code></li><li><code>EXISTING POLE EMR 7-2.5</code></li><li><code>EXISTING POLE EMR 7-3</code></li><li><code>EXISTING POLE EMR 7-4</code></li><li><code>EXISTING POLE EMR 9-4</code></li><li><code>EXISTING POLE PARTNER 7-4</code></li><li><code>EXISTING POLE PARTNER 9-4</code></li><li><code>NEW POLE 7-2.5</code></li><li><code>NEW POLE 7-3</code></li><li><code>NEW POLE 7-4</code></li><li><code>NEW POLE 9-4</code></li><li><code>DISTRIBUTION CABLE</code></li><li><code>SLACK HANGER</code></li><li><code>SLING WIRE</code></li>
+              </ul>
+            </div>
+          </details>
+          <details>
+            <summary>Folder tambahan Underground (UG)</summary>
+            <div class="details-body">
+              <p>Untuk desain underground, gunakan folder duct, handhole, dan aksesori sesuai asset nyata:</p>
+              <p><code>SUBDUCT 32/28</code> <code>SUBDUCT 40/34</code> <code>TALI PANCING</code> <code>NEW HH 40X40X60</code> <code>NEW HH 80X80X130</code> <code>T-WAY</code>.</p>
+              <p>Masukkan line, HDPE, dan drop wire ke <code>SUBDUCT 32/28</code> bila itu struktur proyeknya. Jangan membuat folder alternatif hanya untuk variasi penamaan.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Feeder & Subfeeder</summary>
+            <div class="details-body">
+              <p>Backbone biasanya membutuhkan <code>OLT</code>, <code>JOINT CLOSURE</code>, folder pole, <code>CABLE</code>, dan <code>SLACK HANGER</code>. Folder UG tetap mengikuti tipe asset: duct, handhole, serta aksesori.</p>
+              <p>Gunakan scope Feeder/Subfeeder hanya bila isi file memang jalur backbone; jangan memaksakan file cluster ke scope backbone.</p>
+            </div>
+          </details>
+          <p class="note note--amber"><b>Jangan tertipu nama folder kosong:</b> folder yang ada tetapi tidak memiliki placemark/geometri yang benar bukan data asset yang valid. Periksa isi folder, bukan hanya namanya.</p>
+        </section>
+
+        <section id="lokasi" class="doc-section" aria-labelledby="lokasiTitle">
+          <div class="section-head">
+            <span class="section-number">04</span>
+            <div><h2 id="lokasiTitle">Wilayah, postal code, dan ROAD OSM</h2><p>Lokasi dipakai untuk output administrasi serta pemilihan sumber jalan.</p></div>
+          </div>
+          <ol>
+            <li>Pilih <b>Provinsi</b>, lalu <b>Kota/Kabupaten</b>, <b>Kecamatan</b>, <b>Kelurahan</b>, dan <b>Postal Code</b> dari popup <b>Pilih Wilayah</b>.</li>
+            <li>Pilih <b>Area ASTRI</b> bila tersedia dan relevan dengan pekerjaan.</li>
+            <li>EVA mencoba ROAD OSM tingkat kecamatan terlebih dahulu. Bila file tidak tersedia, EVA menggunakan ROAD tingkat provinsi sebagai fallback.</li>
+            <li>Pastikan nilai yang dipilih memang lokasi proyek; nilai ini ikut ke Excel HPDB/ASTRI.</li>
+          </ol>
+          <p class="note"><b>Perilaku penting:</b> popup wilayah wajib muncul untuk DXF, HPDB, dan ASTRI. Untuk KMZ atau BOQ saja, popup wilayah tidak diperlukan.</p>
+        </section>
+
+        <section id="hasil" class="doc-section" aria-labelledby="hasilTitle">
+          <div class="section-head">
+            <span class="section-number">05</span>
+            <div><h2 id="hasilTitle">Pantau, validasi, lalu unduh</h2><p>Job selesai bukan berarti hasil otomatis siap dipakai.</p></div>
+          </div>
+          <div class="two-col">
+            <article class="mini-card"><h3>Ruang Hasil</h3><p>Lihat status proses, nama file output, ringkasan, dan tombol unduh. Anda dapat menyesuaikan nama file sebelum unduh bila field tersedia.</p></article>
+            <article class="mini-card"><h3>Preview</h3><p>Gunakan tab map, BOQ, HPDB, DXF, warning, statistik layer, dan log untuk memastikan hasil sesuai sumber.</p></article>
+          </div>
+          <ol>
+            <li>Tunggu status job sampai selesai; jangan refresh lalu submit ulang hanya karena progress belum berubah beberapa saat.</li>
+            <li>Buka <b>Ringkasan Hasil</b>. Cocokkan jumlah asset, warning, dan output yang dipilih.</li>
+            <li>Buka <b>Preview</b>. Untuk BOQ/HPDB, cek tabel dan warning. Untuk DXF/KMZ, cek struktur/preview yang tersedia.</li>
+            <li>Baca <b>Log Proses</b> jika ada error atau mapping/folder yang tidak sesuai.</li>
+            <li>Unduh hasil hanya setelah preview dan warning sudah diterima atau diperbaiki.</li>
+          </ol>
+          <p class="note note--amber"><b>Output hilang atau tidak siap:</b> buka Monitor Aktivitas untuk melihat job asli. Jika file hasil sudah kedaluwarsa atau tidak tersedia, jalankan ulang setelah memperbaiki sumber/konfigurasi; jangan menganggap file lama masih valid.</p>
+          <p style="margin-top:15px"><b>Shortcut:</b> <kbd>Ctrl</kbd> + <kbd>Enter</kbd> mulai proses, <kbd>?</kbd> bantuan singkat, <kbd>Ctrl</kbd> + <kbd>H</kbd> Monitor Aktivitas, <kbd>Esc</kbd> tutup modal/drawer.</p>
+        </section>
+
+        <section id="astri" class="doc-section" aria-labelledby="astriTitle">
+          <div class="section-head">
+            <span class="section-number">06</span>
+            <div><h2 id="astriTitle">Workflow ASTRI</h2><p>Panel ASTRI dipakai untuk mencari pekerjaan, mengambil APD, upload, verifikasi, approve schedule, dan BOQ sesuai hak akses.</p></div>
+          </div>
+          <ol class="steps">
+            <li class="step"><span class="step__count">1</span><div><strong>Login ASTRI</strong><p>Masukkan akun ASTRI pada panel ASTRI Upload. Logout ketika sesi tidak lagi digunakan.</p></div></li>
+            <li class="step"><span class="step__count">2</span><div><strong>Cari data pekerjaan</strong><p>Pilih target Cluster/Subfeeder/Feeder, filter status, masukkan kode atau nama, lalu tekan <b>Search</b>. Pilih work order yang benar dari daftar hasil.</p></div></li>
+            <li class="step"><span class="step__count">3</span><div><strong>Cocokkan dengan EVA</strong><p>Tekan <b>Cari Match ASTRI</b> untuk mengikat pilihan ASTRI dengan konteks EVA. Search berarti mencari data ASTRI; Cari Match berarti memakai pilihan tersebut untuk action berikutnya.</p></div></li>
+            <li class="step"><span class="step__count">4</span><div><strong>Siapkan dokumen</strong><p><b>Convert dari APD ASTRI</b> mengambil dokumen APD lalu menyiapkan hasil EVA. Alternatifnya, gunakan hasil konversi yang sudah diperiksa dari panel utama.</p></div></li>
+            <li class="step"><span class="step__count">5</span><div><strong>Upload dan Verify</strong><p>Upload dokumen setelah preview EVA benar. Lakukan Verify hanya setelah dokumen dan data benar-benar siap.</p></div></li>
+            <li class="step"><span class="step__count">6</span><div><strong>Schedule lalu BOQ</strong><p>Approve Schedule dan Add BOQ adalah perubahan nyata di ASTRI. Pastikan WO, vendor, supplier per item, permit, dan preview sudah benar sebelum submit.</p></div></li>
+          </ol>
+          <div class="table-wrap" style="margin-top:14px">
+            <table>
+              <thead><tr><th>Kontrol</th><th>Fungsi</th><th>Gunakan ketika</th></tr></thead>
+              <tbody>
+                <tr><td><b>Convert dari APD ASTRI</b></td><td>Ambil APD ASTRI dan proses melalui EVA.</td><td>Sumber yang dibutuhkan ada di ASTRI dan perlu distandardisasi.</td></tr>
+                <tr><td><b>Upload Document</b></td><td>Mengunggah output yang dipilih ke dokumen ASTRI.</td><td>Match, file, dan struktur hasil telah diperiksa.</td></tr>
+                <tr><td><b>Download Document</b></td><td>Mengambil dokumen ASTRI terbaru untuk pilihan aktif.</td><td>Perlu audit atau memakai sumber ASTRI sebagai input.</td></tr>
+                <tr><td><b>Verify / Unverify</b></td><td>Mengubah status verifikasi dokumen sesuai workflow.</td><td>Dokumen sudah final, atau perlu dikembalikan untuk revisi.</td></tr>
+                <tr><td><b>Approve Schedule</b></td><td>Melanjutkan schedule/workflow ASTRI.</td><td>Status dan data WO telah direfresh serta cocok.</td></tr>
+                <tr><td><b>Add BOQ</b></td><td>Submit BOQ per item ke ASTRI.</td><td>Supplier, permit, material, dan preview BOQ sudah diperiksa.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note note--amber"><b>Versi dokumen:</b> upload ASTRI menambah dokumen/revisi; jangan mengandalkan penghapusan dokumen lama. Selalu verifikasi versi terbaru setelah upload.</p>
+        </section>
+
+        <section id="modul" class="doc-section" aria-labelledby="modulTitle">
+          <div class="section-head">
+            <span class="section-number">07</span>
+            <div><h2 id="modulTitle">Modul Pendukung</h2><p>Gunakan card Modul Pendukung pada panel utama untuk membuka utilitas EVA.</p></div>
+          </div>
+          <div class="module-grid">
+            <article class="module"><strong>Coding FDT</strong><span>Kelola Area, OLT, pasangan hostname, site/cluster, FDT ID, dan generated FDT code. Gunakan saat coding perlu diperbaiki sebelum standardisasi atau export.</span></article>
+            <article class="module"><strong>ManCore</strong><span>Kirim dan kelola data ManCore serta sheet terkait. Periksa area/sheet aktif sebelum menyimpan data.</span></article>
+            <article class="module"><strong>RFS</strong><span>Pantau ringkasan RFS bulanan/YTD, target per area, dan data pendukung yang tersedia pada dashboard.</span></article>
+            <article class="module"><strong>GDR</strong><span>Buat GDR, cek riwayat, dan gunakan material ASTRI bila diperlukan. Kelola Vendor adalah akses tulis dashboard sesuai hak akses.</span></article>
+            <article class="module"><strong>KMZ ke Excel Koordinat</strong><span>Unggah KMZ, analisis koordinat, lalu generate Excel untuk kebutuhan daftar titik/koordinat.</span></article>
+            <article class="module"><strong>Monitor Aktivitas</strong><span>Buka dari ikon riwayat untuk melihat antrean, progress, warning, error, durasi, dan link download job.</span></article>
+          </div>
+        </section>
+
+        <section id="masalah" class="doc-section" aria-labelledby="masalahTitle">
+          <div class="section-head">
+            <span class="section-number">08</span>
+            <div><h2 id="masalahTitle">Troubleshooting cepat</h2><p>Cek penyebab yang paling umum sebelum mengulang job.</p></div>
+          </div>
+          <ul class="faq">
+            <li><b>Tombol Mulai Proses masih terkunci.</b><span>Pastikan file KML/KMZ sudah dipilih, minimal satu output dipilih, scope/AE-UG benar, dan popup wilayah telah diisi bila output DXF/HPDB/ASTRI dipakai. Baca teks alasan di bawah tombol.</span></li>
+            <li><b>Folder atau asset tidak terbaca.</b><span>Periksa nama folder, isi placemark, dan tipe geometri. Folder kosong bukan pengganti asset. Pilih scope yang sesuai dengan isi file.</span></li>
+            <li><b>Nama/kode memakai <code>XXX</code>.</b><span>Data Coding FDT yang diperlukan belum ditemukan atau belum cocok. Periksa Coding FDT dan OLT mapping, lalu ulangi konversi jika output harus memakai kode final.</span></li>
+            <li><b>ROAD OSM tidak sesuai atau tidak tersedia.</b><span>Periksa pilihan Provinsi/Kota/Kecamatan pada popup Wilayah. EVA memakai kecamatan bila tersedia dan fallback ke provinsi bila tidak ada file kecamatan.</span></li>
+            <li><b>Job lama di antrean atau gagal.</b><span>Buka Monitor Aktivitas dan log job. Jangan langsung submit ulang; identifikasi error file, folder, konfigurasi, atau worker terlebih dahulu.</span></li>
+            <li><b>ASTRI tidak bisa menjalankan action.</b><span>Login ulang bila sesi berakhir, Search lalu pilih work order yang benar, lakukan Cari Match ASTRI, dan refresh status sebelum action yang bergantung pada WO.</span></li>
+            <li><b>Upload ASTRI sudah dilakukan tetapi versi tidak sesuai.</b><span>Download/verify daftar dokumen terbaru dan cocokkan filename, waktu, serta isi file. Upload menghasilkan versi tambahan, bukan penggantian dokumen lama.</span></li>
+          </ul>
+        </section>
+
+        <section id="istilah" class="doc-section" aria-labelledby="istilahTitle">
+          <div class="section-head">
+            <span class="section-number">09</span>
+            <div><h2 id="istilahTitle">Istilah & referensi teknis</h2><p>Istilah yang muncul di EVA dan output engineering.</p></div>
+          </div>
+          <dl class="glossary">
+            <dt>AE</dt><dd>Aerial: jaringan melalui tiang/udara.</dd>
+            <dt>UG</dt><dd>Underground: jaringan kabel tanam, duct, handhole, dan aksesori bawah tanah.</dd>
+            <dt>FDT</dt><dd>Fiber Distribution Terminal: titik distribusi utama jaringan.</dd>
+            <dt>FAT</dt><dd>Fiber Access Terminal: titik akses/distribusi menuju homepass.</dd>
+            <dt>HPDB</dt><dd>Homepass Database: data cluster, FAT, dan homepass dalam workbook Excel.</dd>
+            <dt>BOQ</dt><dd>Bill of Quantity: daftar material dan kuantitas pekerjaan.</dd>
+            <dt>APD</dt><dd>Dokumen sumber desain dari ASTRI yang dapat diproses melalui EVA.</dd>
+            <dt>ROAD OSM</dt><dd>Data jalan OpenStreetMap yang disediakan server EVA berdasarkan wilayah terpilih.</dd>
+          </dl>
+          <p class="note note--blue"><b>Untuk integrasi teknis:</b> spesifikasi endpoint tersedia sebagai <a href="/openapi.yaml">OpenAPI YAML</a>. Dokumen ini fokus pada cara pakai aplikasi, bukan kontrak API.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="shell foot">EVA · Engineering Vector Automation · Panduan operasional aplikasi.</footer>
+</body>
+</html>

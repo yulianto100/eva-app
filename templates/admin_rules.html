@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rules - EVA Admin</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:10px 12px;font-weight:700;cursor:pointer;text-decoration:none;color:#020617}.ghost{background:rgba(255,255,255,.1);color:#fff}.container{padding:24px;display:grid;gap:18px}a.btn-inline{color:#020617;display:inline-block}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08)}pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:14px;overflow:auto}textarea{width:100%;min-height:420px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",monospace;font-size:13px;padding:12px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;color:#0f172a}.form{display:flex;flex-direction:column;gap:10px}.err{background:rgba(239,68,68,.15);color:#991b1b;padding:12px 14px;border-radius:12px}.ok{background:rgba(16,185,129,.18);color:#14532d;padding:12px 14px;border-radius:12px}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Rules Manager</h1>
+      <p class="sub">Edit existing pole partner + alias + target folder secara langsung.</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a class="btn ghost" href="/admin">Dashboard</a>
+    </div>
+  </header>
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:800;font-size:18px">rules.json</div>
+        <div style="font-size:13px;color:#64748b">Edit raw JSON config. Backup otomatis tersimpan saat save.</div>
+      </div>
+      <div style="font-size:13px;color:#64748b">Format: JSON</div>
+    </div>
+    {% if error %}<div class="err" style="margin-top:14px">{{ error }}</div>{% endif %}
+    {% if success %}<div class="ok" style="margin-top:14px">{{ success }}</div>{% endif %}
+    <form method="post" action="/admin/rules" class="form" style="margin-top:14px">
+      <input type="hidden" name="action" value="save">
+      <label style="font-size:14px;margin-top:8px">JSON Editor</label>
+      <textarea name="rules" required>{{ rules_text }}</textarea>
+      <button type="submit" class="btn" style="background:#10b981">Save Rules</button>
+    </form>
+  </section>
+</body>
+</html>

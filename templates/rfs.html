@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <script src="/static/js/toast.js?v=popup-neutral-20260819-211055"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RFS Dashboard - EVA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=eva-20260618-download-document-label">
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #68758a;
+      --line: #dce3ee;
+      --green: #2fbf8f;
+      --blue: #276ef1;
+      --amber: #f59e0b;
+      --red: #dc2626;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .rfs-page {
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .rfs-shell {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 3vw, 2.3rem);
+      line-height: 1.1;
+      color: #1f2937;
+      letter-spacing: 0;
+    }
+    .subtitle {
+      margin: 7px 0 0;
+      max-width: 680px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .select,
+    .input {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--text);
+      padding: 0 11px;
+      font: inherit;
+      min-width: 130px;
+    }
+    .button {
+      height: 38px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      background: #ffffff;
+      color: #172033;
+      padding: 0 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .button.primary {
+      border-color: var(--green);
+      background: var(--green);
+      color: #ffffff;
+    }
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+    .metrics {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 14px;
+    }
+    .metric,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+    }
+    .metric {
+      padding: 15px;
+    }
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      margin-top: 7px;
+      font-size: 1.9rem;
+      line-height: 1;
+      font-weight: 900;
+      color: #182336;
+    }
+    .metric-sub {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .panel {
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcff;
+    }
+    .panel-title {
+      margin: 0;
+      font-size: 1rem;
+      color: #111827;
+    }
+    .panel-body {
+      padding: 16px 17px;
+    }
+    .target-form {
+      display: grid;
+      grid-template-columns: minmax(130px, 1fr) minmax(120px, 180px) auto;
+      gap: 10px;
+      align-items: center;
+      max-width: 620px;
+    }
+    .input-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .rfs-chat-input {
+      width: 100%;
+      min-height: 116px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      font: inherit;
+      line-height: 1.45;
+      resize: vertical;
+      background: #fff;
+    }
+    .status-box {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      white-space: pre-wrap;
+      font-size: 0.9rem;
+    }
+    .status-box.ok { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+    .status-box.err { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+    @media (max-width: 860px) { .input-form { grid-template-columns: 1fr; } }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 780px;
+      font-size: 0.88rem;
+    }
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th {
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    td.numeric,
+    th.numeric {
+      text-align: right;
+    }
+    .target-input {
+      width: 120px;
+      min-width: 100px;
+      text-align: right;
+    }
+    .progress-cell {
+      min-width: 170px;
+    }
+    .bar {
+      height: 9px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0;
+      background: var(--green);
+    }
+    .bar-fill.warn {
+      background: var(--amber);
+    }
+    .bar-fill.done {
+      background: var(--blue);
+    }
+    .progress-text {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .chart-wrap {
+      padding: 16px 17px 4px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+    .collapsible-panel > summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .collapsible-panel > summary::-webkit-details-marker {
+      display: none;
+    }
+    .collapse-cue {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .collapsible-panel[open] .collapse-cue::after {
+      content: "Ciutkan";
+    }
+    .collapsible-panel:not([open]) .collapse-cue::after {
+      content: "Buka";
+    }
+    .gap-positive {
+      color: #047857;
+      font-weight: 800;
+    }
+    .gap-negative {
+      color: var(--red);
+      font-weight: 800;
+    }
+    .incentive-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 0.72rem;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .incentive-status.blocked {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+    .incentive-status.ready {
+      background: #ecfdf5;
+      color: #047857;
+    }
+    .empty {
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 25px;
+      padding: 0 9px;
+      border: 1px solid #bbf7d0;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #047857;
+      font-size: 0.72rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .sheet-link {
+      color: var(--blue);
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .sheet-link:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 900px) {
+      .rfs-page {
+        padding: 14px;
+      }
+      .topbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .actions {
+        justify-content: flex-start;
+      }
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .target-form {
+        grid-template-columns: 1fr;
+      }
+      .target-input {
+        width: 100%;
+      }
+    }
+    @media (max-width: 560px) {
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+</head>
+<body>
+  <main class="rfs-page">
+    <div class="rfs-shell">
+      <header class="topbar">
+        <div>
+          <h1>RFS Dashboard</h1>
+          <p class="subtitle">Monitor HP RFS bulanan per area dan progres target dari data WhatsApp bot.</p>
+        </div>
+        <div class="actions">
+          <select id="monthSelect" class="select" aria-label="Bulan"></select>
+          <a id="sheetLink" class="button" href="#" target="_blank" rel="noreferrer">Spreadsheet</a>
+          <button id="refreshButton" type="button" class="button primary">Refresh</button>
+          <button type="button" class="button" onclick="window.parent && window.parent.postMessage({type:'eva-close-rfs-modal'}, window.location.origin)">Tutup</button>
+        </div>
+      </header>
+
+
+      <section class="grid metrics" aria-label="RFS monthly metrics">
+        <article class="metric">
+          <div class="metric-label">Actual HP</div>
+          <div id="actualHp" class="metric-value">0</div>
+          <div id="recordCount" class="metric-sub">0 record</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">Target HP</div>
+          <div id="targetHp" class="metric-value">0</div>
+          <div class="metric-sub">Target bulan berjalan</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">Progress</div>
+          <div id="progressPct" class="metric-value">0%</div>
+          <div id="progressSub" class="metric-sub">Belum ada target</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">Gap HP</div>
+          <div id="gapHp" class="metric-value">0</div>
+          <div class="metric-sub">Actual dikurangi target</div>
+        </article>
+      </section>
+
+      <section class="grid metrics" aria-label="RFS YTD metrics">
+        <article class="metric">
+          <div class="metric-label">YTD Actual HP</div>
+          <div id="ytdActualHp" class="metric-value">0</div>
+          <div id="ytdThrough" class="metric-sub">Tahun berjalan</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">YTD Target HP</div>
+          <div id="ytdTargetHp" class="metric-value">0</div>
+          <div class="metric-sub">Akumulasi target bulanan</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">YTD Progress</div>
+          <div id="ytdProgressPct" class="metric-value">0%</div>
+          <div id="ytdProgressSub" class="metric-sub">Belum ada target</div>
+        </article>
+        <article class="metric">
+          <div class="metric-label">YTD Gap HP</div>
+          <div id="ytdGapHp" class="metric-value">0</div>
+          <div class="metric-sub">Actual YTD dikurangi target YTD</div>
+        </article>
+      </section>
+
+      <section class="panel" style="margin-bottom:14px" aria-label="RFS YTD performance">
+        <div class="panel-header">
+          <h2 class="panel-title">YTD Performance</h2>
+          <span id="ytdStatus" class="status-pill">0 area</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th class="numeric">Actual YTD</th>
+                <th class="numeric">Target YTD</th>
+                <th>Progress YTD</th>
+                <th class="numeric">Gap YTD</th>
+              </tr>
+            </thead>
+            <tbody id="ytdBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom:14px" aria-label="RFS incentive">
+        <div class="panel-header">
+          <h2 class="panel-title">Insentif RFS</h2>
+          <span id="incentiveStatus" class="status-pill">Rp0</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th>Ach Kota</th>
+                <th>YTD</th>
+                <th class="numeric">Base</th>
+                <th class="numeric">Difficulty</th>
+                <th class="numeric">Est. IDR</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="incentiveBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Target RFS">
+        <div class="panel-header">
+          <h2 class="panel-title">Target Per Area</h2>
+          <span id="loadStatus" class="status-pill">Loading</span>
+        </div>
+        <div class="panel-body">
+          <form id="targetForm" class="target-form">
+            <input id="regionInput" class="input" type="text" placeholder="Area" autocomplete="off">
+            <input id="targetInput" class="input" type="number" min="0" step="1" placeholder="Target HP">
+            <button class="button primary" type="submit">Simpan Target</button>
+          </form>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th class="numeric">Actual HP</th>
+                <th class="numeric">Target HP</th>
+                <th>Progress</th>
+                <th class="numeric">Gap</th>
+                <th class="numeric">Record</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="regionBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <details id="recordPanel" class="panel collapsible-panel" style="margin-top:14px" aria-label="RFS records">
+        <summary class="panel-header">
+          <h2 class="panel-title">Record RFS <span class="collapse-cue" aria-hidden="true"></span></h2>
+          <span id="recordStatus" class="status-pill">0</span>
+        </summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Area</th>
+                <th>Site</th>
+                <th class="numeric">HP</th>
+                <th>Sender</th>
+              </tr>
+            </thead>
+            <tbody id="recordBody"></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  </main>
+
+  <script>
+    const state = {
+      month: '',
+      months: [],
+      summary: null,
+    };
+
+    const els = {
+      monthSelect: document.getElementById('monthSelect'),
+      refreshButton: document.getElementById('refreshButton'),
+      sheetLink: document.getElementById('sheetLink'),
+      loadStatus: document.getElementById('loadStatus'),
+      actualHp: document.getElementById('actualHp'),
+      targetHp: document.getElementById('targetHp'),
+      progressPct: document.getElementById('progressPct'),
+      progressSub: document.getElementById('progressSub'),
+      gapHp: document.getElementById('gapHp'),
+      recordCount: document.getElementById('recordCount'),
+      ytdActualHp: document.getElementById('ytdActualHp'),
+      ytdTargetHp: document.getElementById('ytdTargetHp'),
+      ytdProgressPct: document.getElementById('ytdProgressPct'),
+      ytdProgressSub: document.getElementById('ytdProgressSub'),
+      ytdGapHp: document.getElementById('ytdGapHp'),
+      ytdThrough: document.getElementById('ytdThrough'),
+      ytdStatus: document.getElementById('ytdStatus'),
+      ytdBody: document.getElementById('ytdBody'),
+      incentiveStatus: document.getElementById('incentiveStatus'),
+      incentiveBody: document.getElementById('incentiveBody'),
+      regionBody: document.getElementById('regionBody'),
+      recordBody: document.getElementById('recordBody'),
+      recordStatus: document.getElementById('recordStatus'),
+      targetForm: document.getElementById('targetForm'),
+      regionInput: document.getElementById('regionInput'),
+      targetInput: document.getElementById('targetInput'),
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[char]));
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat('id-ID').format(Number(value || 0));
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+      }).format(Number(value || 0));
+    }
+
+    function formatPct(value) {
+      if (value === null || value === undefined) return '0%';
+      return `${Math.round(Number(value || 0) * 100)}%`;
+    }
+
+    function formatPctOrDash(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      return formatPct(value);
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return new Intl.DateTimeFormat('id-ID', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date);
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    async function loadMonths() {
+      const payload = await api('/api/rfs/months');
+      state.months = payload.months || [];
+      state.month = state.month || payload.current_month || state.months[0] || '';
+      els.monthSelect.innerHTML = state.months.map((month) => (
+        `<option value="${escapeHtml(month)}" ${month === state.month ? 'selected' : ''}>${escapeHtml(month)}</option>`
+      )).join('');
+    }
+
+    async function loadDashboard() {
+      els.loadStatus.textContent = 'Loading';
+      const params = new URLSearchParams();
+      if (state.month) params.set('month', state.month);
+      state.summary = await api(`/api/rfs/summary?${params.toString()}`);
+      state.month = state.summary.month || state.month;
+      renderDashboard();
+      els.loadStatus.textContent = 'Ready';
+    }
+
+    function renderDashboard() {
+      const summary = state.summary || {};
+      const totals = summary.totals || {};
+      els.sheetLink.href = summary.spreadsheet_url || '#';
+      els.actualHp.textContent = formatNumber(totals.actual_hp);
+      els.targetHp.textContent = formatNumber(totals.target_hp);
+      els.progressPct.textContent = formatPct(totals.progress);
+      els.progressSub.textContent = totals.target_hp ? `${formatNumber(totals.actual_hp)} / ${formatNumber(totals.target_hp)} HP` : 'Belum ada target';
+      els.gapHp.textContent = formatNumber(totals.gap_hp);
+      els.gapHp.className = `metric-value ${Number(totals.gap_hp || 0) >= 0 ? 'gap-positive' : 'gap-negative'}`;
+      els.recordCount.textContent = `${formatNumber(totals.record_count)} record`;
+      renderYtd(summary.ytd || {});
+      renderIncentives(summary.regions || [], totals);
+      renderRegions(summary.regions || []);
+      renderRecords(summary.records || []);
+    }
+
+    function progressClass(progress) {
+      const value = Number(progress || 0);
+      if (value >= 1) return 'done';
+      if (value >= 0.75) return 'warn';
+      return '';
+    }
+
+    function renderRegions(regions) {
+      if (!regions.length) {
+        els.regionBody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada data.</td></tr>';
+        return;
+      }
+      els.regionBody.innerHTML = regions.map((region) => {
+        const progress = region.progress === null || region.progress === undefined ? 0 : Math.min(Number(region.progress || 0), 1);
+        const gap = Number(region.gap_hp || 0);
+        return `
+          <tr>
+            <td><strong>${escapeHtml(region.region)}</strong></td>
+            <td class="numeric">${formatNumber(region.actual_hp)}</td>
+            <td class="numeric">
+              <input class="input target-input" type="number" min="0" step="1" value="${escapeHtml(region.target_hp || 0)}" data-target-region="${escapeHtml(region.region)}">
+            </td>
+            <td class="progress-cell">
+              <div class="bar"><div class="bar-fill ${progressClass(region.progress)}" style="width:${Math.round(progress * 100)}%"></div></div>
+              <div class="progress-text">${formatPct(region.progress)}</div>
+            </td>
+            <td class="numeric ${gap >= 0 ? 'gap-positive' : 'gap-negative'}">${formatNumber(gap)}</td>
+            <td class="numeric">${formatNumber(region.record_count)}</td>
+            <td><button type="button" class="button" data-save-region="${escapeHtml(region.region)}">Simpan</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function incentiveStatusClass(status) {
+      const normalized = String(status || '').toUpperCase();
+      if (normalized === 'ELIGIBLE') return 'ready';
+      if (normalized.includes('NO') || normalized.includes('<')) return 'blocked';
+      return '';
+    }
+
+    function renderIncentives(regions, totals) {
+      els.incentiveStatus.textContent = formatCurrency(totals.incentive_idr || 0);
+      if (!regions.length) {
+        els.incentiveBody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada data insentif.</td></tr>';
+        return;
+      }
+      els.incentiveBody.innerHTML = regions.map((region) => {
+        const incentive = region.incentive || {};
+        const status = incentive.status || '-';
+        return `
+          <tr>
+            <td><strong>${escapeHtml(region.region)}</strong></td>
+            <td>${formatPctOrDash(region.progress)}</td>
+            <td>${formatPctOrDash(incentive.ytd_progress)}</td>
+            <td class="numeric">${formatCurrency(incentive.base_incentive)}</td>
+            <td class="numeric">${Number(incentive.difficulty || 0).toFixed(2)}</td>
+            <td class="numeric"><strong>${formatCurrency(incentive.incentive_idr)}</strong></td>
+            <td><span class="incentive-status ${incentiveStatusClass(status)}">${escapeHtml(status)}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderYtd(ytd) {
+      const total = ytd.total || {};
+      const regions = ytd.regions || [];
+      els.ytdActualHp.textContent = formatNumber(total.actual_hp);
+      els.ytdTargetHp.textContent = formatNumber(total.target_hp);
+      els.ytdProgressPct.textContent = formatPct(total.progress);
+      els.ytdProgressSub.textContent = total.target_hp ? `${formatNumber(total.actual_hp)} / ${formatNumber(total.target_hp)} HP` : 'Belum ada target YTD';
+      els.ytdGapHp.textContent = formatNumber(total.gap_hp);
+      els.ytdGapHp.className = `metric-value ${Number(total.gap_hp || 0) >= 0 ? 'gap-positive' : 'gap-negative'}`;
+      els.ytdThrough.textContent = ytd.through_month ? `YTD sampai ${ytd.through_month}` : 'Tahun berjalan';
+      els.ytdStatus.textContent = `${formatNumber(regions.length)} area`;
+
+      const rows = [{ ...total, region: 'TOTAL SEMUA AREA', isTotal: true }, ...regions];
+      if (!rows.length) {
+        els.ytdBody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada data YTD.</td></tr>';
+        return;
+      }
+      els.ytdBody.innerHTML = rows.map((item) => {
+        const progress = item.progress === null || item.progress === undefined ? 0 : Math.min(Number(item.progress || 0), 1);
+        const gap = Number(item.gap_hp || 0);
+        return `
+          <tr>
+            <td><strong>${escapeHtml(item.region)}</strong></td>
+            <td class="numeric">${formatNumber(item.actual_hp)}</td>
+            <td class="numeric">${formatNumber(item.target_hp)}</td>
+            <td class="progress-cell">
+              <div class="bar"><div class="bar-fill ${progressClass(item.progress)}" style="width:${Math.round(progress * 100)}%"></div></div>
+              <div class="progress-text">${formatPct(item.progress)}</div>
+            </td>
+            <td class="numeric ${gap >= 0 ? 'gap-positive' : 'gap-negative'}">${formatNumber(gap)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderRecords(records) {
+      els.recordStatus.textContent = formatNumber(records.length);
+      if (!records.length) {
+        els.recordBody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada record.</td></tr>';
+        return;
+      }
+      els.recordBody.innerHTML = records.map((record) => `
+        <tr>
+          <td>${escapeHtml(formatDate(record.recorded_at))}</td>
+          <td>${escapeHtml(record.region)}</td>
+          <td><strong>${escapeHtml(record.site)}</strong></td>
+          <td class="numeric">${formatNumber(record.hp)}</td>
+          <td>${escapeHtml(record.sender || '-')}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function saveTarget(region, targetHp) {
+      if (!region) return;
+      els.loadStatus.textContent = 'Saving';
+      await api('/api/rfs/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: state.month, region, target_hp: Number(targetHp || 0) }),
+      });
+      await loadMonths();
+      await loadDashboard();
+    }
+
+    els.refreshButton.addEventListener('click', async () => {
+      await loadMonths();
+      await loadDashboard();
+    });
+
+    els.monthSelect.addEventListener('change', async () => {
+      state.month = els.monthSelect.value;
+      await loadDashboard();
+    });
+
+
+    function normalizeRfsText(value) {
+      return String(value || '').replace(/\u00a0/g, ' ').replace(/\r?\n/g, ' ').replace(/[ \t]+/g, ' ').trim();
+    }
+    function parseRfsChat(text) {
+      const normalized = normalizeRfsText(text);
+      const parseHp = (value) => Number.parseInt(String(value || '').replace(/[.,]/g, ''), 10) || 0;
+      const titleCase = (value) => String(value || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()).replace(/\bDki\b/g, 'DKI').replace(/\bRw\b/g, 'RW').replace(/\bRt\b/g, 'RT');
+      const cleanRegion = (value) => titleCase(normalizeRfsText(value).replace(/^\[?New\s+RFS\b/i, '').replace(/\bRollout\s+\d+\b/i, '').replace(/[^A-Za-z\s]/g, ' ').replace(/\s+/g, ' ').trim());
+      const cleanSite = (value) => normalizeRfsText(value).replace(/^[-:\s]+/, '').replace(/[-:\s]+$/, '').replace(/\s+/g, ' ').toUpperCase();
+      let m = null, latest = null;
+      const pattern = /\bNew\s+RFS\s+([A-Za-z][A-Za-z\s]{1,60}?)\s*-\s*([^:]+?)\s*:\s*([0-9][0-9.,]*)\s*HP\b/ig;
+      while ((m = pattern.exec(normalized)) !== null) latest = m;
+      if (latest) {
+        const region = cleanRegion(latest[1]);
+        const site = cleanSite(latest[2]);
+        const hp = parseHp(latest[3]);
+        if (region && site && hp) return { region, site, hp, raw_text: normalized };
+      }
+      const hpMatch = normalized.match(/:\s*([0-9][0-9.,]*)\s*HP\b/i) || normalized.match(/\b([0-9][0-9.,]*)\s*HP\b/i);
+      if (!hpMatch) throw new Error('Format RFS tidak terbaca. Contoh: New RFS Bekasi - NAMA SITE : 120 HP');
+      const hp = parseHp(hpMatch[1]);
+      const beforeHp = normalized.slice(0, hpMatch.index).trim();
+      const parts = beforeHp.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+      if (parts.length < 2 || !hp) throw new Error('Format RFS tidak terbaca. Contoh: New RFS Bekasi - NAMA SITE : 120 HP');
+      const site = cleanSite(parts[parts.length - 1]);
+      let region = '';
+      for (let i = parts.length - 2; i >= 0; i -= 1) {
+        const rm = parts[i].match(/\bNew\s+RFS\s+(.+)$/i);
+        if (rm) { region = cleanRegion(rm[1]); break; }
+      }
+      if (!region || !site) throw new Error('Region atau site tidak terbaca.');
+      return { region, site, hp, raw_text: normalized };
+    }
+
+    els.targetForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await saveTarget(els.regionInput.value.trim(), els.targetInput.value);
+      els.regionInput.value = '';
+      els.targetInput.value = '';
+    });
+
+    els.regionBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-save-region]');
+      if (!button) return;
+      const region = button.dataset.saveRegion;
+      const input = els.regionBody.querySelector(`[data-target-region="${CSS.escape(region)}"]`);
+      await saveTarget(region, input ? input.value : 0);
+    });
+
+    (async function init() {
+      try {
+        await loadMonths();
+        await loadDashboard();
+      } catch (error) {
+        els.loadStatus.textContent = 'Error';
+        els.regionBody.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message)}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Input Mancore - EVA Admin</title>
+  <style>
+    :root{--bg:#f8fafc;--panel:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#64748b;--brand:#10b981;--brand-dark:#047857;--danger:#dc2626;--ok:#16a34a;--shadow:0 1px 2px rgba(15,23,42,.05),0 12px 32px rgba(15,23,42,.06)}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.layout{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}.sidebar{position:sticky;top:0;height:100vh;background:#0f172a;color:#e2e8f0;padding:22px 18px;display:flex;flex-direction:column;gap:24px}.brand{font-weight:900;font-size:18px;color:#fff}.brand span{color:var(--brand)}.nav{display:flex;flex-direction:column;gap:5px}.nav a{display:block;padding:10px 12px;border-radius:12px;color:#cbd5e1;text-decoration:none;font-size:14px;font-weight:750}.nav a:hover,.nav a.active{background:rgba(16,185,129,.16);color:#fff}.content{padding:28px;max-width:1080px;width:100%}.page-kicker{margin:0 0 6px;color:var(--brand-dark);font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}h1{margin:0;font-size:30px;line-height:1.05;font-weight:900}.muted{color:var(--muted);font-size:14px;line-height:1.5}.panel{margin-top:22px;background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}.panel-head{padding:18px 20px;border-bottom:1px solid var(--line)}.panel-body{padding:20px}.grid{display:grid;grid-template-columns:1fr 180px;gap:14px}.field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}label{font-weight:850;font-size:13px}input,textarea{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;color:#111827;font:inherit}textarea{min-height:230px;resize:vertical;line-height:1.45;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:#fff;color:#0f172a;font-weight:850;font-size:13px;cursor:pointer;text-decoration:none}.btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}.btn.success{background:#ecfdf5;color:#047857;border-color:#bbf7d0}.status{margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#f8fafc;white-space:pre-wrap}.status.ok{background:#f0fdf4;border-color:#bbf7d0;color:#166534}.status.err{background:#fef2f2;border-color:#fecaca;color:#991b1b}.example{background:#f8fafc;border:1px solid var(--line);border-radius:14px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;white-space:pre-wrap}@media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar{display:none}.content{padding:18px}.grid{grid-template-columns:1fr}}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="brand">EVA<span>.admin</span></div>
+    <div class="nav">
+      <a href="/admin">EVA Admin</a>
+      <a href="/rfs">Input RFS</a>
+      <a href="/mancore" class="active">Input Mancore</a>
+      <a href="/gdr">GDR</a>
+      <a href="/admin/jobs">Job</a>
+      <a href="/admin/olt-catalog">Catalog OLT</a>
+    </div>
+  </nav>
+  <main class="content">
+    <p class="page-kicker">Core Management</p>
+    <h1>Input Mancore Manual</h1>
+    <p class="muted">Paste format sama seperti bot. Sebelum kirim, sistem tampilkan popup konfirmasi.</p>
+
+    <section class="panel">
+      <div class="panel-head"><strong>Form Mancore</strong></div>
+      <div class="panel-body">
+        <form id="mancoreForm">
+          <div class="grid">
+            <div class="field"><label for="cluster">Nama Cluster (opsional override)</label><input id="cluster" name="cluster_name" placeholder="MUTIARA GADING TIMUR RW 24"></div>
+            <div class="field"><label for="segment">Segment (opsional)</label><input id="segment" name="segment_name" placeholder="5"></div>
+          </div>
+          <div class="field"><label for="olt">OLT (opsional override)</label><input id="olt" name="olt_name" placeholder="OLT Taman Narogong"></div>
+          <div class="field"><label for="text">Data Mancore</label><textarea id="text" required spellcheck="false">MUTIARA GADING TIMUR RW 24
+OLT Taman Narogong segment 5
+Tube 12 core 5.6.7.8.9</textarea></div>
+          <div class="example">Format:
+NAMA CLUSTER
+OLT &lt;nama olt&gt; segment &lt;nomor segment&gt;
+Tube &lt;nomor tube&gt; core &lt;daftar core&gt;</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px"><button class="btn primary" type="submit">Kirim Mancore</button><button class="btn" type="button" onclick="resetExample()">Reset Contoh</button></div>
+        </form>
+        <div id="status" class="status" hidden></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+const form=document.getElementById('mancoreForm');const statusBox=document.getElementById('status');
+function show(type,msg){statusBox.hidden=false;statusBox.className='status '+type;statusBox.textContent=msg}
+function resetExample(){document.getElementById('text').value='MUTIARA GADING TIMUR RW 24\nOLT Taman Narogong segment 5\nTube 12 core 5.6.7.8.9'}
+form.addEventListener('submit',async(e)=>{e.preventDefault();const payload={cluster_name:cluster.value.trim(),olt_name:olt.value.trim(),segment_name:segment.value.trim(),raw_text:text.value.trim()};const preview=`Kirim mancore?\n\nCluster: ${payload.cluster_name||'(dari isi data)'}\nOLT: ${payload.olt_name||'(dari isi data)'}\nSegment: ${payload.segment_name||'(dari isi data)'}\n\nData:\n${payload.raw_text}`;if(!confirm(preview))return;show('', 'Mengirim...');try{const r=await fetch('/api/mancore/records',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Submit gagal');show('ok',`Berhasil.\nSheet: ${d.sheet_name}\nCluster: ${d.cluster_name}\nFDT: ${d.fdt_code||'-'}\nCore entries: ${d.entries}\nRows updated: ${(d.updated_rows||[]).join(', ')||'-'}\nURL: ${d.sheet?.url||''}`)}catch(err){show('err',err.message)}});
+</script>
+</body>
+</html>

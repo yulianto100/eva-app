@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>EVA by DYENA</title>
+  <!-- Open Graph / social share preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://eva.dyena.id/">
+  <meta property="og:title" content="EVA by DYENA">
+  <meta property="og:description" content="Workspace desain jaringan: KMZ, CAD, BOQ, HPDB, ASTRI, STELLA, dan GDR.">
+  <meta property="og:image" content="https://eva.dyena.id/static/assets/eva-share-20260915.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="EVA by DYENA">
+  <meta property="og:site_name" content="EVA">
+  <meta property="og:locale" content="id_ID">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="EVA by DYENA">
+  <meta name="twitter:description" content="Workspace desain jaringan: KMZ, CAD, BOQ, HPDB, ASTRI, STELLA, dan GDR.">
+  <meta name="twitter:image" content="https://eva.dyena.id/static/assets/eva-share-20260915.png">
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-icon.svg?v=20260923-green">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/eva-icon-32.png?v=20260923-green">
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/assets/eva-icon-64.png?v=20260923-green">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/assets/eva-icon-192.png?v=20260923-green">
+  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}?v=20260923-green">
+  <meta name="theme-color" content="#F4F8F6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=gdr-modal-20260915-v4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/supabase-overlay.css') }}?v=eva-20260610-overlay">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-assistant.css') }}?v=eva-20260605-folder-alias">
+  <script>
+    window.APP_CONFIG = {
+      maxUploadMb: {{ max_upload_mb|tojson }},
+      maxUploadBytes: {{ (max_upload_mb * 1024 * 1024)|tojson }},
+      maxBatchUploadMb: {{ config.MAX_BATCH_UPLOAD_MB|tojson }},
+      maxBatchUploadBytes: {{ config.MAX_CONTENT_LENGTH|tojson }},
+      defaultNetworkType: {{ default_network_type|tojson }},
+      networkTypes: {{ network_types|tojson }},
+      boqTemplateReady: {{ boq_template_ready|tojson }},
+      boqTemplateName: {{ boq_template_name|tojson }},
+      boqTemplateReadyByNetwork: {{ boq_template_ready_by_network|tojson }},
+      boqTemplateNameByNetwork: {{ boq_template_name_by_network|tojson }},
+      boqSheetName: {{ boq_sheet_name|tojson }},
+      astriTemplateReady: {{ astri_template_ready|tojson }},
+      astriTemplateName: {{ astri_template_name|tojson }},
+      astriTemplateReadyByNetwork: {{ astri_template_ready_by_network|tojson }},
+      astriTemplateNameByNetwork: {{ astri_template_name_by_network|tojson }},
+      hpdbTemplateReady: {{ hpdb_template_ready|tojson }},
+      hpdbTemplateName: {{ hpdb_template_name|tojson }},
+      hpdbTemplateReadyByNetwork: {{ hpdb_template_ready_by_network|tojson }},
+      hpdbTemplateNameByNetwork: {{ hpdb_template_name_by_network|tojson }},
+      hpdbSheetNames: {{ hpdb_sheet_names|tojson }},
+      hpdbMaxFdt: {{ hpdb_max_fdt|tojson }},
+      fdtCodingSourceReady: {{ fdt_coding_source_ready|tojson }},
+      fdtCodingSourceLabel: {{ fdt_coding_source_label|tojson }},
+      dxfConversionEnabled: {{ dxf_conversion_enabled|tojson }},
+      defaultOutputMode: {{ default_output_mode|tojson }},
+      defaultScopeType: {{ default_scope_type|tojson }},
+      scopeTypes: {{ scope_types|tojson }},
+      boqFeederTemplateReadyByNetwork: {{ boq_feeder_template_ready_by_network|tojson }},
+      boqFeederTemplateNameByNetwork: {{ boq_feeder_template_name_by_network|tojson }}
+    };
+  </script>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+  <link rel="stylesheet" href="/static/css/eva-index-workbench.css?v=result-font-20260924-v1">
+  <link rel="stylesheet" href="/static/css/stella.css?v=support-five-across-20260925-v1">
+  <link rel="stylesheet" href="/static/css/document-abd.css?v=abd-convert-20260917-v2">
+  <link rel="stylesheet" href="/static/css/donate.css?v=donate-20260911-v3">
+  <link rel="stylesheet" href="/static/css/donate-order.css?v=donate-order-20260911-v1">
+  <link rel="stylesheet" href="/static/css/donate-inner.css?v=donate-inner-20260911-v1">
+  <link rel="stylesheet" href="/static/css/donate-cta.css?v=donate-cta-20260911-v2">
+  <link rel="stylesheet" href="/static/css/donate-qris-bloom.css?v=bloom-20260919-wind3">
+  <style>
+    #fdtCodingModal .fdt-modal-header {
+      min-height: 4.25rem;
+      padding: .7rem 1rem;
+      border: 0;
+      border-bottom: 1px solid #dcebe5;
+      border-radius: var(--r-lg) var(--r-lg) 0 0;
+      background: #f4fbf8;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+    }
+    #fdtCodingModal .fdt-modal-heading {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: .75rem;
+    }
+    #fdtCodingModal .fdt-modal-icon {
+      display: inline-flex;
+      width: 2.4rem;
+      height: 2.4rem;
+      flex: 0 0 2.4rem;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #c8e4d9;
+      border-radius: .72rem;
+      background: #fff;
+      color: #14805d;
+    }
+    #fdtCodingModal .fdt-modal-icon svg {
+      width: 1.2rem;
+      height: 1.2rem;
+    }
+    #fdtCodingModal .fdt-modal-copy {
+      min-width: 0;
+    }
+    #fdtCodingModal .fdt-modal-header h2 {
+      margin: 0;
+      color: #17372f;
+      font-size: clamp(1.08rem, 1.45vw, 1.35rem);
+      font-weight: 750;
+      line-height: 1.2;
+      letter-spacing: -.02em;
+    }
+    #fdtCodingModal .fdt-modal-header p {
+      margin: .15rem 0 0;
+      color: #5d756d;
+      font-size: .76rem;
+      line-height: 1.35;
+    }
+    #fdtCodingModal .fdt-coding-modal-close {
+      width: 2.5rem;
+      height: 2.5rem;
+      flex: 0 0 2.5rem;
+      border: 1px solid #c8e4d9;
+      border-radius: .72rem;
+      background: #fff;
+      color: #286c58;
+      font-size: 1.35rem;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(22, 101, 78, .08);
+    }
+    #fdtCodingModal .fdt-coding-modal-close:hover {
+      border-color: #9fd2bf;
+      background: #e9f7f1;
+      color: #0f694b;
+    }
+    #fdtCodingModal .fdt-coding-modal-close:focus-visible {
+      outline: 2px solid #3fb78d;
+      outline-offset: 2px;
+    }
+    @media (max-width: 640px) {
+      #fdtCodingModal .fdt-modal-header {
+        min-height: 3.75rem;
+        padding: .55rem .7rem;
+      }
+      #fdtCodingModal .fdt-modal-heading { gap: .55rem; }
+      #fdtCodingModal .fdt-modal-icon {
+        width: 2.15rem;
+        height: 2.15rem;
+        flex-basis: 2.15rem;
+      }
+      #fdtCodingModal .fdt-modal-header h2 { font-size: 1rem; }
+      #fdtCodingModal .fdt-modal-header p { display: none; }
+      #fdtCodingModal .fdt-coding-modal-close {
+        width: 2.35rem;
+        height: 2.35rem;
+        flex-basis: 2.35rem;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-tailwind.css?v=tailwind-3.4.17-20260923-v1">
+  <link rel="stylesheet" href="/static/css/eva-type-scale.css?v=type-90-20260924-v1">
+  <link rel="stylesheet" href="/static/css/eva-card-density.css?v=result-inline-20260924-v1">
+  <link rel="stylesheet" href="/static/css/eva-workbench-upgrade.css?v=disabled-output-20260930-v2">
+  <link rel="stylesheet" href="/static/css/eva-astri-popup.css?v=clouds-drift-20260926-v1">
+  <style>
+    #abdCadModal { width: min(920px, calc(100vw - 24px)); height: min(780px, calc(100dvh - 24px)); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid #dce7e1; border-radius: 14px; background: #f4f8f6; color: #12352d; overflow: hidden; box-shadow: 0 18px 60px #12352d26; }
+    #abdCadModal[open] { display: flex; flex-direction: column; }
+    #abdCadModal::backdrop { background: #dcebe18c; backdrop-filter: blur(3px); }
+    #abdCadModal .abd-cad-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 16px; background: #f8fcfa; border-bottom: 1px solid #cce6da; }
+    #abdCadModal #abdCadTitle { margin: 0; font: 700 18px/1.4 Inter, system-ui, sans-serif; color: #12352d; }
+    #abdCadModal #abdCadClose { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; padding: 0; border: 1px solid #cce6da; border-radius: 10px; background: white; color: #17684b; font: 26px/1 system-ui, sans-serif; cursor: pointer; }
+    #abdCadModal #abdCadClose:hover { background: #e7f5ee; }
+    #abdCadModal #abdCadClose:focus-visible { outline: 3px solid #2bbf87; outline-offset: 2px; }
+    #abdCadFrame { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: #f4f8f6; }
+    @media (max-width: 520px) { #abdCadModal { height: calc(100dvh - 24px); } }
+  </style>
+</head>
+<body class="min-h-screen text-zinc-100 antialiased">
+  <section id="notificationRoot" class="notification-stack" aria-label="Notifikasi aplikasi"></section>
+  <main class="app-shell min-h-screen">
+    <header class="app-header">
+      <div class="mx-auto flex max-w-[1500px] flex-col gap-3 px-4 py-3.5 md:flex-row md:items-center md:justify-between lg:px-6">
+        <div class="brand-lockup flex min-w-0 items-center gap-3">
+          <div class="min-w-0">
+            <div class="brand-title-row">
+              <h1 class="brand-heading text-sm font-extrabold tracking-tight text-white sm:text-lg"><span class="brand-eva">EVA</span><span class="brand-by">by DYENA</span></h1>
+            </div>
+            <p class="brand-description mt-0.5 text-xs text-zinc-400 sm:text-sm">Desain jaringan · KMZ, CAD, BOQ, HPDB, ASTRI, STELLA &amp; GDR.</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <button id="donateButton" type="button" class="donate-button" aria-haspopup="dialog" aria-controls="donateDialog" aria-label="Donasi untuk pengembangan EVA">
+            <span class="donate-button__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 8.5c0 5.5-8 10-8 10s-8-4.5-8-10a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 8.5Z"/>
+              </svg>
+            </span>
+            <span class="donate-button__copy">
+              <span class="donate-button__label">Donasi</span>
+            </span>
+          </button>
+          <details class="supported-files-menu">
+            <summary class="supported-files-trigger" data-tooltip="Format file yang didukung" data-tooltip-side="bottom" aria-label="Format file yang didukung">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 4.5h9l5 5v10H5v-15Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M14 4.5V10h5M8 14h8M8 17h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              <span class="supported-files-label">Format file</span>
+              <span class="supported-files-desc">KML/KMZ untuk pole, kabel, boundary, FAT, desain, dan KMZ standar. ROAD otomatis dari server OSM.</span>
+            </summary>
+            <div class="supported-files-popover" role="list" aria-label="Format file yang didukung">
+              <span role="listitem">.kml</span>
+              <span role="listitem">.kmz</span>
+              <span role="listitem">Max {{ max_upload_mb }}MB/file</span>
+            </div>
+          </details>
+          <div class="header-actions">
+            <button id="header-help" type="button" class="icon-button" data-tour-target="header-help" data-tooltip="Bantuan & shortcut (?)" data-tooltip-side="bottom" aria-label="Bantuan" onclick="window.openHelp()">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <a href="/docs" target="_blank" rel="noopener" class="icon-button" data-tooltip="Dokumentasi" data-tooltip-side="bottom" aria-label="Dokumentasi" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 19.5v-15A1.5 1.5 0 0 1 5.5 3H19l-1.5 1.5L19 6H5.5A1.5 1.5 0 0 0 4 7.5v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 10h6M9 14h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </a>
+            <button id="resetSessionButton" type="button" class="icon-button" data-tooltip="Reset input dan tampilan proses" data-tooltip-side="bottom" aria-label="Reset">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="mx-auto max-w-[1500px] px-4 pt-5 lg:px-6">
+      <nav aria-label="Workflow konversi">
+        <ol id="workflowStepper" class="workflow-stepper"></ol>
+      </nav>
+    </section>
+
+    <section class="app-layout mx-auto grid max-w-[1500px] gap-5 px-4 py-5 lg:px-6">
+      <div class="left-workspace space-y-5">
+        <section id="upload-area" class="app-panel upload-card p-4 sm:p-5">
+          <div class="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Unggah Data</h2>
+              <p class="mt-1 text-sm leading-6 text-zinc-400">Unggah file KML/KMZ untuk data desain jaringan. Data ROAD (jalan) otomatis diambil dari server OSM sesuai wilayah yang dipilih.</p>
+            </div>
+            <div class="upload-card-actions">
+              <span id="statusBadge" class="status-pill" data-tone="idle" hidden>Belum ada file</span>
+            </div>
+          </div>
+
+          <form id="uploadForm" class="space-y-5">
+
+            <div class="flow-section-card">
+              <div class="flow-section-head">
+                <span class="flow-step">1</span>
+                <div>
+                  <strong>Unggah File Desain</strong>
+                  <small>Gunakan KML/KMZ berisi pole, kabel, boundary, FAT, atau FDT.</small>
+                </div>
+              </div>
+              <label id="kmlDropZone" for="kmlFileInput" class="drop-zone group">
+                <input id="kmlFileInput" type="file" class="sr-only" accept=".kml,.kmz">
+                <span class="drop-zone-main">
+                  <span class="drop-zone-row">
+                    <span class="drop-zone-icon text-cyan-200">
+                      <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M6.5 4.5h8L18 8v11.5H6.5v-15Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                        <path d="M14.5 4.5V8H18M9 12h6M9 15h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="drop-zone-texts">
+                      <span class="drop-zone-copy">Tarik file KML/KMZ ke sini atau klik untuk memilih.</span>
+                      <span class="drop-zone-helper">Format didukung: .kml dan .kmz.</span>
+                    </span>
+                  </span>
+                  <span class="drop-zone-add-btn">Tambah file</span>
+                </span>
+                <span id="kmlFileName" class="upload-file-summary hidden"></span>
+              </label>
+            </div>
+
+            <div id="fileList" class="hidden" aria-hidden="true"></div>
+            <div id="quickStats" class="hidden quick-stats" aria-label="Quick file stats"></div>
+            <div id="errorAlert" class="hidden rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-100"></div>
+            <div id="retryBar" class="hidden retry-bar">
+              <span id="retryBarMessage"></span>
+              <button id="retryButton" type="button" class="secondary-button">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:0.95rem;height:0.95rem;">
+                  <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Coba lagi
+              </button>
+            </div>
+
+            <a id="convertShortcut" class="convert-shortcut" href="#generate-button">Ke tombol proses <span aria-hidden="true">↓</span></a>
+
+            <section id="kmlFolderPanel" class="hidden folder-panel flow-section-card" aria-hidden="true" inert style="display:none;">
+              <span id="kmlFolderText" hidden></span>
+              <span id="kmlFolderSelectedCount" hidden></span>
+              <span id="kmlFolderTotalItems" hidden></span>
+              <span id="kmlFolderWarningCount" hidden></span>
+              <input id="kmlFolderSearch" type="search" hidden tabindex="-1">
+              <button id="selectAllKmlFolders" type="button" hidden tabindex="-1"></button>
+              <button id="clearKmlFolders" type="button" hidden tabindex="-1"></button>
+              <div id="kmlFolderFilterChips" hidden></div>
+              <div id="kmlFolderSelector" hidden></div>
+            </section>
+
+            <section class="mode-card flow-section-card">
+              <div id="mode-convert" data-tour-target="mode-convert" class="eva-tour-anchor flow-section-head">
+                <span class="flow-step">2</span>
+                <div>
+                  <h3 class="text-sm font-semibold text-white">Pengaturan Konversi</h3>
+                  <p class="mt-1 text-xs leading-5 text-zinc-400">Pilih cakupan, tipe jaringan, dan format output. Jika memilih lebih dari satu output, hasil dibuat sebagai ZIP.</p>
+                </div>
+              </div>
+              <div class="mt-4">
+                <span class="mb-2 block text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Cakupan</span>
+                <div id="scopeTypeSelector" class="grid gap-2 sm:grid-cols-2">
+                  <label class="network-type-option">
+                    <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Cluster" checked>
+                    <span><strong>Cluster</strong></span>
+                  </label>
+                  <label class="network-type-option">
+                    <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Feeder">
+                    <span><strong>Feeder</strong></span>
+                  </label>
+                  <label class="network-type-option">
+                    <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Subfeeder">
+                    <span><strong>Subfeeder</strong></span>
+                  </label>
+                </div>
+                <p id="scopeTypeHint" class="mt-2 text-xs font-medium text-zinc-500">Mode Cluster aktif.</p>
+              </div>
+              <div class="mt-4">
+                <span class="mb-2 flex items-center gap-1.5 text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Tipe Jaringan
+                  <span class="tip-icon" tabindex="0" data-tooltip="AE = Aerial (di atas tiang). UG = Underground (kabel tanam). Pilih sesuai project." aria-label="AE vs UG">i</span>
+                </span>
+                <div id="networkTypeSelector" class="grid gap-2 sm:grid-cols-2">
+                  <label class="network-type-option">
+                    <input class="network-type-input sr-only" type="radio" name="network_type" value="AE" checked>
+                    <span>
+                      <strong>AE</strong>
+                      <small>Aerial</small>
+                    </span>
+                  </label>
+                  <label class="network-type-option">
+                    <input class="network-type-input sr-only" type="radio" name="network_type" value="UG">
+                    <span>
+                      <strong>UG</strong>
+                      <small>Underground</small>
+                    </span>
+                  </label>
+                </div>
+                <p id="networkTypeHint" class="mt-2 text-xs font-medium text-zinc-500">Jaringan Aerial dipilih.</p>
+              </div>
+              <div class="mt-4">
+                <span class="mb-2 block text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Format Output</span>
+                <div id="outputModeSelector" class="grid gap-2 sm:grid-cols-2">
+                  <label class="output-mode-option{% if not dxf_conversion_enabled %} is-disabled{% endif %}" data-output-target="dxf" data-output-disabled="{{ 'false' if dxf_conversion_enabled else 'true' }}" aria-disabled="{{ 'false' if dxf_conversion_enabled else 'true' }}">
+                    <input class="output-mode-input sr-only" type="checkbox" value="dxf"{% if not dxf_conversion_enabled %} disabled{% endif %}>
+                    <span>DXF (CAD){% if not dxf_conversion_enabled %} <small>Terkunci</small>{% endif %}</span>
+                  </label>
+                  <label class="output-mode-option">
+                    <input class="output-mode-input sr-only" type="checkbox" value="boq">
+                    <span>BOQ (Excel)</span>
+                  </label>
+                  <label class="output-mode-option">
+                    <input class="output-mode-input sr-only" type="checkbox" value="astri">
+                    <span>ASTRI (Excel)</span>
+                  </label>
+                  <label class="output-mode-option">
+                    <input class="output-mode-input sr-only" type="checkbox" value="kmz">
+                    <span>KMZ Standar</span>
+                  </label>
+                  <label class="output-mode-option">
+                    <input class="output-mode-input sr-only" type="checkbox" value="hpdb">
+                    <span>HPDB (Excel)</span>
+                  </label>
+                </div>
+                <p id="outputModeHint" class="mt-2 text-xs font-medium text-zinc-500">Pilih format output yang ingin dibuat.</p>
+              </div>
+              <label class="hidden" style="display: none;">
+                <span class="min-w-0">
+                  <span class="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">Batasi ROAD ke area cluster
+                    <span class="tip-icon" tabindex="0" data-tooltip="Boundary Cluster: polygon batas cluster di KML. Saat aktif, ROAD di luar boundary tidak ikut masuk DXF." aria-label="Apa itu Boundary Cluster">i</span>
+                  </span>
+                  <span class="mt-1 block text-xs leading-5 text-zinc-500">Jika aktif, data ROAD akan difilter mengikuti batas cluster.</span>
+                </span>
+                <input id="roadClipBoundaryToggle" type="checkbox" class="shrink-0" checked>
+              </label>
+            </section>
+
+            <div id="generate-button" tabindex="-1" class="sticky-action-bar" data-tour-target="generate-button">
+              <button id="convertButton" type="submit" class="primary-button w-full" disabled aria-disabled="true">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Mulai Proses
+              </button>
+              <p id="generateButtonReason" class="generate-button-reason" aria-live="polite">Lengkapi konfigurasi untuk mengaktifkan proses.</p>
+            </div>
+          </form>
+        </section>
+
+      </div>
+
+      <aside class="right-workspace space-y-5 xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto xl:pr-1">
+        <section id="astriIntegrationPanel" class="mt-4 overflow-hidden rounded-[22px] border border-sky-200/70 bg-white/55 p-4 shadow-[0_18px_60px_rgba(14,165,233,0.14)] backdrop-blur-2xl ring-1 ring-white/70">
+          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 class="text-base font-bold text-sky-900">ASTRI Upload</h3>
+              <p id="astriStatusText" class="mt-1 text-xs text-zinc-500">Belum login ASTRI.</p>
+            </div>
+            <button id="astriClearButton" type="button" class="rounded-xl border border-sky-200/70 bg-white/55 px-3 py-2 text-xs font-bold text-sky-800">Logout</button>
+          </div>
+          <div id="astriLoginForm" class="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <input id="astriUsernameInput" type="text" class="ui-input" placeholder="Username ASTRI" autocomplete="username" aria-label="Username ASTRI">
+            <input id="astriPasswordInput" type="password" class="ui-input" placeholder="Password ASTRI" autocomplete="current-password" aria-label="Password ASTRI">
+            <button id="astriLoginButton" type="button" class="secondary-button">Login ASTRI</button>
+          </div>
+          <div class="mt-3 grid gap-2 md:grid-cols-[140px_140px_1fr_auto]">
+            <select id="astriTargetTypeSelect" class="ui-input" aria-label="Scope ASTRI">
+              <option value="cluster">Cluster</option>
+              <option value="subfeeder">Subfeeder</option>
+              <option value="feeder">Feeder</option>
+            </select>
+            <select id="astriStatusFilter" class="ui-input" aria-label="Status ASTRI">
+              <option value="">Semua status</option>
+              <option value="Approved 2">Approved 2</option>
+              <option value="Approved 3">Approved 3</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="Closed">Closed</option>
+              <option value="Document Uploaded">Document Uploaded</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Need Approval">Need Approval</option>
+              <option value="Need Revision">Need Revision</option>
+              <option value="New">New</option>
+              <option value="Successful">Successful</option>
+              <option value="Unsuccessful">Unsuccessful</option>
+            </select>
+            <input id="astriClusterSearchInput" type="text" class="ui-input" placeholder="Nama/kode target ASTRI" aria-label="Cari target ASTRI">
+            <button id="astriClusterSearchButton" type="button" class="secondary-button">Search</button>
+          </div>
+          <select id="astriClusterSelect" class="mt-2 hidden w-full ui-input" aria-label="Pilih hasil pencarian ASTRI"></select>
+          <div id="astriMatchBox" class="mt-3 hidden rounded-2xl border border-sky-200/70 bg-white/45 p-3 text-sm text-zinc-700 shadow-inner backdrop-blur-xl"></div>
+          <p id="astriActionHint" class="astri-action-hint mt-3" role="status" aria-live="polite">Login ASTRI untuk menjalankan aksi.</p>
+          <details id="astriActionsDetails" class="astri-actions-details mt-3">
+            <summary>Aksi ASTRI <span>Convert · Dokumen · Schedule · BOQ</span></summary>
+          <div id="astriActionButtons" class="mt-3 flex flex-wrap gap-2">
+            <button id="astriMatchButton" type="button" class="secondary-button">Cari Match ASTRI</button>
+            <button id="astriApdConvertButton" type="button" class="rounded-xl border border-indigo-200/70 bg-indigo-50/55 px-3 py-2 text-xs font-bold text-indigo-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(99,102,241,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50/75 active:translate-y-0">Convert dari APD ASTRI</button>
+            <button id="astriUploadButton" type="button" class="secondary-button">Upload Document</button>
+            <button id="astriVerifyButton" type="button" class="secondary-button" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Verify</button>
+            <button id="astriUnverifyButton" type="button" class="secondary-button" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Unverify</button>
+            <button id="astriDownloadLatestButton" type="button" class="secondary-button">Download Document</button>
+            <button id="astriScheduleButton" type="button" class="secondary-button">Approve Schedule</button>
+            <button id="astriAddBoqButton" type="button" class="secondary-button">Add BOQ</button>
+            <a id="astriOpenLink" class="secondary-button hidden" target="_blank" rel="noopener">Buka ASTRI</a>
+          </div>
+          </details>
+          <div id="astriInlineFeedback" class="inline-feedback mt-3 hidden" aria-live="polite">
+            <strong data-inline-title></strong>
+            <span data-inline-message></span>
+          </div>
+        </section>
+        <section id="stellaIntegrationPanel" class="stella-state-host">
+          <dialog id="stellaWorkspace" aria-labelledby="stellaWorkspaceTitle">
+            <div class="stella-dialog-header">
+              <div>
+                <h2 id="stellaWorkspaceTitle">STELLA</h2>
+                <p id="stellaStatusText" class="stella-status-detail" role="status">Memeriksa koneksi server...</p>
+              </div>
+              <div class="stella-header-actions">
+                <button id="stellaRefreshButton" type="button" class="stella-text-button">Cek koneksi</button>
+                <button id="stellaCloseButton" type="button" class="stella-secondary" aria-label="Tutup ruang kerja Stella">Tutup</button>
+              </div>
+            </div>
+            <div class="stella-toolbar">
+              <div class="stella-field stella-area">
+                <label for="stellaAreaSelect">Area</label>
+                <select id="stellaAreaSelect" disabled><option value="">Pilih area...</option></select>
+              </div>
+              <div class="stella-field stella-query">
+                <label for="stellaClusterSearchInput">Nama atau kode cluster</label>
+                <input id="stellaClusterSearchInput" type="search" placeholder="Ketik minimal 2 karakter..." maxlength="160" autocomplete="off" aria-describedby="stellaClusterHint" disabled>
+              </div>
+              <button id="stellaLoadClustersButton" type="button" class="stella-secondary" disabled>Cari</button>
+            </div>
+            <div class="stella-list-toolbar">
+              <div class="stella-view-switch" role="group" aria-label="Tampilkan cluster">
+                <button id="stellaResultsViewButton" type="button" class="stella-view-button" aria-pressed="true">Hasil</button>
+                <button id="stellaSelectedViewButton" type="button" class="stella-view-button" aria-pressed="false">Dipilih (0)</button>
+              </div>
+              <button id="stellaClearButton" type="button" class="stella-text-button" disabled>Kosongkan pilihan</button>
+            </div>
+            <p id="stellaClusterHint" class="stella-hint" aria-live="polite">Pilih area, lalu cari cluster. Pilihan tersimpan saat berganti pencarian.</p>
+            <div class="stella-table-scroll" tabindex="0" role="region" aria-label="Daftar cluster" aria-busy="false">
+              <table class="stella-table">
+                <caption class="stella-sr-only">Hasil pencarian cluster dan pilihan untuk ekspor</caption>
+                <thead><tr><th scope="col" class="stella-check-cell"><span class="stella-sr-only">Pilih</span></th><th scope="col">Nama cluster</th><th scope="col" class="stella-code-cell">Kode cluster</th></tr></thead>
+                <tbody id="stellaClusterList"><tr><td colspan="3" class="stella-empty">Hasil pencarian akan muncul di sini.</td></tr></tbody>
+              </table>
+            </div>
+            <footer class="stella-dialog-footer">
+              <div class="stella-footer-info">
+                <strong id="stellaSelectedCount" aria-live="polite">0 cluster dipilih</strong>
+                <div id="stellaInlineFeedback" class="stella-feedback hidden" role="status" aria-live="polite" aria-atomic="true"><strong data-stella-feedback-title></strong><span data-stella-feedback-message></span></div>
+              </div>
+              <div class="stella-export-actions">
+                <a id="stellaDownloadLink" class="stella-download-link hidden" href="#">Unduh hasil terakhir</a>
+                <button id="stellaDownloadButton" type="button" class="stella-primary" disabled>Unduh Excel</button>
+              </div>
+            </footer>
+          </dialog>
+        </section>
+        <section id="resultDashboard" class="app-panel p-4 sm:p-5">
+          <div class="result-dashboard-heading mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-white">Ruang Hasil</h2>
+              <p id="statusText" class="mt-1 text-sm text-zinc-400">Unggah file KML/KMZ, pilih format output, lalu klik Mulai Proses.</p>
+              <div id="inlineFeedback" class="inline-feedback mt-3 hidden" aria-live="polite">
+                <strong data-inline-title></strong>
+                <span data-inline-message></span>
+              </div>
+            </div>
+            <div class="result-status-actions">
+              <button id="cancelJobButton" type="button" class="secondary-button cancel-job-button hidden">Batalkan</button>
+              <span id="dashboardStatusPill" class="status-pill" data-tone="idle">Menunggu hasil</span>
+            </div>
+          </div>
+
+          <div id="result-download" data-tour-target="result-download">
+          <div id="downloadPanel" class="result-card hidden">
+            <div class="result-download-row">
+              <div class="result-file-name">
+                <label id="outputFileLabel" for="outputFileName" class="sr-only">Nama file output</label>
+                <textarea id="outputFileName" class="ui-input" rows="2" placeholder="nama-file.zip" aria-describedby="outputNameHint" spellcheck="false" autocomplete="off"></textarea>
+                <span id="outputNameHint" class="sr-only">Nama file dapat langsung diubah. Enter atau keluar dari kolom untuk menyimpan; Escape untuk batal.</span>
+              </div>
+              <div class="result-download-actions">
+                <a id="downloadButton" href="#" class="download-primary hidden">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 4v10m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  Unduh ZIP
+                </a>
+                <button id="resetOutputNameButton" type="button" class="secondary-button">Reset hasil</button>
+                <button id="convertAnotherButton" type="button" class="secondary-button">Konversi file lain</button>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <div class="result-progress mb-4">
+            <div class="progress-heading-row mb-2">
+              <span class="text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Progress</span>
+              <div id="stageProgress" class="stage-progress" aria-label="Conversion stages"></div>
+              <span id="progressValue" class="text-sm font-bold text-emerald-300">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="progressBar" class="h-full w-0 transition-all duration-500"></div>
+            </div>
+          </div>
+
+          <div id="dashboardEmptyState" class="dashboard-empty-state">
+            <strong>Belum ada hasil</strong>
+            <p>Unggah file, pilih format output, lalu klik Mulai Proses untuk melihat hasil di sini.</p>
+            <ol class="empty-step-list" aria-label="Alur proses EVA">
+              <li>Unggah file</li>
+              <li>Validasi folder</li>
+              <li>Pilih output</li>
+              <li>Mulai Proses</li>
+              <li>Unduh hasil</li>
+            </ol>
+          </div>
+
+          <div class="dashboard-sections">
+            <section id="resultSummaryPanel" class="dashboard-section result-summary-panel hidden">
+              <div class="dashboard-section-header">
+                <div>
+                  <h3>Ringkasan Hasil</h3>
+                  <small id="resultSummarySubtitle">Ringkasan proses akan muncul setelah generate selesai.</small>
+                </div>
+                <span id="resultSummaryStatusPill" class="output-status-summary-pill" data-tone="idle">Menunggu</span>
+              </div>
+              <div id="dashboardSummaryGrid" class="dashboard-summary-grid hidden"></div>
+              <div id="standardizerSummary" class="standardizer-summary hidden"></div>
+            </section>
+
+            <section id="outputStatusPanel" class="dashboard-section output-status-panel hidden">
+              <details id="outputStatusDetails" class="output-status-details">
+                <summary class="dashboard-section-header output-status-summary">
+                  <span class="output-status-summary-title">
+                    <h3>Status Output</h3>
+                    <small id="outputStatusSummaryText">Output belum tersedia. Klik Mulai Proses untuk membuat file unduhan.</small>
+                  </span>
+                  <span class="output-status-summary-actions">
+                    <span id="outputStatusSummaryPill" class="output-status-summary-pill" data-tone="idle">Menunggu</span>
+                    <span class="output-status-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="m8 10 4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                  </span>
+                </summary>
+                <div id="outputStatusGrid" class="output-status-grid"></div>
+              </details>
+            </section>
+
+            <!--
+              BOQ Summary & HPDB/ASTRI Summary panels are kept in the DOM (hidden)
+              so JS code that reads/updates these IDs continues to work.
+              All info is already shown in the Preview tabs (BOQ / HPDB / DXF).
+            -->
+            <div class="hidden" aria-hidden="true">
+              <section class="dashboard-section">
+                <div class="dashboard-section-header">
+                  <h3>BOQ Summary</h3>
+                  <span id="boqTemplateStatus" class="template-status-pill"></span>
+                </div>
+                <div class="grid gap-3 text-sm sm:grid-cols-2">
+                  <div class="summary-tile summary-meta">
+                    <span>Sheet target</span>
+                    <strong id="boqSheetTarget">BoM CLUSTER AE</strong>
+                  </div>
+                  <div class="summary-tile summary-meta">
+                    <span>Output file</span>
+                    <strong id="boqOutputFile" class="truncate">PROJECT_NAME_BOQ.xlsx</strong>
+                  </div>
+                </div>
+                <div id="boqSummaryGrid" class="summary-grid mt-3"></div>
+              </section>
+
+              <section class="dashboard-section">
+                <div class="dashboard-section-header">
+                  <h3>HPDB / ASTRI Summary</h3>
+                  <span id="hpdbTemplateStatus" class="template-status-pill"></span>
+                </div>
+                <div class="grid gap-3 text-sm sm:grid-cols-2">
+                  <div class="summary-tile summary-meta">
+                    <span>ASTRI template</span>
+                    <strong id="hpdbTemplateFile" class="truncate">TEMPLATE HPDB.xlsx</strong>
+                  </div>
+                  <div class="summary-tile summary-meta">
+                    <span>Sheets</span>
+                    <strong id="hpdbSheetsTarget" class="truncate">CLUSTER, FAT, HOMEPASS</strong>
+                  </div>
+                  <div class="summary-tile summary-meta">
+                    <span>Max FDT supported</span>
+                    <strong id="hpdbMaxFdt">10</strong>
+                  </div>
+                  <div class="summary-tile summary-meta">
+                    <span>Output file</span>
+                    <strong id="hpdbOutputFile" class="truncate">PROJECT_NAME_HPDB.xlsx</strong>
+                  </div>
+                </div>
+                <div id="hpdbSummaryGrid" class="summary-grid mt-3"></div>
+              </section>
+            </div>
+
+            <div class="hidden" aria-hidden="true"></div>
+          </div>
+
+          <section id="consolePanel" class="console-panel-embedded result-process-log hidden" aria-labelledby="consoleTitle">
+            <div class="console-header-row">
+              <div class="console-header-main">
+                <div class="console-title-row">
+                  <h3 id="consoleTitle">Log Proses</h3>
+                  <span id="consoleLiveIndicator" class="console-live hidden">LIVE</span>
+                  <span id="consoleWarningsBadge" class="console-meta-badge" data-tone="warning">0 peringatan</span>
+                  <span id="consoleErrorsBadge" class="console-meta-badge" data-tone="error">0 error</span>
+                  <span id="consoleDurationBadge" class="console-meta-badge" data-tone="info" data-log-detail-action hidden>Durasi --</span>
+                </div>
+              </div>
+              <div class="console-actions">
+                <button id="clearLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Bersihkan</button>
+                <button id="copyLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Salin</button>
+                <button id="downloadLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Unduh</button>
+                <button id="consoleToggle" type="button" class="console-action-button" aria-controls="consoleLogShell" aria-expanded="false">Lihat log</button>
+              </div>
+            </div>
+            <div id="consoleLogShell" class="console-log-shell" aria-live="polite" hidden>
+              <div id="consoleLogBody" class="console-log-body"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="validationResultPanel" class="validation-result-card hidden" aria-live="polite">
+          <div class="validation-result-header">
+            <div>
+              <h2>Validasi Hasil KMZ</h2>
+              <p>Hasil pemeriksaan folder, icon/style, duplikat, dan atribut setelah konversi.</p>
+            </div>
+            <div class="validation-result-actions">
+              <span id="validationResultBadge" class="validation-result-badge" data-tone="idle">Menunggu</span>
+              <button id="validationResultToggle" type="button" class="console-action-button validation-result-toggle" aria-controls="downloadValidationSummary" aria-expanded="false">Lihat detail</button>
+            </div>
+          </div>
+          <div id="downloadValidationSummary" class="validation-result-content" hidden></div>
+        </section>
+
+        <section id="previewWorkspacePanel">
+          <div id="resultWorkspaceScopeBadges" class="result-workspace-header-badges hidden" aria-live="polite">
+            <span id="resultNetworkTypeBadge" class="result-workspace-header-badge">AE</span>
+            <span id="resultScopeTypeBadge" class="result-workspace-header-badge">Cluster</span>
+          </div>
+
+          <div>
+            <section id="tab-summary" class="preview-tab-panel hidden" data-preview-panel="summary" role="tabpanel">
+              <div id="resultWorkspaceSummary" class="result-workspace-summary"></div>
+            </section>
+
+            <section id="tab-map" class="preview-tab-panel hidden" data-preview-panel="map" role="tabpanel">
+              <div class="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Preview Map</h3>
+                  <p id="previewText" class="mt-1 text-sm text-zinc-400">Preview akan muncul setelah file berhasil divalidasi. Map menampilkan ROAD, KML features, dan area cluster.</p>
+                </div>
+              </div>
+              <div id="mapStatsGrid" class="map-stats-grid mb-3"></div>
+              <div class="map-lock-shell">
+                <div id="map" class="h-[430px] min-h-[340px] overflow-hidden rounded-lg"></div>
+                <div id="mapLegend" class="map-legend hidden" aria-label="Map legend">
+                  <button type="button" class="map-legend-toggle" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    Layers <span id="mapLegendCount">0</span>
+                  </button>
+                  <div class="map-legend-body" hidden>
+                    <ul id="mapLegendList"></ul>
+                  </div>
+                </div>
+                <button id="mapLockToggle" type="button" class="map-lock-toggle" aria-pressed="false">Aktifkan interaksi peta</button>
+                <button id="mapLockOverlay" type="button" class="map-lock-overlay" aria-label="Buka kunci preview peta">
+                  <span>Interaksi peta dikunci</span>
+                  <small>Klik area map untuk mengaktifkan zoom dan drag. Scroll halaman tetap aman saat map terkunci.</small>
+                </button>
+              </div>
+            </section>
+
+            <section id="tab-boq" class="preview-tab-panel hidden" data-preview-panel="boq" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div class="flex items-center gap-2 min-w-0">
+                  <h3 class="text-base font-semibold text-white">Preview BOQ Table</h3>
+                  <span id="boqFilterActiveBadge" class="filter-active-badge hidden" aria-live="polite"></span>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2 xl:w-[420px]">
+                  <select id="boqStatusFilter" class="boq-filter-select" aria-label="Filter status BOQ">
+                    <option value="all">Semua status</option>
+                    <option value="mapped">Terpetakan</option>
+                    <option value="warning">Peringatan</option>
+                    <option value="unmapped">Belum terpetakan</option>
+                  </select>
+                  <select id="boqSourceFilter" class="boq-filter-select" aria-label="Filter source folder BOQ">
+                    <option value="all">Semua folder</option>
+                    <option value="distribution">Distribution Cable</option>
+                    <option value="sling">Sling Wire</option>
+                    <option value="fdt">FDT</option>
+                    <option value="fat">FAT</option>
+                    <option value="new_pole">New Pole</option>
+                    <option value="partner">Existing Pole Partner</option>
+                    <option value="emr">Existing Pole EMR</option>
+                  </select>
+                </div>
+              </div>
+              <p id="boqPreviewText" class="mt-1 mb-2 text-sm text-zinc-400">Belum ada BOQ row yang bisa ditampilkan.</p>
+              <div id="boqPreviewContent">
+                <div class="boq-table-shell">
+                  <table class="boq-preview-table">
+                    <thead>
+                      <tr>
+                        <th>Folder Sumber</th>
+                        <th>Induk/FDT</th>
+                        <th>Item</th>
+                        <th>Tipe Kabel</th>
+                        <th>Quantity</th>
+                        <th>Unit</th>
+                        <th>Supplier</th>
+                        <th>Target Cell</th>
+                        <th>Status</th>
+                        <th>Alasan</th>
+                      </tr>
+                    </thead>
+                    <tbody id="boqPreviewBody">
+                      <tr><td colspan="9" class="boq-empty-cell">Belum ada BOQ row yang bisa ditampilkan.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="tab-nro" class="preview-tab-panel hidden" data-preview-panel="nro" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Preview BoQ NRO Cluster</h3>
+                  <p id="boqNroPreviewText" class="mt-1 text-sm text-zinc-400">Data sheet BoQ NRO Cluster akan muncul setelah BOQ (Excel) dibuat.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="app-chip">Columns N, B, D, E</span>
+                  <button id="boqNroExportCsvButton" type="button" class="secondary-button" title="Export NRO Cluster ke CSV" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:0.95rem;height:0.95rem;">
+                      <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+              <div class="boq-table-shell boq-nro-table-shell">
+                <table class="boq-preview-table boq-nro-preview-table">
+                  <thead id="boqNroPreviewHead">
+                    <tr>
+                      <th>Kode Material</th>
+                      <th>Deskripsi Item</th>
+                      <th>Qty Material</th>
+                      <th>Qty Jasa</th>
+                    </tr>
+                  </thead>
+                  <tbody id="boqNroPreviewBody">
+                    <tr><td colspan="4" class="boq-empty-cell">Preview NRO belum tersedia.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="tab-hpdb-cluster" class="preview-tab-panel hidden" data-preview-panel="hpdb-cluster" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Preview HPDB Cluster</h3>
+                  <p id="hpdbClusterPreviewText" class="mt-1 text-sm text-zinc-400">Belum ada HPDB CLUSTER row yang bisa ditampilkan.</p>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2 xl:w-[460px]">
+                  <select class="hpdb-filter-select boq-filter-select" aria-label="Filter HPDB Cluster"></select>
+                  <input class="hpdb-search-input ui-input" type="search" placeholder="Cari FDT, cluster, source...">
+                </div>
+              </div>
+              <div class="boq-table-shell hpdb-table-shell">
+                <table class="boq-preview-table hpdb-preview-table">
+                  <thead>
+                    <tr>
+                      <th>FDT</th>
+                      <th>FDT Code</th>
+                      <th>Clustername</th>
+                      <th>Latitude</th>
+                      <th>Longitude</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hpdbClusterPreviewBody">
+                    <tr><td colspan="6" class="boq-empty-cell">Belum ada HPDB CLUSTER row yang bisa ditampilkan.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="tab-hpdb-fat" class="preview-tab-panel hidden" data-preview-panel="hpdb-fat" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Preview HPDB FAT</h3>
+                  <p id="hpdbFatPreviewText" class="mt-1 text-sm text-zinc-400">Belum ada HPDB FAT row yang bisa ditampilkan.</p>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2 xl:w-[460px]">
+                  <select class="hpdb-filter-select boq-filter-select" aria-label="Filter HPDB FAT"></select>
+                  <input class="hpdb-search-input ui-input" type="search" placeholder="Cari FDT code, FAT, cluster...">
+                </div>
+              </div>
+              <div class="boq-table-shell hpdb-table-shell">
+                <table class="boq-preview-table hpdb-preview-table">
+                  <thead>
+                    <tr>
+                      <th>FDT</th>
+                      <th>FDT Code</th>
+                      <th>Clustername</th>
+                      <th>FAT Code</th>
+                      <th>FAT Latitude</th>
+                      <th>FAT Longitude</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hpdbFatPreviewBody">
+                    <tr><td colspan="7" class="boq-empty-cell">Belum ada HPDB FAT row yang bisa ditampilkan.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="tab-hpdb-homepass" class="preview-tab-panel hidden" data-preview-panel="hpdb-homepass" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Preview HPDB Homepass</h3>
+                  <p id="hpdbHomepassPreviewText" class="mt-1 text-sm text-zinc-400">Belum ada HPDB HOMEPASS row yang bisa ditampilkan.</p>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2 xl:w-[460px]">
+                  <select class="hpdb-filter-select boq-filter-select" aria-label="Filter HPDB Homepass"></select>
+                  <input class="hpdb-search-input ui-input" type="search" placeholder="Cari FDT, FAT, homepass...">
+                </div>
+              </div>
+              <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span id="hpdbHomepassPageText" class="text-xs font-semibold text-zinc-500">Halaman 1 dari 1</span>
+                  <div class="flex gap-2">
+                    <button id="hpdbHomepassPrevPage" type="button" class="secondary-button">Sebelumnya</button>
+                    <button id="hpdbHomepassNextPage" type="button" class="secondary-button">Berikutnya</button>
+                  </div>
+
+              </div>
+              <div class="boq-table-shell hpdb-table-shell">
+                <table class="boq-preview-table hpdb-preview-table">
+                  <thead>
+                    <tr>
+                      <th>FDT</th>
+                      <th>FDT Code</th>
+                      <th>Clustername</th>
+                      <th>FAT Code</th>
+                      <th>Homepass Name</th>
+                      <th>Latitude_homepass</th>
+                      <th>Longitude_homepass</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hpdbHomepassPreviewBody">
+                    <tr><td colspan="8" class="boq-empty-cell">Belum ada HPDB HOMEPASS row yang bisa ditampilkan.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="tab-warnings" class="preview-tab-panel hidden" data-preview-panel="warnings" role="tabpanel">
+              <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Peringatan</h3>
+                  <p class="mt-1 text-sm text-zinc-400">Item warning, unmapped, atau skipped dari data BOQ existing.</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button id="copyWarningSummaryButton" type="button" class="secondary-button">Salin ringkasan peringatan</button>
+                  <button id="viewWarningsInBoqButton" type="button" class="secondary-button">Lihat di tabel BOQ</button>
+                </div>
+              </div>
+              <div id="issueCenter" class="issue-center mb-3"></div>
+              <div id="warningSummaryPanel" class="warning-summary-panel"></div>
+              <div id="warningList" class="warning-list mt-3"></div>
+            </section>
+
+            <section id="tab-stats" class="preview-tab-panel hidden" data-preview-panel="stats" role="tabpanel">
+              <div class="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">DXF Layers / Statistics</h3>
+                  <p class="mt-1 text-sm text-zinc-400">Ringkasan ROAD, KML, layer, panjang kabel, dan BOQ.</p>
+                </div>
+                <span class="text-xs font-medium text-zinc-500">summary</span>
+              </div>
+              <div id="dxfEmptyState" class="preview-empty hidden">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="m8.5 9.5 7 5M15.5 9.5l-7 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+                <h4>Belum ada output DXF</h4>
+                <p>Statistik layer akan muncul setelah output DXF berhasil dibuat.</p>
+                <button id="dxfEmptyCta" type="button" class="secondary-button mt-3">Mulai Proses</button>
+              </div>
+              <div id="statsGrid" class="stats-grid"></div>
+            </section>
+          </div>
+        </section>
+
+      </aside>
+    </section>
+  </main>
+
+  <!-- Drag-anywhere shield -->
+  <div id="dragShield" class="drag-shield" aria-hidden="true">
+    <div class="drag-shield-card">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 4v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <h2>Lepas file di sini</h2>
+      <p>KML/KMZ untuk data desain. Data ROAD otomatis diambil dari server OSM berdasarkan wilayah yang dipilih.</p>
+    </div>
+  </div>
+
+
+  
+  <!-- FDT Coding modal -->
+  <div id="fdtCodingModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="fdtCodingModalTitle">
+    <div class="modal-card modal-card-fdt" role="document">
+      <div class="modal-header fdt-modal-header">
+        <div class="fdt-modal-heading">
+          <span class="fdt-modal-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <ellipse cx="12" cy="5" rx="7" ry="3" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5 5v5c0 1.66 3.13 3 7 3s7-1.34 7-3V5M5 10v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <div class="fdt-modal-copy">
+            <h2 id="fdtCodingModalTitle">Database Coding FDT</h2>
+            <p>Kelola coding, OLT, dan unit jaringan dalam satu ruang kerja.</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close fdt-coding-modal-close" data-close-modal aria-label="Tutup Database Coding FDT">&times;</button>
+      </div>
+      <iframe id="fdtCodingFrame" class="fdt-coding-frame" title="Coding FDT Database" data-src="{{ url_for('fdt_coding_admin_page') }}"></iframe>
+    </div>
+  </div>
+
+  <!-- GDR modal -->
+  <div id="gdrModal" class="modal-backdrop gdr-modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="gdrModalTitle">
+    <div class="modal-card modal-card-gdr" role="document">
+      <header class="gdr-modal-header">
+        <div class="gdr-modal-heading">
+          <h2 id="gdrModalTitle">Generate GDR</h2>
+        </div>
+        <button type="button" class="modal-close gdr-modal-close" data-close-modal aria-label="Tutup Generate GDR" title="Tutup">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
+      <iframe id="gdrFrame" class="fdt-coding-frame gdr-modal-frame" title="GDR Dashboard" data-src="{{ url_for('gdr_dashboard_page') }}"></iframe>
+    </div>
+  </div>
+
+  <!-- KMZ Coordinates modal -->
+  <div id="kmzCoordsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-label="KMZ ke Excel Koordinat">
+    <div class="modal-card modal-card-fdt modal-card-coreman" role="document">
+      <button type="button" class="modal-close coreman-modal-close" data-close-modal aria-label="Tutup">&times;</button>
+      <iframe id="kmzCoordsFrame" class="fdt-coding-frame" title="KMZ ke Excel Koordinat" data-src="{{ url_for('kmz_coords_page') }}"></iframe>
+    </div>
+  </div>
+
+  <!-- ABD CAD stays in EVA; the iframe preserves its form and download flow. -->
+  <dialog id="abdCadModal" aria-labelledby="abdCadTitle">
+    <div class="abd-cad-header">
+      <h2 id="abdCadTitle">ABD CAD</h2>
+      <button id="abdCadClose" type="button" aria-label="Tutup ABD CAD" title="Tutup" autofocus>&times;</button>
+    </div>
+    <iframe id="abdCadFrame" title="Form ABD CAD" data-src="/abd-cad?embedded=1"></iframe>
+  </dialog>
+
+  <!-- Help modal -->
+  <div id="helpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="helpModalTitle">
+    <div class="modal-card modal-card-wide" role="document">
+      <div class="modal-header">
+        <div>
+          <h2 id="helpModalTitle">Panduan EVA</h2>
+          <p>Cara pakai cepat dan struktur folder yang dibutuhkan.</p>
+        </div>
+        <button type="button" class="modal-close" data-close-modal aria-label="Tutup">&times;</button>
+      </div>
+      <div class="modal-body">
+        <details class="help-panel" open>
+          <summary>Cara pakai</summary>
+          <div class="help-panel-body">
+            <ol>
+              <li>Unggah file <code>.kml</code> atau <code>.kmz</code> untuk data desain.</li>
+              <li>Untuk DXF, HPDB, atau ASTRI, pilih wilayah pada popup sebelum proses dimulai. ROAD OSM dipilih otomatis.</li>
+              <li>Pilih cakupan, tipe jaringan, dan format output.</li>
+              <li>Lihat checklist untuk memastikan konfigurasi sudah lengkap.</li>
+              <li>Klik <strong>Mulai Proses</strong> untuk menjalankan konversi.</li>
+              <li>Unduh hasil setelah proses selesai.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="help-panel">
+          <summary>Folder KML/KMZ standar</summary>
+          <div class="help-panel-body">
+            <p>Sistem mendeteksi folder ini secara otomatis. Folder tertulis tebal wajib ada.</p>
+            <div class="folder-checklist mt-3" id="folderChecklistGrid"></div>
+          </div>
+        </details>
+        <details class="help-panel">
+          <summary>Istilah teknis</summary>
+          <div class="help-panel-body">
+            <ul>
+              <li><strong>BOQ</strong> - Bill of Quantity, daftar material dan jumlahnya.</li>
+              <li><strong>HPDB</strong> - Homepass Database, master data homepass per cluster.</li>
+              <li><strong>ASTRI</strong> - Workbook standar dari ASTRI yang merangkum HPDB + BOQ NRO.</li>
+              <li><strong>FDT</strong> - Fiber Distribution Terminal (titik distribusi utama).</li>
+              <li><strong>FAT</strong> - Fiber Access Terminal (titik akses ke homepass).</li>
+              <li><strong>NRO Cluster</strong> - Sheet ringkasan material per cluster.</li>
+              <li><strong>AE / UG</strong> - Aerial (di tiang) atau Underground (tanam).</li>
+            </ul>
+          </div>
+        </details>
+        <details class="help-panel">
+          <summary>Keyboard shortcut</summary>
+          <div class="help-panel-body">
+            <div class="kbd-row"><span>Mulai Proses</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span></div>
+            <div class="kbd-row"><span>Buka bantuan</span><span class="kbd-keys"><kbd>?</kbd></span></div>
+            <div class="kbd-row"><span>Buka monitor aktivitas</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>H</kbd></span></div>
+            <div class="kbd-row"><span>Cari folder KML</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>K</kbd></span></div>
+            <div class="kbd-row"><span>Tutup modal / drawer</span><span class="kbd-keys"><kbd>Esc</kbd></span></div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity monitor drawer -->
+  <div id="historyDrawer" class="drawer hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="historyDrawerTitle">
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <aside class="drawer-panel">
+      <div class="drawer-header">
+        <div>
+          <h2 id="historyDrawerTitle">Monitor Aktivitas</h2>
+          <p style="color:var(--text-secondary);font-size:0.74rem;margin-top:0.18rem;">Pantau job live dari server, status worker, durasi, warning, error, dan download output.</p>
+        </div>
+        <button type="button" class="modal-close" data-close-drawer aria-label="Tutup">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div id="activityOverview" class="activity-overview" aria-label="Activity overview"></div>
+        <div class="activity-toolbar">
+          <label class="activity-search">
+            <span class="sr-only">Cari aktivitas</span>
+            <input id="activitySearchInput" type="search" class="ui-input" placeholder="Cari file, job id, output...">
+          </label>
+          <select id="activityStatusFilter" class="ui-input activity-filter" aria-label="Filter status">
+            <option value="all">Semua status</option>
+            <option value="queued">Masuk antrean</option>
+            <option value="processing">Memproses</option>
+            <option value="retrying">Mencoba ulang</option>
+            <option value="done">Selesai</option>
+            <option value="error">Error</option>
+            <option value="failed">Gagal</option>
+          </select>
+          <button id="activityRefreshButton" type="button" class="secondary-button">Muat ulang</button>
+          <button id="activityAutoRefreshButton" type="button" class="secondary-button" data-active="true">Auto aktif</button>
+        </div>
+        <div id="activityLastUpdated" class="activity-last-updated">Memuat aktivitas...</div>
+        <div class="activity-grid">
+          <div id="historyList" class="activity-list"></div>
+          <aside id="activityDetail" class="activity-detail" aria-live="polite"></aside>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="donateDialog" class="donate-dialog hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="donateDialogTitle">
+    <div class="donate-backdrop" data-close-donate></div>
+    <section class="donate-panel" role="document">
+      <header class="donate-panel__header">
+        <div class="donate-panel__title">
+          <span class="donate-eyebrow">Dukung EVA</span>
+          <h2 id="donateDialogTitle">Bantu pengembangan EVA</h2>
+          <p>Scan QRIS atau transfer langsung.</p>
+        </div>
+        <button type="button" class="donate-close" data-close-donate aria-label="Tutup donasi">×</button>
+      </header>
+      <div class="donate-panel__body">
+        <figure class="donate-qris">
+          <div class="donate-qris__stage">
+            <img src="/static/assets/donate-qris-leaf.png?v=qris-leaf-20260919-v1" alt="QRIS DYENA, CGK untuk donasi" decoding="async">
+          </div>
+          <figcaption>QRIS · DYENA, CGK</figcaption>
+        </figure>
+        <section class="donate-bank" aria-labelledby="donateBankTitle">
+          <div class="donate-bank__heading">
+            <span class="donate-eyebrow">Transfer langsung</span>
+            <h3 id="donateBankTitle">SeaBank</h3>
+          </div>
+          <div class="donate-account-row">
+            <div><span>Nomor rekening</span><strong id="donateAccountNumber">901994786486</strong></div>
+            <button type="button" class="donate-copy" data-copy-account>Salin</button>
+          </div>
+          <p>a.n. Dwi Yulianto</p>
+          <span id="donateCopyStatus" class="donate-copy-status" role="status" aria-live="polite"></span>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="{{ url_for('static', filename='js/utils.js') }}?v=eva-20260605-folder-alias" defer></script>
+  <script src="{{ url_for('static', filename='js/toast.js') }}?v=popup-neutral-20260819-211055"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=astri-fdt-excel-stage-20260929-v1" defer></script>
+  <script src="/static/js/eva-astri-dialogs.js?v=astri-popup-20260926-v2" defer></script>
+  <script src="/static/js/eva-support-modal-keys.js?v=astri-popup-20260926-v2" defer></script>
+  <script src="{{ url_for('static', filename='js/stella.js') }}?v=stella-card-polish-20260921-v2" defer></script>
+  <script src="{{ url_for('static', filename='js/document-abd.js') }}?v=abd-convert-20260917-v2" defer></script>
+  <script src="{{ url_for('static', filename='js/donate.js') }}?v=donate-20260911-v1" defer></script>
+  <script src="{{ url_for('static', filename='js/donate-qris-bloom.js') }}?v=bloom-20260926-left-random-v2" defer></script>
+  <script src="{{ url_for('static', filename='js/eva-assistant.js') }}?v=eva-20260605-folder-alias" defer></script>
+  <script type="module" src="{{ url_for('static', filename='js/notifications.js') }}?v=popup-neutral-20260819-211055"></script>
+</body>
+</html>
