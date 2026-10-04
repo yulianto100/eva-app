@@ -1,0 +1,263 @@
+services:
+  redis:
+    image: sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    container_name: eva-redis
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy volatile-lru
+    volumes:
+    - redis-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+    restart: unless-stopped
+  web:
+    image: sha256:594984348a0acfd9a45658aa7607f69bd61dd3d10029d1789b6054caecf63d82
+    container_name: eva-converter
+    ports:
+    - 127.0.0.1:5000:5000
+    environment:
+      STELLA_CDP_URL: http://172.18.0.1:9224
+      STELLA_LOCK_FILE: /app/data/stella-browser.lock
+      TZ: Asia/Jakarta
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: /run/secrets/eva_secret_key
+      DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CONVERSION_QUEUE_ENABLED: 'true'
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
+      JOB_SLOT_TTL_SECONDS: '180'
+      JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
+      JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
+      JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
+      JOB_STALE_CHECK_INTERVAL_SECONDS: ${JOB_STALE_CHECK_INTERVAL_SECONDS:-300}
+      HPDB_AUTO_GEOCODE_ENABLED: ${HPDB_AUTO_GEOCODE_ENABLED:-true}
+      ALERT_ENABLED: 'false'
+      OUTBOUND_SYNC_ENABLED: 'true'
+      ALERT_WEBHOOK_URL: ''
+      ALERT_TELEGRAM_CHAT_ID: ''
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      MAX_BATCH_UPLOAD_MB: ${MAX_BATCH_UPLOAD_MB:-5000}
+      CLEANUP_MAX_AGE_HOURS: ${CLEANUP_MAX_AGE_HOURS:-12}
+      ASTRI_DOWNLOAD_MAX_AGE_HOURS: ${ASTRI_DOWNLOAD_MAX_AGE_HOURS:-12}
+      JOB_MAX_AGE_HOURS: ${JOB_MAX_AGE_HOURS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      RFS_SPREADSHEET_ID: ${RFS_SPREADSHEET_ID:-1DRCnUofaVEkqjKniljy4FPu-sG1BeHGteS-sCISOkyQ}
+      RFS_DATA_SHEET_NAME: ${RFS_DATA_SHEET_NAME:-RFS_DATA}
+      RFS_TARGET_SHEET_NAME: ${RFS_TARGET_SHEET_NAME:-RFS_TARGET}
+      RFS_SUMMARY_SHEET_NAME: ${RFS_SUMMARY_SHEET_NAME:-RFS_SUMMARY}
+      RFS_YTD_SHEET_NAME: ${RFS_YTD_SHEET_NAME:-RFS_YTD}
+      RFS_BASE_INCENTIVE_IDR: ${RFS_BASE_INCENTIVE_IDR:-2000000}
+      RFS_DIFFICULTY_BY_REGION: ${RFS_DIFFICULTY_BY_REGION:-Bekasi:1.25,Jakarta Selatan:1.25,Sukabumi:1.0}
+      XIAOMI_MIMO_API_KEY: ${XIAOMI_MIMO_API_KEY:-}
+      XIAOMI_MIMO_BASE_URL: ${XIAOMI_MIMO_BASE_URL:-}
+      XIAOMI_MIMO_MODEL: ${XIAOMI_MIMO_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      EVA_AI_ASSIST: ${EVA_AI_ASSIST:-false}
+      EVA_AI_MODEL: ${EVA_AI_MODEL:-9r}
+      EVA_AI_FALLBACK_MODEL: ${EVA_AI_FALLBACK_MODEL:-}
+      EVA_AI_FALLBACK_BASE_URL: ${EVA_AI_FALLBACK_BASE_URL:-}
+      EVA_AI_BASE_URL: ${EVA_AI_BASE_URL:-}
+      EVA_AI_API_KEY: ${EVA_AI_API_KEY:-}
+      EVA_AI_CONFIDENCE_MIN: ${EVA_AI_CONFIDENCE_MIN:-0.80}
+      EVA_AI_TIMEOUT: ${EVA_AI_TIMEOUT:-60}
+      EVA_AI_REASONING_EFFORT: ${EVA_AI_REASONING_EFFORT:-low}
+      EVA_AI_CACHE_TTL_SECONDS: ${EVA_AI_CACHE_TTL_SECONDS:-3600}
+      EVA_AI_CACHE_MAX_ENTRIES: ${EVA_AI_CACHE_MAX_ENTRIES:-256}
+      EVA_AI_CIRCUIT_BREAKER_SECONDS: ${EVA_AI_CIRCUIT_BREAKER_SECONDS:-300}
+      EVA_AI_VISUAL_PARCEL: ${EVA_AI_VISUAL_PARCEL:-false}
+      KNOWLEDGE_DIR: ${KNOWLEDGE_DIR:-knowledge}
+      KNOWLEDGE_DB_PATH: ${KNOWLEDGE_DB_PATH:-data/knowledge_index.db}
+    volumes:
+    - ./uploads:/app/uploads
+    - ./outputs:/app/outputs
+    - ./backups:/app/backups
+    - ./data:/app/data
+    - /opt/eva-abd-runtime/squashfs-root:/opt/oda:ro
+    - ./geofabrik:/app/geofabrik
+    - ./templates:/app/templates
+    - ./static:/app/static
+    - ./config.py:/app/config.py:ro
+    - ./.secrets:/app/.secrets:ro
+    secrets:
+    - eva_secret_key
+    labels:
+      prometheus.io/scrape: 'true'
+      prometheus.io/port: '5000'
+      prometheus.io/path: /metrics/prometheus
+    depends_on:
+    - redis
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:5000/readyz
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    restart: unless-stopped
+  worker:
+    image: sha256:2c71f411e198c269959b2f4fc4fb0b4ab0e2494c99bf9c071cab61e523be7779
+    container_name: eva-worker
+    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker@%h
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: /run/secrets/eva_secret_key
+      DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CONVERSION_QUEUE_ENABLED: 'true'
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
+      JOB_SLOT_TTL_SECONDS: '180'
+      JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
+      JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
+      JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
+      JOB_STALE_CHECK_INTERVAL_SECONDS: ${JOB_STALE_CHECK_INTERVAL_SECONDS:-300}
+      HPDB_AUTO_GEOCODE_ENABLED: ${HPDB_AUTO_GEOCODE_ENABLED:-true}
+      ALERT_ENABLED: 'false'
+      ALERT_WEBHOOK_URL: ''
+      ALERT_TELEGRAM_CHAT_ID: ''
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      MAX_BATCH_UPLOAD_MB: ${MAX_BATCH_UPLOAD_MB:-5000}
+      CLEANUP_MAX_AGE_HOURS: ${CLEANUP_MAX_AGE_HOURS:-12}
+      ASTRI_DOWNLOAD_MAX_AGE_HOURS: ${ASTRI_DOWNLOAD_MAX_AGE_HOURS:-12}
+      JOB_MAX_AGE_HOURS: ${JOB_MAX_AGE_HOURS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      SEARXNG_URL: http://searxng:8080
+      RFS_SPREADSHEET_ID: ${RFS_SPREADSHEET_ID:-1DRCnUofaVEkqjKniljy4FPu-sG1BeHGteS-sCISOkyQ}
+      RFS_DATA_SHEET_NAME: ${RFS_DATA_SHEET_NAME:-RFS_DATA}
+      RFS_TARGET_SHEET_NAME: ${RFS_TARGET_SHEET_NAME:-RFS_TARGET}
+      RFS_SUMMARY_SHEET_NAME: ${RFS_SUMMARY_SHEET_NAME:-RFS_SUMMARY}
+      RFS_YTD_SHEET_NAME: ${RFS_YTD_SHEET_NAME:-RFS_YTD}
+      RFS_BASE_INCENTIVE_IDR: ${RFS_BASE_INCENTIVE_IDR:-2000000}
+      RFS_DIFFICULTY_BY_REGION: ${RFS_DIFFICULTY_BY_REGION:-Bekasi:1.25,Jakarta Selatan:1.25,Sukabumi:1.0}
+    volumes:
+    - ./uploads:/app/uploads
+    - ./outputs:/app/outputs
+    - ./backups:/app/backups
+    - ./data:/app/data
+    - ./geofabrik:/app/geofabrik
+    - ./.secrets:/app/.secrets:ro
+    secrets:
+    - eva_secret_key
+    depends_on:
+    - redis
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - result="$$(celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null)"
+        && case "$$result" in *pong*) exit 0 ;; *) exit 1 ;; esac
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+  worker2:
+    image: sha256:446d0619cfdf8191c3d1faaf613e7f4fb110b46f5d123f9fa9b7ea3fc59e3f08
+    container_name: eva-worker2
+    command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker2@%h
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: /run/secrets/eva_secret_key
+      DXF_CONVERSION_ENABLED: ${DXF_CONVERSION_ENABLED:-false}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CONVERSION_QUEUE_ENABLED: 'true'
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
+      JOB_SLOT_TTL_SECONDS: '180'
+      JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
+      JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
+      JOB_STALE_THRESHOLD_SECONDS: ${JOB_STALE_THRESHOLD_SECONDS:-1800}
+      JOB_STALE_CHECK_INTERVAL_SECONDS: ${JOB_STALE_CHECK_INTERVAL_SECONDS:-300}
+      HPDB_AUTO_GEOCODE_ENABLED: ${HPDB_AUTO_GEOCODE_ENABLED:-true}
+      ALERT_ENABLED: 'false'
+      ALERT_WEBHOOK_URL: ''
+      ALERT_TELEGRAM_CHAT_ID: ''
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      MAX_BATCH_UPLOAD_MB: ${MAX_BATCH_UPLOAD_MB:-5000}
+      CLEANUP_MAX_AGE_HOURS: ${CLEANUP_MAX_AGE_HOURS:-12}
+      ASTRI_DOWNLOAD_MAX_AGE_HOURS: ${ASTRI_DOWNLOAD_MAX_AGE_HOURS:-12}
+      JOB_MAX_AGE_HOURS: ${JOB_MAX_AGE_HOURS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      SEARXNG_URL: http://searxng:8080
+      RFS_SPREADSHEET_ID: ${RFS_SPREADSHEET_ID:-1DRCnUofaVEkqjKniljy4FPu-sG1BeHGteS-sCISOkyQ}
+      RFS_DATA_SHEET_NAME: ${RFS_DATA_SHEET_NAME:-RFS_DATA}
+      RFS_TARGET_SHEET_NAME: ${RFS_TARGET_SHEET_NAME:-RFS_TARGET}
+      RFS_SUMMARY_SHEET_NAME: ${RFS_SUMMARY_SHEET_NAME:-RFS_SUMMARY}
+      RFS_YTD_SHEET_NAME: ${RFS_YTD_SHEET_NAME:-RFS_YTD}
+      RFS_BASE_INCENTIVE_IDR: ${RFS_BASE_INCENTIVE_IDR:-2000000}
+      RFS_DIFFICULTY_BY_REGION: ${RFS_DIFFICULTY_BY_REGION:-Bekasi:1.25,Jakarta Selatan:1.25,Sukabumi:1.0}
+    volumes:
+    - ./uploads:/app/uploads
+    - ./outputs:/app/outputs
+    - ./backups:/app/backups
+    - ./data:/app/data
+    - ./geofabrik:/app/geofabrik
+    - ./.secrets:/app/.secrets:ro
+    secrets:
+    - eva_secret_key
+    depends_on:
+    - redis
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - result="$$(celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null)"
+        && case "$$result" in *pong*) exit 0 ;; *) exit 1 ;; esac
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+  searxng:
+    image: searxng/searxng:latest
+    container_name: eva-searxng
+    volumes:
+    - ./config/searxng:/etc/searxng:rw
+    environment:
+    - SEARXNG_BASE_URL=http://searxng:8080/
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+volumes:
+  redis-data: null
+secrets:
+  eva_secret_key:
+    file: ./.secrets/secret_key.txt
