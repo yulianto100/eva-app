@@ -1,0 +1,37 @@
+/* Quiet notification center. References: badge/menu transitions, compact rows. */
+#evaDrmButton { width:44px;min-width:44px;min-height:44px;padding:0!important;position:relative;color:#065f46!important; }
+#evaDrmButton .eva-drm-bell { width:21px;height:21px;flex-shrink:0;transform-origin:50% 16%;color:#065f46; }
+#evaDrmButton.has-new .eva-drm-bell { animation:eva-drm-pulse 1.8s ease-in-out infinite, eva-drm-ring 2.8s ease-in-out infinite; }
+#evaDrmCount { position:absolute;top:-4px;right:-5px;min-width:17px;height:17px;padding:0 3px;border:1px solid #cce5d5;border-radius:9px;background:#eefaf2;color:#065f46!important;font:700 10px/15px Inter,system-ui,sans-serif;text-align:center;font-variant-numeric:tabular-nums; }
+#evaDrmCount[hidden] { display:none!important; }
+#evaDrmList li.is-unread { background:#f7fcf9; }
+#evaDrmAnnounce { position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important; }
+#evaDrmDialog { position:fixed;inset:auto;margin:0;box-sizing:border-box;width:360px;max-width:calc(100vw - 24px);max-height:440px;padding:0;border:1px solid #d6e8de;border-radius:12px;background:#fff;color:#334155;box-shadow:0 10px 35px #153b2920;overflow:hidden;font:13px/1.4 Inter,system-ui,sans-serif;z-index:10050; }
+#evaDrmDialog:popover-open { display:flex;flex-direction:column;animation:eva-drm-reveal .15s ease-out 1; }
+#evaDrmDialog:not([popover]) { display:flex;flex-direction:column; }
+#evaDrmDialog[hidden] { display:none!important; }
+#evaDrmDialog::backdrop { background:transparent;pointer-events:none; }
+#evaDrmDialog .eva-drm-header { display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto;padding:6px 12px;border-bottom:1px solid #edf2ee;background:#fff; }
+#evaDrmTitle { margin:0;font-size:14px;font-weight:650;color:#153d2d; }
+#evaDrmClose { width:44px;height:44px;flex:0 0 44px;padding:0;border:0;border-radius:8px;background:transparent;color:#64748b;font:24px/1 system-ui,sans-serif;cursor:pointer; }
+#evaDrmClose:hover { background:#f1f7f3;color:#14532d; }
+#evaDrmDialog button:focus-visible { outline:2px solid #059669;outline-offset:-2px; }
+#evaDrmDialog .eva-drm-body { min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 12px 8px; }
+#evaDrmStatus,#evaDrmHistoryStatus { margin:8px 0;color:#64748b;font-size:12px; }
+#evaDrmStatus:empty,#evaDrmHistoryStatus:empty { display:none; }
+#evaDrmList { list-style:none;margin:0;padding:0; }
+#evaDrmList li { display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;padding:12px 0;border-bottom:1px solid #edf2ee; }
+#evaDrmList li:last-child { border-bottom:0; }
+.eva-drm-item-heading { display:flex;align-items:center;gap:7px;min-width:0; }
+.eva-drm-item-heading strong { color:#1e3a2b;font-size:12px;font-weight:650; }
+.eva-drm-scope { background:#f1f6f3;color:#547262;border-radius:4px;padding:2px 5px;font-size:10px;line-height:1.3; }
+#evaDrmList .eva-drm-item-name { grid-column:1/-1;grid-row:2;margin:5px 0 0;color:#64748b;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+#evaDrmList time { align-self:center;font-size:10px;color:#7a8d80;white-space:nowrap;font-variant-numeric:tabular-nums; }
+#evaDrmMore { width:100%;min-height:44px;margin:4px 0 0;padding:8px;border:0;border-radius:7px;background:#f5f9f6;color:#176445;font:600 12px Inter,system-ui,sans-serif;cursor:pointer; }
+#evaDrmMore[hidden] { display:none!important; }
+#evaDrmMore:disabled { opacity:.6;cursor:wait; }
+@keyframes eva-drm-pulse { 0%,100% { color:#065f46; } 50% { color:#86efac; } }
+@keyframes eva-drm-ring { 0%,60%,100% { transform:rotate(0); } 10%,30% { transform:rotate(-12deg); } 20%,40% { transform:rotate(12deg); } 50% { transform:rotate(-6deg); } }
+@keyframes eva-drm-reveal { from { opacity:0;transform:translateY(-4px); } to { opacity:1;transform:translateY(0); } }
+@media(max-width:640px) { .eva-account-menu { flex-wrap:wrap; } }
+@media(prefers-reduced-motion:reduce) { #evaDrmButton,#evaDrmButton.has-new .eva-drm-bell,#evaDrmDialog:popover-open { animation:none;transition:none; } }
