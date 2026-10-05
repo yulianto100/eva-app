@@ -2671,7 +2671,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             return 0.0
         return self._line_angle_at_position(line, line.project(ShapelyPoint(pole["target"])))
 
-    def _plan_ae_fat_icons(self) -> list[dict]:
+    def _plan_ae_fat_icons(self, pipeline_logger=None) -> list[dict]:
         """Plan a complete bounded batch before emitting any FAT INSERT."""
         owners = []
         for pending in self.pending_fat_icons:
@@ -2716,7 +2716,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                       for delta in [0, *[d for n in range(5, 91, 5) for d in (n, -n)]]
                       for candidate_side in (side, -side)]
             extras = sorted((0.0, 0.25, 0.5, 0.75), key=lambda extra: abs(base_gap + extra - base_gap*offset_scale))
-            options, seen = [], set()
+            options, road_blocked_options, seen = [], [], set()
+            retained_in_road = (_distance(pole["source"], anchor) <= 1e-7 and
+                                road is not None and not road.is_empty and
+                                road.intersects(ShapelyPoint(anchor).buffer(pole_radius)))
             for extra in extras:
                 for angle in angles:
                     gap = base_gap + extra
@@ -2732,9 +2735,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     ])
                     edge_gap = footprint.distance(ShapelyPoint(anchor)) - pole_radius
                     if (0.1 <= edge_gap <= KML_FAT_TO_POLE_GAP_METERS*scale + 0.75 + 1e-6 and
-                            (road is None or road.is_empty or road.distance(footprint) >= 0.1) and
                             all(footprint.distance(point) >= radius + 0.1 - 1e-7 for point, radius in pole_disks)):
-                        options.append((center, footprint))
+                        if road is None or road.is_empty or road.distance(footprint) >= 0.1:
+                            options.append((center, footprint))
+                        elif retained_in_road:
+                            road_blocked_options.append((center, footprint))
+            if not options and road_blocked_options:
+                # Operator fallback: preserve source pole and its FAT attachment;
+                # ROAD alone is advisory here, never pole/FAT collisions or ownership.
+                options = sorted(road_blocked_options, key=lambda option: option[1].intersection(road).area)
+                pipeline_log(pipeline_logger, "warning",
+                             f"FAT {pending.get('code') or 'FAT'} ROAD obstruction advisory: "
+                             "serving pole retained at source; FAT stays beside its serving pole.")
             if not options:
                 raise ValueError(f"FAT {pending.get('code') or 'FAT'} cannot attach beside serving pole "
                                  f"and clear ROAD/poles within {base_gap + 0.75:.2f}m of its fixed centre")
@@ -2769,7 +2781,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if not self.pending_fat_icons:
             return
 
-        ae_plans = self._plan_ae_fat_icons() if getattr(self, "network_type", "") == "AE" else None
+        ae_plans = self._plan_ae_fat_icons(pipeline_logger) if getattr(self, "network_type", "") == "AE" else None
         for index, pending in enumerate(self.pending_fat_icons):
             output_start_index = len(self.output_entities)
             source_point = pending["projected"]
@@ -3124,6 +3136,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     for record in preview._pole_follow_lines]
         return rendered
 
+    def _cable_collision_warning(self, message: str, records, pipeline_logger=None) -> bool:
+        """Operator policy: cable collisions are advisory, not attachment failures."""
+        records = tuple(records)
+        if not records or any(record.get("cable_kind") not in {"distribution", "sling"}
+                              for record in records):
+            return False
+        routes = ','.join(str(record["entity"].dxf.handle) for record in records)
+        pipeline_log(pipeline_logger, "warning",
+                     f"DXF cable collision advisory (handles {routes}): {message}; "
+                     "Distribution/Sling pole attachments retained.")
+        return True
+
     def _render_pole_follow_lines(self, pipeline_logger=None) -> int:
         """Shared existing port/interpolation renderer; preview and commit agree."""
         road = self._road_avoidance_geometry()
@@ -3209,13 +3233,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 vx = sum(item[0] for item in vectors) / len(vectors)
                 vy = sum(item[1] for item in vectors) / len(vectors)
                 if math.hypot(vx, vy) > radius - 0.2 + 1e-8:
-                    raise ValueError("Shared cable lane cannot fit inside pole")
+                    message = "Shared cable lane cannot fit inside pole"
+                    if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                        raise ValueError(message)
+                    factor = max(0.0, radius - 0.2) / math.hypot(vx, vy)
+                    vx, vy = vx * factor, vy * factor
                 ports[key] = (center[0] + vx, center[1] + vy)
                 used.append(math.atan2(vy, vx))
             if any(_distance(ports[(id(pole), i)], ports[(id(pole), j)]) < 0.7 - 1e-5
                    for n, (i, _) in enumerate(connections) for j, _ in connections[n + 1:]
                    if (id(pole), i) in ports and (id(pole), j) in ports):
-                raise ValueError("Shared cable lanes collide inside pole")
+                message = "Shared cable lanes collide inside pole"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                    raise ValueError(message)
             for index, station in connections:
                 if (id(pole), index) in ports:
                     continue
@@ -3234,13 +3264,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                     2 * inset * abs(math.sin((candidate - other) / 2)) >= min(0.7, inset)
                     for other in used)), None)
                 if chosen is None:
-                    raise ValueError("Too many cables to separate inside one pole circle")
+                    message = "Too many cables to separate inside one pole circle"
+                    if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                        raise ValueError(message)
+                    chosen = angles[0]  # Keep the owning pole attachment when lanes are full.
                 used.append(chosen)
                 ports[(id(pole), index)] = (center[0] + inset * math.cos(chosen),
                                              center[1] + inset * math.sin(chosen))
             if any(_distance(ports[(id(pole), i)], ports[(id(pole), j)]) < 0.7 - 1e-5
                    for n, (i, _) in enumerate(connections) for j, _ in connections[n + 1:]):
-                raise ValueError("Cable ports collide inside pole circle")
+                message = "Cable ports collide inside pole circle"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                    raise ValueError(message)
 
         # Reserve one position per native vertex visit, including return legs.
         # Route-level ports alone can hide a returning vertex on another cable.
@@ -3308,7 +3343,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                                                           (item[2][1] - pole["source"][1]) * normal[1], item[:2]))
             radius = KML_POLE_ICON_SIZE_METERS / 2 * abs(float(pole["icon"].dxf.get("xscale", 1.0)))
             if 0.7 * (len(ordered) - 1) / 2 > radius - 0.2 + 1e-8:
-                raise ValueError("Cable vertex visits cannot fit distinct lanes inside pole")
+                message = "Cable vertex visits cannot fit distinct lanes inside pole"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _, _ in ordered], pipeline_logger):
+                    raise ValueError(message)
             spacing = min(0.8, 2 * (radius - 0.2) / (len(ordered) - 1))
             for n, (i, k, _) in enumerate(ordered):
                 lane = spacing * (n - (len(ordered) - 1) / 2)
@@ -3462,11 +3499,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                                            second_line.project(ShapelyPoint(ports[(id(a), second_index)])),
                                            second_line.project(ShapelyPoint(ports[(id(b), second_index)])))
                     if not first_run.intersection(second_run).difference(circles).is_empty:
-                        raise ValueError("Shared cable crossing outside pole; no non-twisting route found")
+                        message = "Shared cable crossing outside pole; no non-twisting route found"
+                        if not self._cable_collision_warning(message, [self._pole_follow_lines[first_index], self._pole_follow_lines[second_index]], pipeline_logger):
+                            raise ValueError(message)
         self._space_unanchored_parallel_cables()
-        self._validate_new_cable_crossings()
-        # Preserve the existing 0.7m disjoint-pair gate on every complete render,
-        # including rejected-target fallback and no-ROAD commits.
+        self._validate_new_cable_crossings(pipeline_logger)
+        # Collision-only checks are advisory for Distribution/Sling; unrelated
+        # line types and asset/attachment checks retain their original guards.
         records = [record for record in self._pole_follow_lines
                    if record["entity"].dxftype() == "POLYLINE"]
         rendered = [LineString([(v.dxf.location.x, v.dxf.location.y) for v in record["entity"].vertices])
@@ -3474,15 +3513,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         for index, first in enumerate(rendered):
             source = LineString(records[index]["source"])
             if source.is_simple and not first.is_simple:
-                raise ValueError("Cable attachment introduced a self-crossing or shared return span")
+                message = "Cable attachment introduced a self-crossing or shared return span"
+                if not self._cable_collision_warning(message, [records[index]], pipeline_logger):
+                    raise ValueError(message)
             for other in range(index + 1, len(rendered)):
                 reference = LineString(records[other]["source"])
                 if source.distance(reference) >= 0.7 and first.distance(rendered[other]) < 0.7 - 1e-4:
-                    raise ValueError("ROAD pole relocation would collapse another cable")
+                    message = "ROAD pole relocation would collapse another cable"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
         return updated
 
-    def _validate_new_cable_crossings(self) -> None:
-        """Block crossings between routes that did not intersect in source KMZ."""
+    def _validate_new_cable_crossings(self, pipeline_logger=None) -> None:
+        """Report Distribution/Sling collisions; guard other source line types."""
         records = [record for record in self._pole_follow_lines
                    if record["entity"].dxftype() == "POLYLINE" and len(record["source"]) >= 2]
         source = [LineString(record["source"]) for record in records]
@@ -3500,7 +3543,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 original = source[index].intersection(source[other])
                 # A source point crossing never authorizes a newly shared span.
                 if crossing.length > original.length + 1e-5:
-                    raise ValueError("New cable crossing outside source topology")
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+                    continue
                 # Existing intersection locations may shift up to the pole
                 # relocation cap, but one source crossing cannot license two
                 # output ones.
@@ -3508,7 +3554,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 # richer matching only needed for multi-component overlaps.
                 if original.is_empty or not crossing.difference(
                         original.buffer(KML_ROAD_POLE_MAX_SHIFT_METERS + 0.01)).is_empty:
-                    raise ValueError("New cable crossing outside source topology")
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+                    continue
                 def points(geometry):
                     if geometry.geom_type == "Point":
                         return [geometry]
@@ -3518,7 +3567,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 old_points = points(original)
                 new_points = points(crossing)
                 if old_points and len(new_points) > len(old_points):
-                    raise ValueError("New cable crossing outside source topology")
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
 
     def _space_unanchored_parallel_cables(self) -> None:
         """Unmatched native vertices stay exact; retain pre-existing source gaps."""

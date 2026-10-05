@@ -1,4 +1,4 @@
 {
-  "scope": "verified active converter preimage only",
-  "sha256": "9292c09a5edfdf4a42ca4d11a93b733b8eda0839778a4caeb52cee40d0168a2e"
+  "scope": "collision advisories and retained-source FAT ROAD fallback",
+  "sha256": "1a470eda3425af42724e0bf9d9d8d2edc3bda1751db756cb7695e490c132649b"
 }
