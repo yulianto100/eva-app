@@ -431,6 +431,7 @@ DEFAULT_ROAD_WIDTHS_METERS = {
     "steps": 1.8,
 }
 LANE_WIDTH_METERS = 3.2
+MAX_ROAD_WIDTH_METERS = 10.0
 ROAD_EXCLUDED_HIGHWAYS = {
     "bridleway",
     "construction",
@@ -658,12 +659,12 @@ def estimate_road_half_width_meters(tags) -> float:
     for key in ("width", "est_width"):
         explicit_width = parse_osm_measure_meters(tag_value(tags, key))
         if explicit_width:
-            return _clamp(explicit_width / 2, 0.8, 20.0)
+            return _clamp(explicit_width / 2, 0.8, MAX_ROAD_WIDTH_METERS / 2)
 
     lanes = parse_osm_measure_meters(tag_value(tags, "lanes"))
     if lanes:
         full_width = lanes * LANE_WIDTH_METERS + 1.0
-        return _clamp(full_width / 2, 1.2, 20.0)
+        return _clamp(full_width / 2, 1.2, MAX_ROAD_WIDTH_METERS / 2)
 
     highway = tag_value(tags, "highway") or "residential"
     service = tag_value(tags, "service")
@@ -671,7 +672,7 @@ def estimate_road_half_width_meters(tags) -> float:
         return 1.6
 
     full_width = DEFAULT_ROAD_WIDTHS_METERS.get(highway, DEFAULT_ROAD_WIDTHS_METERS["residential"])
-    return _clamp(full_width / 2, 0.8, 20.0)
+    return _clamp(full_width / 2, 0.8, MAX_ROAD_WIDTH_METERS / 2)
 
 
 def should_export_road(tags, projected_coordinates: Sequence[Point]) -> bool:
@@ -1221,7 +1222,8 @@ def resolve_kml_style(style_url: str, styles: dict[str, dict], style_maps: dict[
 
 OSM_ROAD_CACHE_POLICY_SIGNATURE = json.dumps(
     {
-        "schema": 2,
+        "schema": 3,
+        "max_road_width_m": MAX_ROAD_WIDTH_METERS,
         "default_widths": DEFAULT_ROAD_WIDTHS_METERS,
         "lane_width": LANE_WIDTH_METERS,
         "excluded_highways": sorted(ROAD_EXCLUDED_HIGHWAYS),
@@ -2027,6 +2029,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         return coordinates
 
     def _collect_road_buffer(self, projected_coordinates: list[Point], half_width_meters: float) -> None:
+        # Operator full-width cap also covers cached/manual half-widths.
+        half_width_meters = min(half_width_meters, MAX_ROAD_WIDTH_METERS / 2)
         clean_coordinates = _clean_points(projected_coordinates)
         if len(clean_coordinates) < 2:
             return
