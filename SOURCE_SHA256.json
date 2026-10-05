@@ -1,4 +1,4 @@
 {
-  "scope": "ROAD fullwidth maximum10m preserving narrower roads",
+  "scope": "verified active cap10 preimage before cap8",
   "sha256": "b5170ac049b0f242515a62e7c7624c025f587d8b450bd74bd7fdd80953e1e1f2"
 }
