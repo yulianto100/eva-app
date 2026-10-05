@@ -431,7 +431,7 @@ DEFAULT_ROAD_WIDTHS_METERS = {
     "steps": 1.8,
 }
 LANE_WIDTH_METERS = 3.2
-MAX_ROAD_WIDTH_METERS = 10.0
+MAX_ROAD_WIDTH_METERS = 8.0
 ROAD_EXCLUDED_HIGHWAYS = {
     "bridleway",
     "construction",
