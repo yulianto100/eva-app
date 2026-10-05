@@ -1,4 +1,4 @@
 {
-  "scope": "ROAD totalwidth cap8m; side selection unchanged",
+  "scope": "active8m before source-pole fallback",
   "sha256": "74f13badb21f00f9573431d91db53c3e524e2959b82db05d89d4028da52fb686"
 }
