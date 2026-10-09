@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Jobs - EVA Admin</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.ghost{background:rgba(255,255,255,.1);color:#fff}.wrap{padding:24px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:auto}table{border-collapse:collapse;width:100%;min-width:980px}th,td{border-bottom:1px solid #e2e8f0;padding:11px;text-align:left;font-size:13px}th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}.ok{color:#166534;font-weight:800}.err{color:#991b1b;font-weight:800}.run{color:#1d4ed8;font-weight:800}.small{font-size:12px;color:#64748b}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.open{background:#0f172a;color:#fff}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Job Debug</h1>
+      <p class="sub">Recent jobs, status, logs, errors, outputs.</p>
+    </div>
+    <a class="btn ghost" href="/admin">Dashboard</a>
+  </header>
+  <main class="wrap">
+    <section class="card">
+      <table>
+        <thead><tr><th>Job ID</th><th>File</th><th>Status</th><th>Progress</th><th>Scope</th><th>Mode</th><th>Message/Error</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td class="mono">{{ job.job_id }}</td>
+            <td>{{ (job.original_filenames or [job.download_name or '-']) | join(', ') }}</td>
+            <td class="{% if job.status == 'completed' %}ok{% elif job.status == 'error' %}err{% else %}run{% endif %}">{{ job.status }}</td>
+            <td>{{ job.progress }}%</td>
+            <td>{{ job.scope_type }} / {{ job.network_type }}</td>
+            <td>{{ job.output_mode }}</td>
+            <td>{{ job.error or job.message }}</td>
+            <td>{% if job.job_id != 'ERR' %}<a class="btn open" href="/admin/jobs/{{ job.job_id }}">Open</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
