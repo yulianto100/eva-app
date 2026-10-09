@@ -1,0 +1,1326 @@
+{
+  "abd_cad_download": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ABD_JOB"
+  },
+  "abd_cad_generate": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "abd_cad_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "abd_cad_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ABD_JOB"
+  },
+  "abd_cad_token": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "activity": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ACTIVITY"
+  },
+  "activity_detail": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "admin_gmail_rfs_auth": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "admin_gmail_rfs_run": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "admin_gmail_rfs_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_ai_chat": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "DISABLED"
+  },
+  "api_astri_apd_convert": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_areas": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_astri_boq_auto_description": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_astri_boq_parse_file": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_astri_boq_preview": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_boq_preview_nojob": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_boq_submission_recover": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_SUBMISSION"
+  },
+  "api_astri_boq_submission_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_SUBMISSION"
+  },
+  "api_astri_boq_submit": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_boq_submit_nojob": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_boq_supplier_map": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_boq_supplier_map_nojob": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_clean_list_area": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_cluster_unverify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_cluster_verify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_document_verification_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_donation": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_boq_preview": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_feeder_boq_preview_nojob": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_boq_submit": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_feeder_boq_submit_nojob": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_match": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_feeder_schedule_approve": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_schedule_form": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_unverify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_feeder_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_feeder_verify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_latest_documents_download": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_login": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_logout": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_magic_token": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "DISABLED"
+  },
+  "api_astri_match": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_metro_list": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_olt_list": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_convert": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_detail": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_download": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_metadata": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_search": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_rfs_documents_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI_BODY_JOB"
+  },
+  "api_astri_route_list": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_schedule_approve": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_schedule_approve_direct": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_schedule_form": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_schedule_form_direct": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_search": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_boq_preview": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_subfeeder_boq_preview_nojob": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_boq_submit": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_subfeeder_boq_submit_nojob": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_boq_upload_manual": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_subfeeder_match": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_subfeeder_schedule_approve": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_schedule_form": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_unverify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_subfeeder_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_subfeeder_verify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_astri_unverify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_verify": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB_ASTRI"
+  },
+  "api_astri_work_order_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "api_coreman_aliases": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_batches": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_create_alias": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_create_batch": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_delete_alias": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_logs": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_reset": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_sheets": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_spreadsheet_clear_row": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_spreadsheet_rows": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_spreadsheet_sheets": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_spreadsheet_update_row": {
+    "methods": [
+      "PUT"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_summary": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_update_batch": {
+    "methods": [
+      "PUT"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_coreman_upsert_sheet": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_dashboard_astri": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_cancel_job": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_delete_job": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_dry_run": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_jobs": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_restart_job": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_rules": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_dashboard_save_rules": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_docs": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_available_fdt_ids": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_bulk_delete_records": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_bulk_update_records": {
+    "methods": [
+      "PUT"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_create_olt": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_create_record": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_delete_olt": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_delete_record": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_import": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_records": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_shareable_fdt": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_summary": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_sync": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_fdt_coding_update_record": {
+    "methods": [
+      "PUT"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_filename_rules": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_download": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_fetch_astri_materials": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_generate": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_history": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_history_delete": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_next_number": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_vendor_delete": {
+    "methods": [
+      "DELETE"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_vendor_save": {
+    "methods": [
+      "PUT"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_gdr_vendors": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_kmz_coords_analyze": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_COORDS"
+  },
+  "api_kmz_coords_generate": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_COORDS"
+  },
+  "api_knowledge_reindex": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_knowledge_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "api_mancore_create_record": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_cities": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_districts": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_postal_codes": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_provinces": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_search": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_regions_subdistricts": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_rfs_create_record": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_rfs_ensure": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_rfs_months": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_rfs_set_target": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_rfs_summary": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_homepass_download": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_job_file": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_job_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_job_submit": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_options": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "api_stella_session_start": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "DISABLED"
+  },
+  "api_stella_status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "astri_magic_login_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "DISABLED"
+  },
+  "cancel_job": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "coreman_dashboard_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "dashboard_astri_monitor": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_boq_template_download": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_boq_template_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_boq_template_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_change_password": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "DISABLED"
+  },
+  "dashboard_dry_run": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_filename_rules": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_home": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_job_detail": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_jobs": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_kmz_style_save": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_kmz_styles": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_login": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "OWNER_ENTRY"
+  },
+  "dashboard_logout": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_LOGOUT"
+  },
+  "dashboard_mancore_input": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "dashboard_olt_catalog": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_olt_catalog_delete": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_olt_catalog_save": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "dashboard_rules": {
+    "methods": [
+      "GET",
+      "POST",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "download_file": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "download_file_compat": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "download_single_file": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "drm_notifications_history": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "drm_notifications_poll": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "SELF_ASTRI"
+  },
+  "drm_notifications_read": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "eva_auth_logout": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "eva_auth_me": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "eva_auth_user_status": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "eva_auth_users": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "eva_auth_users_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "eva_google_callback": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_LOGIN"
+  },
+  "eva_google_start": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_LOGIN"
+  },
+  "eva_login": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_LOGIN"
+  },
+  "favicon": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_ASSET"
+  },
+  "fdt_coding_admin_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "gdr_dashboard_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "geofabrik_regions": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "health_check": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "healthz": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_PROBE"
+  },
+  "index": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "kmz_coords_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "metrics": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "oauth_gmail_callback": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GMAIL_CALLBACK"
+  },
+  "openapi_spec": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "osm_kecamatan_regions": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "preview": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "prometheus_metrics_endpoint": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "OWNER_GLOBAL"
+  },
+  "readyz": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_PROBE"
+  },
+  "rfs_dashboard_page": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "LOGIN"
+  },
+  "standardize_kmz_upload": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "static": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "PUBLIC_ASSET"
+  },
+  "status": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "policy": "SELF_JOB"
+  },
+  "upload_file": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  },
+  "validate_folders": {
+    "methods": [
+      "POST"
+    ],
+    "policy": "LOGIN"
+  }
+}

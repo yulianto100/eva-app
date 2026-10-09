@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GDR Vendors - EVA Admin</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.ghost{background:rgba(255,255,255,.1);color:#fff}.wrap{padding:24px;display:grid;gap:16px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:auto}table{border-collapse:collapse;width:100%;min-width:1100px}th,td{border-bottom:1px solid #e2e8f0;padding:10px;text-align:left;font-size:13px}th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}input{border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;font-size:13px}form.inline{display:inline}.rowform{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:8px}.save{background:#10b981;color:#020617}.danger{background:#fee2e2;color:#991b1b}.actions{display:flex;gap:8px}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>GDR Vendor Manager</h1>
+      <p class="sub">Kelola vendor untuk GDR.</p>
+    </div>
+    <a class="btn ghost" href="/admin">Dashboard</a>
+  </header>
+  <main class="wrap">
+    <section class="card">
+      <form class="rowform" id="newForm" onsubmit="saveVendor(event)">
+        <input name="code" placeholder="Code" required>
+        <input name="vendor_name" placeholder="Nama Vendor" required>
+        <input name="origin" placeholder="Origin" value=": EMR">
+        <input name="destination" placeholder="Destination">
+        <input name="pic" placeholder="PIC">
+        <button type="submit" class="btn save">Tambah Baru</button>
+      </form>
+    </section>
+    <section class="card">
+      <table id="vendorTable">
+        <thead><tr><th>Code</th><th>Nama Vendor</th><th>Origin</th><th>Destination</th><th>PIC</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for code, vendor in vendors.items()|sort %}
+          <tr data-code="{{ code }}">
+            <td>{{ code }}</td>
+            <td>{{ vendor.vendor_name }}</td>
+            <td>{{ vendor.origin }}</td>
+            <td>{{ vendor.destination }}</td>
+            <td>{{ vendor.pic }}</td>
+            <td class="actions">
+              <button type="button" class="btn" data-vendor-action="edit">Edit</button>
+              <button type="button" class="btn danger" data-vendor-action="delete">Delete</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+<script src="/static/js/toast.js?v=popup-neutral-20260819-211055"></script>
+<script>
+  async function api(endpoint, data) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Server error" }));
+      throw new Error(err.error || "Unknown error");
+    }
+    return res.json();
+  }
+
+  function popupFeedback(title, message, severity='info'){ return window.evaPopupFeedback?.({title, message, severity}); }
+
+  async function saveVendor(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+      code: form.querySelector('[name="code"]').value,
+      vendor_name: form.querySelector('[name="vendor_name"]').value,
+      origin: form.querySelector('[name="origin"]').value,
+      destination: form.querySelector('[name="destination"]').value,
+      pic: form.querySelector('[name="pic"]').value,
+    };
+    try {
+      await api("/admin/gdr-vendors/save", data);
+      location.reload();
+    } catch (e) {
+      popupFeedback('GDR Vendor', `Gagal menyimpan: ${e.message}`, 'error');
+    }
+  }
+
+  async function deleteVendor(code) {
+    if (!confirm(`Hapus vendor ${code}?`)) return;
+    try {
+      await api("/admin/gdr-vendors/delete", { code });
+      location.reload();
+    } catch (e) {
+      popupFeedback('GDR Vendor', `Gagal menghapus: ${e.message}`, 'error');
+    }
+  }
+
+  const vendorTable = document.getElementById("vendorTable");
+  vendorTable.addEventListener("click", event => {
+    const action = event.target.closest("[data-vendor-action]");
+    const row = action?.closest("tr[data-code]");
+    if (!row || !vendorTable.contains(row)) return;
+    const code = row.dataset.code;
+    if (action.dataset.vendorAction === "edit") editRow(code);
+    if (action.dataset.vendorAction === "delete") deleteVendor(code);
+    if (action.dataset.vendorAction === "save") saveEdit(code);
+    if (action.dataset.vendorAction === "cancel") cancelEdit(code);
+  });
+
+  function vendorActionCell(actions) {
+    const cell = document.createElement("td");
+    cell.className = "actions";
+    for (const [label, kind] of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `btn${kind === "save" ? " save" : kind === "delete" ? " danger" : ""}`;
+      button.dataset.vendorAction = kind;
+      button.textContent = label;
+      cell.append(button);
+    }
+    return cell;
+  }
+
+  function editRow(code) {
+    const row = [...vendorTable.tBodies[0].rows].find(item => item.dataset.code === code);
+    if (!row) return;
+    const values = Array.from(row.cells).slice(0, 5).map(cell => cell.textContent.trim());
+    row.dataset.original = JSON.stringify(values);
+    const names = ["code", "vendor_name", "origin", "destination", "pic"];
+    const cells = values.map((value, index) => {
+      const cell = document.createElement("td");
+      const input = document.createElement("input");
+      input.name = names[index];
+      input.value = value;
+      input.disabled = index === 0;
+      cell.append(input);
+      return cell;
+    });
+    row.replaceChildren(...cells, vendorActionCell([["Save", "save"], ["Cancel", "cancel"]]));
+  }
+
+  async function saveEdit(originalCode) {
+    const row = [...vendorTable.tBodies[0].rows].find(item => item.dataset.code === originalCode);
+    const data = {
+      code: originalCode, // Code is not editable
+      vendor_name: row.querySelector('[name="vendor_name"]').value,
+      origin: row.querySelector('[name="origin"]').value,
+      destination: row.querySelector('[name="destination"]').value,
+      pic: row.querySelector('[name="pic"]').value,
+    };
+    try {
+      await api("/admin/gdr-vendors/save", data);
+      location.reload();
+    } catch (e) {
+      popupFeedback('GDR Vendor', `Gagal menyimpan: ${e.message}`, 'error');
+    }
+  }
+
+  function cancelEdit(code) {
+    const row = [...vendorTable.tBodies[0].rows].find(item => item.dataset.code === code);
+    if (!row) return;
+    const values = JSON.parse(row.dataset.original);
+    const cells = values.map(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      return cell;
+    });
+    row.replaceChildren(...cells, vendorActionCell([["Edit", "edit"], ["Delete", "delete"]]));
+  }
+</script>
+</body>
+</html>
