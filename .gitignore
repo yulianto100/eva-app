@@ -36,3 +36,11 @@ data/gmail_token.json
 data/gmail_rfs_state.json
 data/fdt_sheet_hashes.json
 data/fdt_source_revisions.json
+
+# Credentials (runtime-managed; never commit)
+data/astri_sessions.json
+data/astri_sessions.lock
+config/dashboard_admin_password.txt
+config/searxng/settings.yml
+data/*.lock
+data/*_locks/

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# EVA secret guard (server-local; install as .git/hooks/pre-commit, chmod +x).
+# Blocks commits staging credential files or secret material in
+# frontend-served assets (static/, templates/).
+set -u
+
+cd "$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+status=0
+
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    .env|*.env|.secrets/*|*service-account*.json|*.pem|*.key|*.p12|data/astri_sessions.json|data/gmail_token.json|config/dashboard_admin_password.txt|config/searxng/settings.yml)
+      echo "EVA guard: blocked credential file: $f" >&2
+      status=1
+      continue
+      ;;
+  esac
+  case "$f" in
+    static/*|templates/*)
+      content=$(git show ":$f" 2>/dev/null | head -c 2000000) || true
+      if printf '%s' "$content" | grep -aqE -- '-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AIza[0-9A-Za-z_-]{35}|sk-[A-Za-z0-9_-]{20,}|re_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{36}|xox[baprs]-[A-Za-z0-9-]{10,}'; then
+        echo "EVA guard: blocked possible secret in frontend-served file: $f" >&2
+        status=1
+      fi
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+if [ "$status" -ne 0 ]; then
+  echo "EVA guard: commit blocked. Fix or remove the credential, then retry." >&2
+  exit 1
+fi
+exit 0
