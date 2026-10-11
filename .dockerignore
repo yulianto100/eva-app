@@ -15,3 +15,9 @@ static/downloads/
 
 tests/
 *.bak*
+geofabrik-*
+geofabrik.restore
+
+# Credentials (runtime-managed; never bake into images)
+config/dashboard_admin_password.txt
+config/searxng/settings.yml

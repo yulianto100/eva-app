@@ -44,3 +44,4 @@ config/dashboard_admin_password.txt
 config/searxng/settings.yml
 data/*.lock
 data/*_locks/
+data/dashboard_admin_password.txt
