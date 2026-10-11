@@ -453,6 +453,11 @@ def parse_homepass_block_and_number(value: str | None) -> tuple[str, str]:
             return normalize_homepass_block(match.group(1)), normalize_homepass_name(match.group(2))
         return "", text
 
+    # Compact HP code: B2.19, B2-19, B2/19 → block B2, homenumber 19.
+    match = re.match(r"^\s*([A-Z]{1,2}\d+)\s*[./-]\s*(\d\S*)\s*$", text, flags=re.IGNORECASE)
+    if match and match.group(1).upper() not in _NO_BLOCK:
+        return normalize_homepass_block(match.group(1)), normalize_homepass_name(match.group(2))
+
     match = re.match(r"^\s*([A-Z]{1,2}\d*)\s*-\s*(\d\S*)\s*$", text, flags=re.IGNORECASE)
     if match and match.group(1).upper() not in _NO_BLOCK:
         return normalize_homepass_block(match.group(1)), normalize_homepass_name(match.group(2))

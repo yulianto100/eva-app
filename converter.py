@@ -1453,6 +1453,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.pending_pole_ids: list[dict] = []
         self.fat_callout_refs: list[dict] = []
         self.home_number_boxes: list[Polygon] = []
+        self._hp_cover_drawn_indexes: set[int] = set()
         # Pole positions used for snapping nearby slack/joint closure/cable
         # placemarks to the centre of an existing pole icon.
         self.pole_positions: list[Point] = []
@@ -4075,15 +4076,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         for index, point in enumerate(sites):
             sp = ShapelyPoint(point)
-            best_area_idx = None
-            best_dist = None
-            for area_idx, poly in enumerate(fat_areas):
-                dist = point_polygon_distance_meter(point, poly.exterior.coords)
-                if best_dist is None or dist < best_dist:
-                    best_dist = dist
-                    best_area_idx = area_idx
-            if best_area_idx is not None:
-                groups.setdefault(best_area_idx, []).append(index)
+            owned = [(area_idx, poly) for area_idx, poly in enumerate(fat_areas) if poly.buffer(1e-6).covers(sp)]
+            if owned:
+                area_idx, _poly = min(owned, key=lambda item: item[1].area)
+                groups.setdefault(area_idx, []).append(index)
             else:
                 no_fat_indexes.append(index)
 
@@ -4268,25 +4264,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                         continue
                     if road_solid is not None and not road_solid.is_empty and road_solid.buffer(0.01).covers(candidate_anchor):
                         continue
-                    # Compact 6x10m base, centered on relocated retry anchor.
-                    # Prefer a broad 10x12m slot for relocated source; shrink
-                    # only when the road/FAT/cable safe space requires it.
-                    parcel = Polygon([
-                        (candidate_anchor.x - 5.0, candidate_anchor.y - 6.0),
-                        (candidate_anchor.x + 5.0, candidate_anchor.y - 6.0),
-                        (candidate_anchor.x + 5.0, candidate_anchor.y + 6.0),
-                        (candidate_anchor.x - 5.0, candidate_anchor.y + 6.0),
-                    ]).intersection(fat)
+                    # Try intact modules, largest first. Never intersect or
+                    # carve a parcel into fragments.
+                    allowed = fat
                     if road_solid is not None and not road_solid.is_empty:
-                        parcel = parcel.difference(road_solid)
-                    for existing in self.home_number_boxes:
-                        if existing is not None and not existing.is_empty:
-                            parcel = parcel.difference(existing)
-                    protected_sources = [ShapelyPoint(sites[j]).buffer(3.0) for j in range(len(sites)) if j != idx]
-                    if protected_sources:
-                        parcel = parcel.difference(unary_union(protected_sources))
-                    parcel = self._parcel_piece_containing(parcel, candidate_anchor)
-                    if parcel is None or parcel.is_empty or parcel.area < 24.0:
+                        allowed = allowed.difference(road_solid)
+                    if self.home_number_boxes:
+                        allowed = allowed.difference(unary_union(self.home_number_boxes))
+                    allowed = allowed.buffer(0)
+                    retry_angle = self._nearest_road_angle((candidate_anchor.x, candidate_anchor.y))
+                    if retry_angle is None:
+                        retry_angle = self._polygon_label_rotation(fat)
+                    parcel = self._fit_compact_parcel_ladder(candidate_anchor, allowed, retry_angle)
+                    if parcel is None:
                         continue
                     polys = self._geometry_polygons(parcel)
                     label_polygon = max(polys, key=lambda poly: poly.area, default=None)
@@ -4520,13 +4510,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             mode = "AI-assisted" if ai_orientation else "deterministic"
             pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} collision-safe axis {region_angle:.1f}° (requested {requested_angle:.1f}°).")
 
+        # Road-front rectangles are primary. Voronoi is fallback only.
+        road_front_parcels = self._road_front_row_cells(indexes, sites, clip_region)
         row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
         drawn = 0
         for local_idx, global_idx in enumerate(indexes):
+            road_front = road_front_parcels.get(global_idx)
             cell = cell_for_local[local_idx]
-            if cell is None or cell.is_empty:
-                # Row-grid is the safe per-HP fallback. Never substitute the
-                # whole FAT region, which makes parcels overlap.
+            if road_front is None and (cell is None or cell.is_empty):
                 cell = row_grid_parcels.get(global_idx)
                 if cell is None or cell.is_empty:
                     continue
@@ -4538,22 +4529,19 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             # comes from local Voronoi density. This matches real cadastral
             # subdivision: lots line up along roads instead of floating as
             # free rectangles.
-            cell_area = cell_area_for_local[local_idx] if cell_area_for_local[local_idx] > 0 else float(cell.area)
-            # Compact box parcel. Ownership remains a fit constraint, not a
-            # full-area parcel shape, so one HP never claims an entire FAT.
-            preferred = region_angle
-            allowed = cell.intersection(clip_region)
-            road_solid = self._home_parcel_road_solid()
-            if road_solid is not None and not road_solid.is_empty:
-                allowed = allowed.difference(road_solid)
-            if self.home_number_boxes:
-                allowed = allowed.difference(unary_union(self.home_number_boxes))
-            # Every other HP source reserves a 3m minimum parcel opportunity.
-            # Own source stays valid; no parcel may cover a neighbour source.
-            other_hp_buffers = [site_points[j].buffer(3.0) for j in indexes if j != global_idx]
-            if other_hp_buffers:
-                allowed = allowed.difference(unary_union(other_hp_buffers))
-            parcel = self._fit_compact_rect(site, allowed, preferred)
+            if road_front is not None:
+                parcel = road_front
+            else:
+                allowed = cell.intersection(clip_region)
+                road_solid = self._home_parcel_road_solid()
+                if road_solid is not None and not road_solid.is_empty:
+                    allowed = allowed.difference(road_solid)
+                if self.home_number_boxes:
+                    allowed = allowed.difference(unary_union(self.home_number_boxes))
+                other_hp_buffers = [site_points[j].buffer(3.0, cap_style=3, join_style=2) for j in indexes if j != global_idx]
+                if other_hp_buffers:
+                    allowed = allowed.difference(unary_union(other_hp_buffers))
+                parcel = self._fit_compact_rect(site, allowed, region_angle)
             # If no shared-axis rectangle fits, leave this HP for retry/label
             # fallback. Never introduce a per-cell arbitrary rectangle angle.
             if parcel is None or parcel.is_empty:
@@ -4565,9 +4553,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             try:
                 parcel = parcel.intersection(clip_region)
                 road_solid = self._home_parcel_road_solid()
-                if road_solid is not None and not road_solid.is_empty:
-                    # ROAD + 0.3m cable solid is absolute. Never reopen it for
-                    # an anchor pocket; Run-2 relocates blocked HPs safely.
+                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
                     parcel = self._parcel_piece_containing(parcel.difference(road_solid), site)
                 else:
                     parcel = self._parcel_piece_containing(parcel, site)
@@ -4677,6 +4663,52 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         size=int(max(w,h)*scale+pad*2)
         return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
 
+    def _road_front_row_cells(self, indexes, sites, clip_region):
+        """Road-first rectangular parcels: 4x10 minimum, 13x13 maximum."""
+        if not indexes or clip_region is None or clip_region.is_empty:
+            return {}
+        roads=[line for line in self.road_centerlines if line is not None and not line.is_empty and line.length>2]
+        if not roads: return {}
+        road_solid=self._home_parcel_road_solid(); groups=defaultdict(list)
+        for idx in indexes:
+            source=ShapelyPoint(sites[idx]); road_idx,road=min(enumerate(roads),key=lambda item:source.distance(item[1]))
+            pos=road.project(source); eps=min(2.0,max(.25,road.length*.01)); a=road.interpolate(max(0,pos-eps)); b=road.interpolate(min(road.length,pos+eps))
+            tx,ty=b.x-a.x,b.y-a.y; size=math.hypot(tx,ty)
+            if size<=1e-9: continue
+            tx,ty=tx/size,ty/size; nx,ny=-ty,tx; near=road.interpolate(pos)
+            signed=(source.x-near.x)*nx+(source.y-near.y)*ny; side=1 if signed>=0 else -1
+            groups[(road_idx,side)].append((idx,source,pos,signed,tx,ty,near))
+        result={}; accepted=[]
+        for (_road_idx,side),members in groups.items():
+            front_distance=min(abs(m[3]) for m in members); rows=defaultdict(list)
+            for m in members: rows[max(0,int((abs(m[3])-front_distance+5)//10))].append(m)
+            previous_back=None
+            for row_i in sorted(rows):
+                row=sorted(rows[row_i],key=lambda m:m[2]); tx=sum(m[4] for m in row)/len(row); ty=sum(m[5] for m in row)/len(row); size=math.hypot(tx,ty)
+                if size<=1e-9: continue
+                tx,ty=tx/size,ty/size; nx,ny=-ty*side,tx*side
+                if previous_back is None:
+                    fronts=[]
+                    for _idx,source,_pos,_signed,_tx,_ty,near in row:
+                        if road_solid is not None and not road_solid.is_empty:
+                            try: fronts.append(nearest_points(source,road_solid.boundary)[1].x*nx+nearest_points(source,road_solid.boundary)[1].y*ny); continue
+                            except Exception: pass
+                        fronts.append(near.x*nx+near.y*ny)
+                    front=max(fronts) if side>0 else min(fronts)
+                else: front=previous_back
+                depth=13.0 if len(row)==1 else 10.0; source_v=[m[1].x*nx+m[1].y*ny for m in row]
+                back=max(max(source_v)+.01,front+depth) if side>0 else min(min(source_v)-.01,front-depth); previous_back=back
+                along=[m[1].x*tx+m[1].y*ty for m in row]
+                for j,m in enumerate(row):
+                    idx,source=m[0],m[1]; u=along[j]; left=(along[j-1]+u)/2 if j else u-6.5; right=(u+along[j+1])/2 if j<len(row)-1 else u+6.5
+                    if right-left<4.0: continue
+                    parcel=Polygon([(tx*left+nx*front,ty*left+ny*front),(tx*right+nx*front,ty*right+ny*front),(tx*right+nx*back,ty*right+ny*back),(tx*left+nx*back,ty*left+ny*back)])
+                    if parcel.is_empty or parcel.area<40 or not clip_region.buffer(1e-6).covers(parcel): continue
+                    if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area>1e-7: continue
+                    if not parcel.buffer(1e-6).covers(source) or any(parcel.intersection(old).area>1e-7 for old in accepted): continue
+                    accepted.append(parcel); result[idx]=parcel
+        return result
+
     def _hp_row_grid_parcels(self, indexes, sites, pending, clip_region, angle):
         """Aligned midpoint cells; never move HP source points."""
         if not indexes or clip_region is None or clip_region.is_empty:
@@ -4709,6 +4741,67 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 except Exception: continue
                 if not cell.is_empty and cell.area>=KML_HOME_PARCEL_MIN_AREA_SQUARE_METERS: out[idx]=cell
         return out
+
+    def _fit_compact_parcel_ladder(self, anchor, allowed, angle):
+        """Return one intact compact parcel; never draw clipped fragments."""
+        if allowed is None or allowed.is_empty:
+            return None
+        site = anchor if isinstance(anchor, ShapelyPoint) else ShapelyPoint(anchor)
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        # User floor: 4x10. Smaller legal fallback only after every 4m-wide
+        # module fails; ceiling remains 13x13.
+        modules = (
+            (13.0, 13.0), (10.0, 13.0), (8.0, 13.0), (6.0, 13.0),
+            (4.0, 10.0), (4.0, 9.0), (4.0, 8.0), (4.0, 7.0), (4.0, 6.0),
+            (3.0, 10.0), (3.0, 9.0), (2.0, 10.0),
+        )
+        for width, depth in modules:
+            hw, hd = width / 2.0, depth / 2.0
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-tx*0+ty*hw+ny*hd),
+            ])
+            # Correct final corner separately to keep explicit readable axes.
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-ty*hw+ny*hd),
+            ])
+            if allowed.buffer(1e-6).covers(parcel):
+                return parcel
+        return None
+
+    def _fit_compact_parcel_ladder(self, anchor, allowed, angle):
+        """Return one intact compact parcel; never draw clipped fragments."""
+        if allowed is None or allowed.is_empty:
+            return None
+        site = anchor if isinstance(anchor, ShapelyPoint) else ShapelyPoint(anchor)
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        # User floor: 4x10. Smaller legal fallback only after every 4m-wide
+        # module fails; ceiling remains 13x13.
+        modules = (
+            (13.0, 13.0), (10.0, 13.0), (8.0, 13.0), (6.0, 13.0),
+            (4.0, 10.0), (4.0, 9.0), (4.0, 8.0), (4.0, 7.0), (4.0, 6.0),
+            (3.0, 10.0), (3.0, 9.0), (2.0, 10.0),
+        )
+        for width, depth in modules:
+            hw, hd = width / 2.0, depth / 2.0
+            parcel = Polygon([
+                (site.x-tx*hw-nx*hd, site.y-ty*hw-ny*hd),
+                (site.x+tx*hw-nx*hd, site.y+ty*hw-ny*hd),
+                (site.x+tx*hw+nx*hd, site.y+ty*hw+ny*hd),
+                (site.x-tx*hw+nx*hd, site.y-ty*hw+ny*hd),
+            ])
+            if allowed.buffer(1e-6).covers(parcel):
+                return parcel
+        return None
 
     def _fit_compact_rect(self, site, allowed, angle, width=6.0, depth=10.0):
         """Fit largest intact house rectangle without producing slivers.
