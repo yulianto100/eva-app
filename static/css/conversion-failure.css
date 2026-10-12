@@ -1,0 +1,30 @@
+/* Failure-only popup; other popups and Validation unchanged. */
+#conversionFailureDialog {
+  box-sizing: border-box; width: min(600px, calc(100vw - 24px)); max-height: calc(100dvh - 32px);
+  padding: 0; border: 1px solid #d8e4dd; border-radius: 18px; background: #fff; color: #273d34;
+  box-shadow: 0 20px 70px #16392b26; font-family: inherit; font-size: 14px; line-height: 1.55;
+}
+#conversionFailureDialog[open] { display: flex; flex-direction: column; }
+#conversionFailureDialog::backdrop { background: #dcece4b8; backdrop-filter: blur(3px); }
+#conversionFailureDialog > header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 12px 16px; background: #f2f8f5; border-bottom: 1px solid #e2ece6; }
+#conversionFailureDialog h2 { margin: 0; color: #183d2f; font-size: 18px; font-weight: 700; }
+#conversionFailureDialog h3 { margin: 0 0 8px; font-size: 14px; color: #183d2f; font-weight: 700; }
+#conversionFailureDialog button { min-height: 44px !important; min-width: 44px; white-space: normal; font-size: 13px !important; border-radius: 10px !important; }
+#conversionFailureDialog .conversion-failure-close { width: 44px; height: 44px; flex-shrink: 0; padding: 0 !important; background: transparent !important; border: 0 !important; color: #4d6258 !important; box-shadow: none !important; font-size: 26px !important; }
+#conversionFailureDialog button:focus-visible { outline: 2px solid #13754f !important; outline-offset: 3px; }
+#conversionFailureDialog .conversion-failure-body { min-height: 0; padding: 16px; overflow-y: auto; overflow-wrap: anywhere; }
+#conversionFailureDialog p { margin: 0 0 10px; }
+#conversionFailureDialog .conversion-failure-file { color: #5c6f65; font-size: 12px; }
+#conversionFailureDialog .conversion-failure-where { padding: 12px; margin-bottom: 12px; border: 1px solid #e2ece6; border-radius: 12px; }
+#conversionFailureDialog .conversion-failure-standard { padding: 12px; border: 1px solid #dceae1; border-radius: 12px; background: #f4faf6; }
+#conversionFailureDialog .conversion-failure-source { font-size: 12px; color: #4e6659; }
+#conversionFailureDialog pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; color: #273d34; }
+#conversionFailureDialog .conversion-failure-note { color: #5c6f65; font-size: 12px; }
+#conversionFailureDialog footer { display: flex; flex-wrap: wrap; align-items: center; flex-shrink: 0; gap: 8px; padding: 12px 16px; border-top: 1px solid #e2ece6; }
+#conversionFailureDialog footer .conversion-failure-note { width: 100%; margin: 0; }
+#conversionFailureDialog footer .conversion-failure-note:empty { display: none; }
+#conversionFailureButton { min-height: 44px; white-space: normal; }
+#conversionFailureButton[hidden], #retryButton[hidden] { display: none !important; }
+@media (max-width: 480px) {
+  #conversionFailureDialog footer > button { flex: 1 1 120px; }
+}
