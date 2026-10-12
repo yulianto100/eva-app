@@ -1,8 +1,8 @@
 services:
   redis:
-    image: redis:7-alpine
+    image: sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: eva-redis
-    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy volatile-lru
     volumes:
     - redis-data:/data
     deploy:
@@ -13,11 +13,13 @@ services:
           memory: 64M
     restart: unless-stopped
   web:
-    build: .
+    image: sha256:197b1e04d595d53c9047d7930645a281c49150bf955356bfaf883db2453e3f2e
     container_name: eva-converter
     ports:
     - 127.0.0.1:5000:5000
     environment:
+      STELLA_CDP_URL: http://172.18.0.1:9224
+      STELLA_LOCK_FILE: /app/data/stella-browser.lock
       TZ: Asia/Jakarta
       SECRET_KEY: ${SECRET_KEY:-}
       SECRET_KEY_FILE: /run/secrets/eva_secret_key
@@ -26,7 +28,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
-      CONVERSION_MAX_CONCURRENT_JOBS: "2"
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
       JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
@@ -59,8 +61,16 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       EVA_AI_ASSIST: ${EVA_AI_ASSIST:-false}
       EVA_AI_MODEL: ${EVA_AI_MODEL:-9r}
+      EVA_AI_FALLBACK_MODEL: ${EVA_AI_FALLBACK_MODEL:-}
+      EVA_AI_FALLBACK_BASE_URL: ${EVA_AI_FALLBACK_BASE_URL:-}
+      EVA_AI_BASE_URL: ${EVA_AI_BASE_URL:-}
+      EVA_AI_API_KEY: ${EVA_AI_API_KEY:-}
       EVA_AI_CONFIDENCE_MIN: ${EVA_AI_CONFIDENCE_MIN:-0.80}
-      EVA_AI_TIMEOUT: ${EVA_AI_TIMEOUT:-20}
+      EVA_AI_TIMEOUT: ${EVA_AI_TIMEOUT:-60}
+      EVA_AI_REASONING_EFFORT: ${EVA_AI_REASONING_EFFORT:-low}
+      EVA_AI_CACHE_TTL_SECONDS: ${EVA_AI_CACHE_TTL_SECONDS:-3600}
+      EVA_AI_CACHE_MAX_ENTRIES: ${EVA_AI_CACHE_MAX_ENTRIES:-256}
+      EVA_AI_CIRCUIT_BREAKER_SECONDS: ${EVA_AI_CIRCUIT_BREAKER_SECONDS:-300}
       EVA_AI_VISUAL_PARCEL: ${EVA_AI_VISUAL_PARCEL:-false}
       KNOWLEDGE_DIR: ${KNOWLEDGE_DIR:-knowledge}
       KNOWLEDGE_DB_PATH: ${KNOWLEDGE_DB_PATH:-data/knowledge_index.db}
@@ -69,11 +79,14 @@ services:
     - ./outputs:/app/outputs
     - ./backups:/app/backups
     - ./data:/app/data
+    - /opt/eva-abd-runtime/squashfs-root:/opt/oda:ro
     - ./geofabrik:/app/geofabrik
     - ./templates:/app/templates
     - ./static:/app/static
     - ./config.py:/app/config.py:ro
     - ./.secrets:/app/.secrets:ro
+    - ./eva_auth.py:/app/eva_auth.py:ro
+    - ./eva_email.py:/app/eva_email.py:ro
     secrets:
     - eva_secret_key
     labels:
@@ -100,11 +113,10 @@ services:
           memory: 512M
     restart: unless-stopped
   worker:
-    build: .
+    image: sha256:17763fbe6903a8530325354d478abf0b23d282caeaaa8bb28bb1a102f2ccb116
     container_name: eva-worker
     command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker@%h
     env_file: .env
-
     environment:
       TZ: Asia/Jakarta
       SECRET_KEY: ${SECRET_KEY:-}
@@ -114,7 +126,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
-      CONVERSION_MAX_CONCURRENT_JOBS: "2"
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
       JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
@@ -153,7 +165,8 @@ services:
     healthcheck:
       test:
       - CMD-SHELL
-      - celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null | grep -q pong
+      - result="$$(celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null)"
+        && case "$$result" in *pong*) exit 0 ;; *) exit 1 ;; esac
       interval: 30s
       timeout: 10s
       retries: 3
@@ -166,7 +179,7 @@ services:
           memory: 1G
     restart: unless-stopped
   worker2:
-    build: .
+    image: sha256:d471f838dff5818b12dbf4742a7478e4c64b3f508ee912473627cc4518a09a05
     container_name: eva-worker2
     command: celery -A tasks.celery_app worker --loglevel=INFO --concurrency=1 --hostname=eva-worker2@%h
     env_file: .env
@@ -179,7 +192,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CONVERSION_QUEUE_ENABLED: 'true'
-      CONVERSION_MAX_CONCURRENT_JOBS: "2"
+      CONVERSION_MAX_CONCURRENT_JOBS: '2'
       JOB_SLOT_TTL_SECONDS: '180'
       JOB_MAX_RETRIES: ${JOB_MAX_RETRIES:-2}
       JOB_RETRY_DELAY_SECONDS: ${JOB_RETRY_DELAY_SECONDS:-30}
@@ -218,7 +231,8 @@ services:
     healthcheck:
       test:
       - CMD-SHELL
-      - celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null | grep -q pong
+      - result="$$(celery -A tasks.celery_app inspect ping --timeout=5 2>/dev/null)"
+        && case "$$result" in *pong*) exit 0 ;; *) exit 1 ;; esac
       interval: 30s
       timeout: 10s
       retries: 3
@@ -230,7 +244,6 @@ services:
         reservations:
           memory: 1G
     restart: unless-stopped
-
   searxng:
     image: searxng/searxng:latest
     container_name: eva-searxng
