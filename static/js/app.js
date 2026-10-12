@@ -1,3 +1,222 @@
+/* Conversion failures only. No validation, source edits or network calls. */
+(function () {
+  "use strict";
+
+  function safe(value) {
+    return String(value == null ? "" : value)
+      .replace(/\b(Bearer|Basic)\s+\S+/gi, "$1 [disembunyikan]")
+      .replace(/((?:password|passwd|token|api[_-]?key|secret|cookie|ASTRIOSP|csrf_value|session[_-]?id)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;]+)/gi, "$1[disembunyikan]")
+      .replace(/\b(?:sk|re)_[A-Za-z0-9_-]{16,}\b/g, "[disembunyikan]")
+      .replace(/(?:\/app\/|\/opt\/eva\/|\/home\/)[^\s:,'"<>]+/g, "[path server]")
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "").slice(0, 6000);
+  }
+
+  function describe(options = {}) {
+    const payload = options.payload || {};
+    const rawMessage = String(options.message || payload.error || payload.message || "Penyebab belum tersedia.");
+    const terminalJob = options.phase === "job" && ["error", "failed"].includes(payload.status);
+    const failedStandardizer = options.phase === "standardize" && Number(options.httpStatus) === 500 && /^Standardizer gagal:/i.test(rawMessage);
+    if (!terminalJob && !failedStandardizer) return null;
+    const message = safe(rawMessage);
+    // Match the exception, not a filename that happens to contain 'timeout'.
+    const reason = message.replace(/^KMZ standardization gagal untuk .*?\.km[lz]:\s*/i, "").replace(/^Standardizer gagal:\s*/i, "");
+    const report = {
+      title: "Konversi gagal", category: "unknown", stage: "Belum diketahui",
+      cause: "Penyebab gagal belum diketahui.",
+      steps: ["File belum perlu diubah. Salin pesan ini lalu laporkan bersama file sumber."],
+      standard: "", location: "", retry: false,
+      files: (Array.isArray(options.files) ? options.files : []).slice(0, 10).map(safe),
+      jobId: safe(options.jobId || payload.job_id || ""), raw: message,
+      scope: safe(payload.scope_type || options.scope || ""),
+      network: safe(payload.network_type || options.network || ""),
+    };
+    const set = (category, cause, steps, standard = "") => Object.assign(report, { category, cause, steps, standard });
+    const ids = reason.match(/\bIDs?\s*(?:=|:)?\s*(\[[\d,\s]+\]|\d+)/i)
+      || reason.match(/(?:exhausted|missing IDs):\s*(\[[\d,\s]+\])/i);
+    const hpName = reason.match(/^HP (.+?) has no BOUNDARY FAT/i);
+    const fatName = reason.match(/^FAT(?: AREA)? (.+?) (?:has |cannot |serving |loses |misses |intersects |numerical )/i);
+    if (ids && /^HP\b/i.test(reason)) report.location = "HP ID " + safe(ids[1]);
+    else if (hpName) report.location = "HP " + safe(hpName[1]);
+    else if (fatName && !/^batch$/i.test(fatName[1])) report.location = "FAT " + safe(fatName[1]);
+    if (/KMZ tidak berisi file KML/i.test(reason)) {
+      set("input", "Isi file KMZ: tidak ada file KML desain di dalamnya.",
+        ["Di Google Earth, simpan ulang proyek sebagai KMZ. Unggah hasilnya, bukan ZIP yang hanya diganti namanya."],
+        "KMZ harus berisi file KML desain.");
+    } else if (/File is not a zip file|BadZipFile|Bad CRC|Truncated file header|KMZ kosong\/korup/i.test(reason)) {
+      set("input", "File KMZ rusak atau unduhannya belum lengkap.",
+        ["Unduh ulang file asli sampai selesai, atau simpan ulang proyek dari Google Earth."]);
+    } else if (/(?:mismatched tag|not well-formed|unclosed token|unbound prefix|syntax error|no element found): line \d+/i.test(reason)) {
+      set("input", "Isi file KML tidak bisa dibaca.", ["Buka desain di Google Earth, lalu simpan ulang sebagai KML/KMZ."]);
+      report.location = safe(reason.match(/line \d+(?:, column \d+)?/i)?.[0]).replace(/line/i,"Baris").replace(/column/i,"kolom");
+    } else if (/Cannot identify one source Subfeeder project for FDT Slack/i.test(reason)) {
+      const project = report.files.length === 1 ? report.files[0].replace(/\.km[lz]$/i, "") : "KODE - NAMA PROYEK";
+      set("input", "Susunan folder proyek Subfeeder belum bisa dikenali.",
+        ["Gunakan satu proyek. Namanya sama dengan nama file, tanpa .kmz atau .kml.", "Folder aset berada di dalam proyek, seperti contoh ini. Jangan hapus aset desain."],
+        "Nama proyek: " + project + "\n├── CABLE (jalur kabel)\n└── SLACK HANGER (titik slack)\n\nContoh susunan; bukan daftar semua folder wajib.");
+      report.inspectSource = true;
+    } else if (/Subfeeder pole naming membutuhkan INISIAL OLT dan CODING FDT/i.test(reason)) {
+      set("configuration", "Data Coding FDT: inisial OLT atau kode FDT belum tersedia untuk penamaan pole.",
+        ["Minta owner melengkapi inisial OLT dan kode FDT proyek ini di Coding FDT. Setelah lengkap, proses ulang."]);
+    } else if (/Project root metadata|FDT folder has metadata|Internal Sling anchor|Subfeeder project folder missing/i.test(reason)) {
+      set("system", "EVA gagal merapikan folder proyek. File belum tentu salah.",
+        ["Jangan ubah atau hapus isi KMZ. Salin pesan ini lalu laporkan untuk diperbaiki di EVA."]);
+      report.location = safe(reason.match(/FDT folder has metadata that cannot be discarded:\s*(.+)/i)?.[1] || "");
+    } else if (/(?:HP|FAT|Slack hanger).*invalid coordinates/i.test(reason)) {
+      set("input", "Koordinat salah satu aset tidak bisa dibaca.",
+        ["Periksa koordinat aset di Google Earth. Perbaiki hanya koordinat yang memang salah; jangan pindahkan aset yang benar."],
+        "Koordinat harus berupa angka bujur dan lintang yang valid.");
+    } else if (/(?:HP|FAT AREA|FAT batch|FAT |Slack hanger ).*(?:exhausted|infeasible|overlap|cannot |no serving pole|kehilangan|invalid|missing IDs|shift|accounting|outside own cell|requires|memerlukan)/i.test(reason) || /FatAreaGeometryError/i.test(reason)) {
+      set("geometry", "EVA gagal menyusun posisi aset di hasil DXF. File belum tentu salah.",
+        ["Pastikan wilayah ROAD yang dipilih sesuai desain. Jika sudah benar, jangan pindahkan aset; salin pesan ini lalu laporkan."]);
+    } else if (/template.*(?:not found|missing|belum tersedia)|sheet.*not found|Required ASTRI sheet|BOQ NRO.*(?:could not|missing|expected)|engine tidak tersedia/i.test(reason)) {
+      set("system", "Template output di server belum tersedia atau tidak sesuai.",
+        ["Template perlu diperbaiki di EVA. File KMZ tidak perlu diubah; salin pesan ini lalu laporkan."]);
+    } else if (/KML\/KMZ file is required|File KML\/KMZ wajib|Minimal satu file input/i.test(reason)) {
+      set("input", "File desain KML/KMZ belum diterima.", ["Pilih file desain KML/KMZ pada unggahan utama, lalu proses lagi."]);
+    } else if (/HPDB\/ASTRI.*(?:missing or duplicated|no longer matches)|ASTRI CLUSTER harus|ASTRI FAT\/HOMEPASS tanpa/i.test(reason)) {
+      set("system", "EVA gagal menghubungkan hasil KMZ dengan baris HPDB/ASTRI.",
+        ["Jangan hapus HP atau FDT dari desain. Salin pesan ini lalu laporkan agar pemetaan EVA diperbaiki."]);
+    } else if ([401, 403].includes(Number(options.httpStatus))) {
+      set("access", "Sesi login atau izin akses tidak diterima.", ["Login ulang di EVA, lalu proses lagi. File tidak perlu diubah."]);
+    } else if (Number(options.httpStatus) === 413 || /Ukuran tiap file maksimal|request entity too large/i.test(reason)) {
+      set("input", "Ukuran file melebihi batas unggahan.", ["Simpan ulang tanpa gambar/media yang tidak dipakai, atau pisahkan per proyek. Jangan hapus aset desain."]);
+    } else if (/Upload timeout|Upload gagal terkirim|Failed to fetch/i.test(reason) && options.phase !== "job") {
+      set("uncertain", "Respons upload tidak diterima. Proses di server belum bisa dipastikan.",
+        ["Cek Riwayat Proses dahulu. Jika belum ada proses baru dan koneksi sudah pulih, unggah ulang."]);
+      report.title = "Respons belum diterima";
+    } else if (/^(?:TimeoutError|ConnectTimeout|ReadTimeout|ConnectionError|Connection refused|Gagal download spreadsheet)\b|\b(?:request|connection|read|connect) timed out\b|^worker.*unavailable|^redis.*(?:unavailable|connection)/i.test(reason)) {
+      set("temporary", "Koneksi atau layanan yang dibutuhkan tidak merespons.", ["Tunggu koneksi/layanan pulih, lalu proses lagi. File tidak perlu diubah."]);
+      report.retry = options.phase === "job";
+    }
+    return report;
+  }
+
+  let last = null, lastKey = "", dialog = null, opener = null, overflow = "", generation = 0;
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = safe(text);
+    if (className) node.className = className;
+    return node;
+  }
+  function restorePage() {
+    document.documentElement.style.overflow = overflow;
+    if (opener?.isConnected && !opener.disabled) opener.focus({ preventScroll: true });
+  }
+  function close() {
+    generation++;
+    if (dialog?.open) { dialog.close(); restorePage(); }
+  }
+  function ensure() {
+    if (dialog) return;
+    dialog = element("dialog", undefined, "conversion-failure-dialog");
+    dialog.id = "conversionFailureDialog";
+    dialog.setAttribute("aria-labelledby", "conversionFailureTitle");
+    dialog.setAttribute("aria-describedby", "conversionFailureCause");
+    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+    dialog.addEventListener("keydown", event => {
+      // Keep main-page conversion shortcuts from submitting behind this popup.
+      event.stopPropagation();
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); return; }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialog.querySelectorAll('button:not([disabled]), [tabindex="0"]')).filter(n => n.getClientRects().length);
+      const first = controls[0], end = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); end.focus(); }
+      else if (!event.shiftKey && document.activeElement === end) { event.preventDefault(); first.focus(); }
+    });
+    dialog.addEventListener("close", () => {
+      if (dialog.open) return;
+      restorePage();
+    });
+    dialog.addEventListener("click", event => {
+      if (event.target !== dialog) return;
+      const r = dialog.getBoundingClientRect();
+      if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) close();
+    });
+    document.body.appendChild(dialog);
+    const button = element("button", "Kenapa gagal?", "secondary-button");
+    button.id = "conversionFailureButton"; button.type = "button"; button.hidden = true;
+    button.setAttribute("aria-haspopup", "dialog"); button.setAttribute("aria-controls", dialog.id);
+    button.addEventListener("click", () => { if (last) render(last.report, last.options); });
+    const anchor = document.getElementById("retryButton");
+    if (anchor) anchor.insertAdjacentElement("afterend", button);
+    else document.getElementById("uploadForm")?.appendChild(button);
+  }
+
+  async function sourceFolders(options, target, token) {
+    if (typeof options.readSource !== "function") return;
+    try {
+      const text = await options.readSource();
+      if (generation !== token || !dialog.open || !target.isConnected || typeof text !== "string") return;
+      const root = new DOMParser().parseFromString(text, "application/xml");
+      if (root.querySelector("parsererror")) return;
+      const doc = root.getElementsByTagNameNS("*", "Document")[0];
+      if (!doc) return;
+      const names = Array.from(doc.children).filter(n => n.localName === "Folder").slice(0, 6)
+        .map(n => Array.from(n.children).find(c => c.localName === "name")?.textContent || "(tanpa nama)");
+      if (names.length) target.appendChild(element("p", "Folder paling luar di file ini: " + names.map(n => '"' + safe(n).slice(0, 100) + '"').join(", ") + ".", "conversion-failure-source"));
+    } catch (_) { /* Guidance must never replace the original failure. */ }
+  }
+
+  function reportText(report) {
+    return [report.title, report.cause, "File: " + report.files.join("; "), report.location,
+      "ID proses: " + (report.jobId || "Belum tersedia"), ...report.steps, report.standard,
+      "Error proses: " + report.raw].filter(Boolean).join("\n");
+  }
+
+  function render(report, options) {
+    ensure();
+    const token = ++generation, wasOpen = dialog.open;
+    if (!wasOpen) opener = document.activeElement;
+    const header = element("header"), title = element("h2", report.title); title.id = "conversionFailureTitle";
+    const x = element("button", "×", "conversion-failure-close"); x.type = "button";
+    x.setAttribute("aria-label", "Tutup penjelasan kegagalan"); x.setAttribute("data-conversion-failure-close", "");
+    x.addEventListener("click", close); header.append(title, x);
+    const body = element("div", undefined, "conversion-failure-body");
+    if (report.files.length) body.appendChild(element("p", report.files.join("; "), "conversion-failure-file"));
+    const wrong = element("section", undefined, "conversion-failure-where");
+    const cause = element("p", report.cause); cause.id = "conversionFailureCause";
+    wrong.append(element("h3", "Gagal di bagian ini"), cause);
+    if (report.location) wrong.appendChild(element("p", report.location));
+    body.appendChild(wrong);
+    const correct = element("section", undefined, "conversion-failure-standard");
+    correct.appendChild(element("h3", "Seharusnya begini"));
+    report.steps.forEach(step => correct.appendChild(element("p", step)));
+    if (report.standard) correct.appendChild(element("pre", report.standard));
+    body.appendChild(correct);
+    const footer = element("footer"), copied = element("span", "", "conversion-failure-note"); copied.setAttribute("role", "status");
+    const copy = element("button", "Salin untuk bantuan", "secondary-button"); copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(reportText(report)); if (generation === token) copied.textContent = "Pesan tersalin."; }
+      catch (_) { if (generation === token) copied.textContent = "Salin tidak tersedia. Kirim foto popup ini."; }
+    });
+    footer.append(copy);
+    if (report.category === "input" && document.getElementById("kmlFileInput")) {
+      const choose = element("button", "Pilih file perbaikan", "primary-button"); choose.type = "button";
+      choose.addEventListener("click", () => { close(); document.getElementById("kmlFileInput").click(); }); footer.append(choose);
+    }
+    footer.append(copied); dialog.replaceChildren(header, body, footer);
+    if (!wasOpen) { overflow = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden"; dialog.showModal(); }
+    x.focus({ preventScroll: true });
+    if (report.inspectSource) sourceFolders(options, wrong, token);
+  }
+
+  function show(options = {}) {
+    const report = describe(options); if (!report) return false;
+    ensure(); const key = JSON.stringify([report.jobId, report.raw, options.phase]);
+    if (key === lastKey) return true;
+    lastKey = key; last = { report, options };
+    document.getElementById("conversionFailureButton").hidden = false;
+    const retry = document.getElementById("retryButton"); if (retry) retry.hidden = !report.retry;
+    document.getElementById("retryBar")?.classList.remove("hidden"); render(report, options); return true;
+  }
+  function clear() {
+    last = null; lastKey = ""; close();
+    const button = document.getElementById("conversionFailureButton"); if (button) button.hidden = true;
+    const retry = document.getElementById("retryButton"); if (retry) retry.hidden = false;
+  }
+  window.evaConversionFailure = { describe, show, clear };
+})();
+
 const evaUtils = window.EVAUtils || {};
 
 const layerKeys = [
@@ -173,8 +392,22 @@ const initialOutputMode = "";
 
 const state = {
   astriMatch: null,
+  astriMatchJobId: null,
+  astriMatchRequestId: 0,
+  astriBoqMatch: null,
+  astriBoqMatchJobId: null,
+  astriBoqScope: null,
+  astriBoqItems: [],
+  astriBoqPermit: null,
+  astriBoqRequestId: 0,
+  astriBoqSupplierRequestId: 0,
+  astriBoqManualRequestId: 0,
   astriSearchItems: [],
   astriTargetType: "cluster",
+  astriWorkOrderStatus: null,
+  astriWorkOrderStatusRequestId: 0,
+  astriDocumentVerification: null,
+  astriDocumentVerificationRequestId: 0,
   osmFiles: [],
   kmlFiles: [],
   kmlFolders: [],
@@ -185,6 +418,7 @@ const state = {
   scopeType: window.APP_CONFIG.defaultScopeType || "Cluster",
   outputMode: initialOutputMode,
   jobId: null,
+  conversionFailureContext: null,
   currentJobStatus: null,
   cancelInFlight: false,
   downloadUrl: null,
@@ -192,7 +426,6 @@ const state = {
   defaultDownloadName: defaultOutputMode === "dxf" ? "eva-vector-output.dxf" : "eva-vector-output.xlsx",
   downloadMode: defaultOutputMode,
   downloadMimeType: defaultOutputMode === "dxf" ? "application/dxf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  downloadPanelDismissed: false,
   pollingTimer: null,
   statusPollFailures: 0,
   statusPollInFlight: false,
@@ -217,7 +450,7 @@ const state = {
   hpdbSearch: "",
   hpdbHomepassPage: 1,
   hpdbHomepassRowsPerPage: 200,
-  activePreviewTab: "summary",
+  activePreviewTab: "log",
   activeBoqPreviewTab: "table",
   activeHpdbPreviewTab: "cluster",
   validationSummaryOpen: false,
@@ -238,7 +471,8 @@ const state = {
   consoleServerIds: new Set(),
   consoleRenderedKeys: new Set(),
   consoleLocalSeq: 0,
-  consoleCollapsed: false,
+  consoleCollapsed: true,
+  consoleLive: false,
   lastClearedServerLogId: 0,
   geofabrikRegion: "",
   geofabrikRegions: [],
@@ -295,6 +529,10 @@ const els = {
   standardizerKmzName: document.getElementById("standardizerKmzName"),
   standardizerCodingName: document.getElementById("standardizerCodingName"),
   standardizerSummary: document.getElementById("standardizerSummary"),
+  validationResultPanel: document.getElementById("validationResultPanel"),
+  validationResultBadge: document.getElementById("validationResultBadge"),
+  validationResultToggle: document.getElementById("validationResultToggle"),
+  downloadValidationSummary: document.getElementById("downloadValidationSummary"),
   standardizerButton: document.getElementById("standardizerButton"),
   osmDropZone: document.getElementById("osmDropZone"),
   kmlDropZone: document.getElementById("kmlDropZone"),
@@ -315,14 +553,11 @@ const els = {
   progressValue: document.getElementById("progressValue"),
   progressBar: document.getElementById("progressBar"),
   downloadPanel: document.getElementById("downloadPanel"),
-  downloadResultTitle: document.getElementById("downloadResultTitle"),
   downloadResultText: document.getElementById("downloadResultText"),
   outputFileLabel: document.getElementById("outputFileLabel"),
   outputFileName: document.getElementById("outputFileName"),
   resetOutputNameButton: document.getElementById("resetOutputNameButton"),
-  downloadPanelDismiss: document.getElementById("downloadPanelDismiss"),
   downloadButton: document.getElementById("downloadButton"),
-  saveHint: document.getElementById("saveHint"),
   dashboardEmptyState: document.getElementById("dashboardEmptyState"),
   resultSummaryPanel: document.getElementById("resultSummaryPanel"),
   resultSummarySubtitle: document.getElementById("resultSummarySubtitle"),
@@ -741,6 +976,14 @@ function renderValidationSummary() { try { if (typeof state === "undefined") ret
   renderPreflightSummary();
   const summary = validationReadiness();
   const tone = summary.ready ? "ready" : summary.reasons.some((reason) => /gagal|error|invalid|tidak valid/i.test(reason)) ? "error" : "warning";
+  if (els.statusText && state.currentStatusTone === "idle" && !state.hasError && !state.jobId && !state.downloadUrl) {
+    const nextStep = summary.ready
+      ? "File dan output siap. Klik Mulai Proses untuk membuat hasil."
+      : state.kmlFiles.length
+        ? "File sudah dipilih. Pilih format output, lalu klik Mulai Proses."
+        : "Unggah file KML/KMZ, pilih format output, lalu klik Mulai Proses.";
+    els.statusText.textContent = nextStep;
+  }
   if (els.convertButton) {
     setButtonTrailingText(els.convertButton, summary.ready ? generateButtonLabel() : "Lengkapi konfigurasi");
     els.convertButton.disabled = !summary.ready;
@@ -962,13 +1205,15 @@ function renderWorkflowStepper() {
   const isDone = state.currentStatusTone === "done" || Boolean(state.downloadUrl);
   const isProcessing = state.currentStatusTone === "processing" && !isDone;
   const hasWarnings = allIssueRows().some((row) => isWarningStatus(row.status));
-  const hasErrors = state.currentStatusTone === "error" || state.hasError;
+  const hasJobError = (state.currentStatusTone === "error" || state.hasError)
+    && (state.hasUserStartedProcess || Boolean(state.jobId));
+  const hasUploadError = state.hasError && !hasJobError && !hasFiles;
 
   const steps = [
     {
       label: "Unggah Data",
-      status: hasErrors && !hasFiles ? "error" : hasFiles ? "complete" : "ready",
-      caption: hasFiles ? "Siap" : "Belum ada file",
+      status: hasUploadError ? "error" : hasFiles ? "complete" : "ready",
+      caption: hasUploadError ? "Periksa file" : hasFiles ? "Siap" : "Belum ada file",
     },
     {
       label: "Atur Output",
@@ -977,8 +1222,8 @@ function renderWorkflowStepper() {
     },
     {
       label: "Mulai Proses",
-      status: hasErrors ? "error" : isDone ? "complete" : isProcessing ? "processing" : isReadyToGenerate ? "ready" : "pending",
-      caption: hasErrors ? "Gagal" : isDone ? "Selesai" : isProcessing ? "Memproses" : isReadyToGenerate ? "Siap" : "Menunggu",
+      status: hasJobError ? "error" : isDone ? "complete" : isProcessing ? "processing" : isReadyToGenerate ? "ready" : "pending",
+      caption: hasJobError ? "Gagal" : isDone ? "Selesai" : isProcessing ? "Memproses" : isReadyToGenerate ? "Siap" : "Menunggu",
     },
     {
       label: "Unduh",
@@ -987,21 +1232,33 @@ function renderWorkflowStepper() {
     },
   ];
 
-  els.workflowStepper.innerHTML = steps.map((step, index) => `
-    <div class="workflow-step" data-status="${step.status}">
-      <span class="workflow-step-index" aria-hidden="true">${workflowStepIcon(step.status, index + 1)}</span>
-      <span class="min-w-0">
-        <span class="workflow-step-label">${escapeHtml(step.label)}</span>
-        <span class="workflow-step-status">${escapeHtml(step.caption || statusTextLabel(step.status))}</span>
-      </span>
-    </div>
-  `).join("");
+  const currentStep = state.downloadUrl || isDone
+    ? 4
+    : (isProcessing || isReadyToGenerate || hasJobError)
+      ? 3
+      : hasFiles
+        ? 2
+        : 1;
+  els.workflowStepper.dataset.currentStep = String(currentStep);
+  els.workflowStepper.innerHTML = steps.map((step, index) => {
+    const stepNumber = index + 1;
+    const currentAttribute = stepNumber === currentStep ? ' aria-current="step"' : "";
+    return `
+      <li class="workflow-step" data-status="${step.status}"${currentAttribute}>
+        <span class="workflow-step-index" aria-hidden="true">${workflowStepIcon(step.status, stepNumber)}</span>
+        <span class="min-w-0">
+          <span class="workflow-step-label">${escapeHtml(step.label)}</span>
+          <span class="workflow-step-status">${escapeHtml(step.caption || statusTextLabel(step.status))}</span>
+        </span>
+        <span class="workflow-mobile-count" aria-hidden="true">Langkah ${stepNumber}/4</span>
+      </li>
+    `;
+  }).join("");
 }
 
 function renderDashboardSummary() {
   const hasFiles = selectedFiles().length > 0;
   const hasOutput = hasResultData();
-  const shouldShowResultWorkspace = hasFiles || hasOutput || state.consoleLogs.length > 0 || Boolean(state.standardizerSummary);
   if (els.dashboardEmptyState) {
     els.dashboardEmptyState.classList.toggle("hidden", hasFiles || hasOutput);
   }
@@ -1009,7 +1266,7 @@ function renderDashboardSummary() {
     els.outputStatusPanel.classList.add("hidden");
   }
   if (els.previewWorkspacePanel) {
-    els.previewWorkspacePanel.classList.toggle("hidden", !shouldShowResultWorkspace);
+    els.previewWorkspacePanel.classList.add("hidden");
   }
   if (els.resultSummaryPanel) {
     els.resultSummaryPanel.classList.add("hidden");
@@ -1479,9 +1736,29 @@ function renderConsoleMeta() {
   refreshDurationFromLogs();
   const warnings = countConsoleSeverity("WARNING");
   const errors = countConsoleSeverity("ERROR");
-  if (els.consoleWarningsBadge) els.consoleWarningsBadge.textContent = `${formatNumber(warnings)} peringatan`;
-  if (els.consoleErrorsBadge) els.consoleErrorsBadge.textContent = `${formatNumber(errors)} error`;
-  if (els.consoleDurationBadge) els.consoleDurationBadge.textContent = `Durasi ${state.durationLabel || "--"}`;
+  const hasLogs = state.consoleLogs.length > 0;
+  if (els.consolePanel) {
+    els.consolePanel.classList.toggle("hidden", !hasLogs && !state.consoleLive);
+    els.consolePanel.dataset.tone = errors ? "error" : warnings ? "warning" : state.consoleLive ? "live" : "success";
+  }
+  if (els.consoleWarningsBadge) {
+    els.consoleWarningsBadge.textContent = `${formatNumber(warnings)} peringatan`;
+    els.consoleWarningsBadge.dataset.tone = warnings ? "warning" : "neutral";
+    els.consoleWarningsBadge.hidden = warnings === 0;
+  }
+  if (els.consoleErrorsBadge) {
+    els.consoleErrorsBadge.textContent = `${formatNumber(errors)} error`;
+    els.consoleErrorsBadge.dataset.tone = errors ? "error" : "neutral";
+    els.consoleErrorsBadge.hidden = errors === 0;
+  }
+  if (els.consoleDurationBadge) {
+    els.consoleDurationBadge.textContent = `Durasi ${state.durationLabel || "--"}`;
+    els.consoleDurationBadge.dataset.tone = "neutral";
+  }
+  if (els.consoleLogShell) els.consoleLogShell.hidden = state.consoleCollapsed;
+  document.querySelectorAll("[data-log-detail-action]").forEach((button) => {
+    button.hidden = state.consoleCollapsed;
+  });
 }
 
 function renderSupportPanels() {
@@ -1526,17 +1803,9 @@ function renderPreviewSubTabs() {
   });
 }
 
-function setPreviewTab(tabName) {
-  if (String(tabName || "").startsWith("hpdb-")) {
-    state.activePreviewTab = "hpdb";
-    state.activeHpdbPreviewTab = String(tabName).replace("hpdb-", "") || "cluster";
-  } else if (tabName === "nro") {
-    state.activePreviewTab = "boq";
-    state.activeBoqPreviewTab = "nro";
-  } else {
-    state.activePreviewTab = tabName || "summary";
-  }
-  const activePanel = activePreviewPanelName();
+function setPreviewTab(_tabName) {
+  state.activePreviewTab = "log";
+  const activePanel = "log";
   document.querySelectorAll("[data-preview-tab]").forEach((tab) => {
     const isActive = tab.dataset.previewTab === state.activePreviewTab;
     tab.classList.toggle("active", isActive);
@@ -1646,14 +1915,6 @@ function renderConsoleLogs() {
 
 function addConsoleLog({ severity = "INFO", message = "", time = null, source = "local", id = null }) {
   const normalized = normalizeSeverity(severity);
-  if (normalized === "ERROR" || normalized === "WARNING") {
-    state.consoleCollapsed = false;
-    els.consoleLogShell?.classList.remove("collapsed");
-    if (els.consoleToggle) {
-      els.consoleToggle.textContent = "Collapse";
-      els.consoleToggle.setAttribute("aria-expanded", "true");
-    }
-  }
   if (source === "server") {
     const serverId = Number(id);
     if (!serverId || serverId <= state.lastClearedServerLogId || state.consoleServerIds.has(serverId)) {
@@ -1687,17 +1948,19 @@ function mergeServerLogs(logs = []) {
     if (!serverId || serverId <= state.lastClearedServerLogId || state.consoleServerIds.has(serverId)) {
       return;
     }
+    const severity = normalizeSeverity(log.severity);
     state.consoleServerIds.add(serverId);
     state.consoleLogs.push({
       source: "server",
       id: serverId,
       time: log.time || consoleTimestamp(),
-      severity: normalizeSeverity(log.severity),
+      severity,
       message: String(log.message || ""),
     });
     changed = true;
   });
-  if (changed) renderConsoleLogs();
+  if (!changed) return;
+  renderConsoleLogs();
 }
 
 const logger = {
@@ -1718,7 +1981,7 @@ function clearConsoleLogs() {
   state.consoleServerIds.clear();
   state.consoleRenderedKeys = new Set();
   state.durationLabel = "--";
-  renderConsoleLogs();
+  setConsoleCollapsed(true);
 }
 
 function formatConsoleLine(log) {
@@ -1779,22 +2042,28 @@ function downloadConsoleLog() {
 }
 
 function setConsoleLive(isLive) {
-  if (!els.consoleLiveIndicator) return;
-  els.consoleLiveIndicator.classList.toggle("hidden", !isLive);
-  if (isLive && state.consoleCollapsed) {
-    setConsoleCollapsed(false);
+  state.consoleLive = Boolean(isLive);
+  if (els.consoleLiveIndicator) {
+    els.consoleLiveIndicator.classList.toggle("hidden", !state.consoleLive);
   }
+  renderConsoleMeta();
 }
 
 function setConsoleCollapsed(isCollapsed) {
-  state.consoleCollapsed = isCollapsed;
-  if (els.consoleLogShell) els.consoleLogShell.classList.toggle("collapsed", isCollapsed);
-  if (els.consoleToggle) {
-    els.consoleToggle.textContent = isCollapsed ? "Buka" : "Ciutkan";
-    els.consoleToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  state.consoleCollapsed = Boolean(isCollapsed);
+  if (els.consoleLogShell) {
+    els.consoleLogShell.hidden = state.consoleCollapsed;
+    els.consoleLogShell.classList.toggle("collapsed", state.consoleCollapsed);
   }
+  if (els.consoleToggle) {
+    els.consoleToggle.textContent = state.consoleCollapsed ? "Lihat log" : "Sembunyikan log";
+    els.consoleToggle.setAttribute("aria-expanded", String(!state.consoleCollapsed));
+  }
+  document.querySelectorAll("[data-log-detail-action]").forEach((button) => {
+    button.hidden = state.consoleCollapsed;
+  });
   renderConsoleLogs();
-  if (!isCollapsed) scrollConsoleToBottom();
+  if (!state.consoleCollapsed) scrollConsoleToBottom();
 }
 
 function selectedLayers() {
@@ -2152,6 +2421,7 @@ function outputModeLabel(mode = state.outputMode) {
 }
 
 function outputExtension(mode = state.outputMode) {
+  if (mode === "astri" && state.downloadMimeType === "application/zip") return ".zip";
   if (mode === "kmz") return ".kmz";
   if (modeTargetCount(mode) > 1) return ".zip";
   if (mode === "boq" || mode === "astri" || mode === "hpdb") return ".xlsx";
@@ -2161,7 +2431,7 @@ function outputExtension(mode = state.outputMode) {
 function outputDownloadText(mode = state.outputMode) {
   if (mode === "kmz") return "Unduh KMZ";
   if (mode === "boq") return "Unduh BOQ (Excel)";
-  if (mode === "astri") return "Unduh ASTRI (Excel)";
+  if (mode === "astri") return state.downloadMimeType === "application/zip" ? "Unduh ASTRI (ZIP)" : "Unduh ASTRI (Excel)";
   if (mode === "hpdb") return "Unduh HPDB (Excel)";
   if (modeTargetCount(mode) > 1) return "Unduh ZIP";
   return "Unduh DXF (CAD)";
@@ -2197,6 +2467,9 @@ function notifyEvaAssistant(type, detail = {}) {
 }
 
 function outputPickerTypes(mode = state.outputMode) {
+  if (mode === "astri" && state.downloadMimeType === "application/zip") {
+    return [{ description: "Arsip ASTRI per FDT", accept: { "application/zip": [".zip"] } }];
+  }
   if (mode === "kmz") {
     return [{
       description: "Arsip KMZ standar",
@@ -2960,6 +3233,96 @@ function collectKmlFolders(element, folderStack, folders) {
   });
 }
 
+const INLINE_FEEDBACK_DURATION_MS = 5000;
+const inlineFeedbackTimers = new WeakMap();
+
+function clearInlineFeedbackTimer(root) {
+  const timer = inlineFeedbackTimers.get(root);
+  if (timer) window.clearTimeout(timer);
+  inlineFeedbackTimers.delete(root);
+}
+
+function dismissInlineFeedback(root) {
+  if (!root) return;
+  clearInlineFeedbackTimer(root);
+  root.classList.add("hidden");
+  root.removeAttribute("role");
+}
+
+function scheduleInlineFeedbackDismiss(root) {
+  clearInlineFeedbackTimer(root);
+  inlineFeedbackTimers.set(root, window.setTimeout(() => dismissInlineFeedback(root), INLINE_FEEDBACK_DURATION_MS));
+}
+
+function renderInlineFeedback(root, title, message, tone = "info") {
+  if (!root) return null;
+  const normalized = ["success", "info", "warning", "error"].includes(tone) ? tone : "info";
+  let titleNode = root.querySelector("[data-inline-title]");
+  let messageNode = root.querySelector("[data-inline-message]");
+  if (!titleNode || !messageNode) {
+    root.replaceChildren();
+    titleNode = document.createElement("strong");
+    titleNode.dataset.inlineTitle = "";
+    messageNode = document.createElement("span");
+    messageNode.dataset.inlineMessage = "";
+    root.append(titleNode, messageNode);
+  }
+  root.querySelector("[data-inline-close]")?.remove();
+  titleNode.textContent = title || "Info";
+  messageNode.textContent = message || "";
+  root.dataset.tone = normalized;
+  root.classList.remove("hidden");
+  root.setAttribute("role", normalized === "error" || normalized === "warning" ? "alert" : "status");
+  scheduleInlineFeedbackDismiss(root);
+  return root;
+}
+
+function setInlineFeedback(title, message, tone = "info", targetId = "inlineFeedback") {
+  return renderInlineFeedback(document.getElementById(targetId), title, message, tone);
+}
+
+let astriInlineFeedbackSequence = 0;
+function clearInlineFeedback(targetId = "inlineFeedback") {
+  const root = document.getElementById(targetId);
+  if (!root) return;
+  dismissInlineFeedback(root);
+}
+
+function setAstriInlineFeedback(title, message, tone = "info") {
+  astriInlineFeedbackSequence += 1;
+  let root = document.getElementById("astriInlineFeedback");
+  if (!root) {
+    const panel = document.getElementById("astriIntegrationPanel");
+    if (!panel) return null;
+    root = document.createElement("div");
+    root.id = "astriInlineFeedback";
+    root.className = "inline-feedback mt-3 hidden";
+    const anchor = document.getElementById("astriActionButtons") || document.getElementById("astriMatchBox");
+    if (anchor) anchor.insertAdjacentElement("afterend", root);
+    else panel.appendChild(root);
+  }
+  root.dataset.inlineProgressToken = "";
+  return renderInlineFeedback(root, title, message, tone);
+}
+
+function showAstriInlineProgress(title, message, persistent = false) {
+  const root = setAstriInlineFeedback(title, message, "info");
+  if (!root) return null;
+  if (persistent) clearInlineFeedbackTimer(root);
+  const token = String(++astriInlineFeedbackSequence);
+  root.dataset.inlineProgressToken = token;
+  return {
+    remove() {
+      if (root.dataset.inlineProgressToken !== token) return;
+      dismissInlineFeedback(root);
+    },
+  };
+}
+
+window.evaSetInlineFeedback = setInlineFeedback;
+window.evaSetAstriInlineFeedback = setAstriInlineFeedback;
+window.evaClearInlineFeedback = clearInlineFeedback;
+
 function setError(message, scope = "validation") {
   try { void state; } catch (_) {
     const alert = document.getElementById("errorAlert");
@@ -2972,26 +3335,54 @@ function setError(message, scope = "validation") {
     if (bar && scope === "job") bar.classList.remove("hidden");
     return;
   }
-  state.hasError = Boolean(message);
-  state.errorScope = message ? scope : "none";
-  // Route all error notifications through the EVA Assistant — no separate
-  // inline error banner popup. Keep the element in the DOM (hidden) so any
-  // code reading it doesn't break.
+  const hasMessage = Boolean(message);
+  const importantError = scope === "job" || scope === "init" || scope === "conversion";
+  state.hasError = hasMessage;
+  state.errorScope = hasMessage ? scope : "none";
   if (els.errorAlert) {
     els.errorAlert.textContent = message || "";
-    els.errorAlert.classList.add("hidden");
+    els.errorAlert.classList.toggle("hidden", !hasMessage || importantError);
+    if (hasMessage && !importantError) els.errorAlert.setAttribute("role", "alert");
+    else els.errorAlert.removeAttribute("role");
   }
-  if (message && typeof window.evaToast === "function") {
-    window.evaToast({ title: "Ada masalah", message, tone: "error", dedupeKey: `err:${message}` });
+  if (hasMessage && importantError && scope !== "conversion" && typeof window.evaToast === "function") {
+    window.evaToast({ title: "Ada masalah", message, tone: "error", important: true, dedupeKey: `err:${message}` });
   }
   renderSupportPanels();
 }
 
+function setConversionFailure(error, options = {}) {
+  const payload = options.payload || error?.payload || {};
+  const message = error?.message || String(error || payload.error || payload.message || "Konversi gagal.");
+  const files = options.files || [];
+  const reportOptions = {
+    ...options, payload, message, httpStatus: error?.status ?? options.httpStatus,
+    jobId: options.jobId || "",
+    scope: payload.scope_type || options.scope || "",
+    network: payload.network_type || options.network || "",
+    files: files.map(file => file.name),
+    readSource: () => files.length === 1 ? readKmlText(files[0]) : Promise.resolve(null),
+  };
+  if (typeof window.evaConversionFailure?.show !== "function" || !window.evaConversionFailure.describe(reportOptions)) {
+    setError(message, "job");
+    return;
+  }
+  setError(message, "conversion");
+  try {
+    window.evaConversionFailure.show(reportOptions);
+  } catch (failure) {
+    logger.warn("Penjelasan kegagalan tidak dapat ditampilkan.");
+    setError(message, "job");
+  }
+}
+
 function clearError() {
+  window.evaConversionFailure?.clear();
   state.hasError = false;
   state.errorScope = "none";
   els.errorAlert.textContent = "";
   els.errorAlert.classList.add("hidden");
+  window.evaClearInlineFeedback?.();
   renderSupportPanels();
 }
 
@@ -3024,7 +3415,7 @@ function setStatus(label, message, tone = "idle") {
           ? (label || "Perlu dicek")
         : selectedFiles().length
           ? "Siap"
-          : "Belum ada file";
+          : "Menunggu hasil";
   els.statusText.textContent = message;
   els.statusBadge.textContent = displayLabel;
   els.statusBadge.className = "status-pill";
@@ -3057,9 +3448,10 @@ function setStats(stats = {}) {
 
 function hideDownloadButton() {
   state.downloadUrl = null;
+  state.downloadMimeType = null;
   state.downloadMode = state.outputMode;
   state.defaultDownloadName = state.downloadName;
-  state.downloadPanelDismissed = false;
+  setValidationResultCollapsed(true);
   els.downloadButton.classList.add("hidden");
   els.downloadButton.classList.remove("inline-flex");
   els.downloadButton.removeAttribute("href");
@@ -3086,7 +3478,6 @@ function showDownloadPanel(downloadUrl, downloadName, downloadMimeType = "applic
   state.downloadMimeType = downloadMimeType;
   state.downloadName = sanitizeOutputFileName(downloadName || state.downloadName, mode);
   state.defaultDownloadName = state.downloadName;
-  state.downloadPanelDismissed = false;
   if (state.currentStatusTone !== "done") {
     setStatus("Selesai", "Output siap diunduh.", "done");
   }
@@ -3097,7 +3488,7 @@ function showDownloadPanel(downloadUrl, downloadName, downloadMimeType = "applic
     : mode === "boq"
       ? `Nama file BOQ ${state.networkType}`
       : mode === "astri"
-        ? `Nama file ASTRI ${state.networkType}`
+        ? `Nama file ASTRI ${state.networkType}${state.downloadMimeType === "application/zip" ? " (ZIP per FDT)" : ""}`
         : mode === "hpdb"
           ? `Nama file HPDB ${state.networkType}`
           : `Nama file ZIP ${state.networkType}`;
@@ -3105,27 +3496,7 @@ function showDownloadPanel(downloadUrl, downloadName, downloadMimeType = "applic
   els.downloadButton.href = downloadUrl;
   els.downloadButton.download = state.downloadName;
   setButtonTrailingText(els.downloadButton, outputDownloadText(mode));
-  if (els.downloadResultTitle) {
-    els.downloadResultTitle.textContent = `${outputModeLabel(mode)} selesai`;
-  }
-  if (els.downloadResultText) {
-    if (mode === "kmz") {
-      const summary = state.standardizerSummary || {};
-      els.downloadResultText.textContent = `${formatNumber(summary.fdt_renamed || 0)} FDT code updated, ${formatNumber(summary.name_standardized || 0)} object names fixed, ${formatNumber(summary.folder_renamed || 0)} folder fixed, ${formatNumber(summary.style_standardized || 0)} style fixed, ${formatNumber((summary.warnings || []).length)} warning.`;
-    } else {
-      const summary = state.boqSummary || {};
-      const hpdb = state.hpdbSummary || {};
-      const kmzSummary = state.standardizerSummary || {};
-      const mapped = Number(summary.total_mapped_boq_item || statValue("BOQ_ITEMS") || 0);
-      const warnings = Math.max(warningRows().length, Number(summary.total_warning_unmapped || 0), statValue("BOQ_WARNINGS"));
-      const hpdbRows = Number(hpdb.hpdb_rows || statValue("HPDB_ROWS") || 0);
-      const hpdbWarnings = Math.max(Number(hpdb.total_hpdb_warnings || 0), statValue("HPDB_WARNINGS"));
-      const kmzText = modeHas("kmz") || Number(kmzSummary.name_standardized || 0)
-        ? `, ${formatNumber(kmzSummary.name_standardized || 0)} KMZ name fixed, ${formatNumber(kmzSummary.style_standardized || 0)} style fixed`
-        : "";
-      els.downloadResultText.textContent = `${formatNumber(statValue("ROAD"))} ways, ${formatNumber(mapped)} BOQ item, ${formatNumber(hpdbRows)} HPDB row${kmzText}, ${formatNumber(warnings + hpdbWarnings)} warning, duration ${state.durationLabel || "--"}.`;
-    }
-  }
+  if (els.downloadResultText) els.downloadResultText.textContent = `Durasi ${state.durationLabel || "--"}`;
   els.downloadPanel.classList.remove("hidden");
   els.downloadButton.classList.remove("hidden");
   els.downloadButton.classList.add("inline-flex");
@@ -3143,31 +3514,36 @@ function fallbackBlobDownload(blob, filename) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(link.href), 750);
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 60000);
 }
 
 async function saveOutputToLocal(event) {
   event.preventDefault();
   if (!state.downloadUrl) return;
-  const filename = sanitizeOutputFileName(els.outputFileName.value, state.downloadMode);
-  els.outputFileName.value = filename;
-  els.downloadButton.download = filename;
+  finishOutputRename();
+  const filename = els.outputFileName.value;
   logger.info(`Preparing download: ${filename}`);
 
-  // Use direct server URL so download appears in browser's download manager.
-  // This works because the server sends Content-Disposition: attachment.
+  // Server Content-Disposition wins over the anchor name. Only renamed files
+  // need a browser-side blob; the original keeps its direct/streaming download.
   try {
-    const link = document.createElement("a");
-    link.href = state.downloadUrl;
-    link.download = filename;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    if (filename === state.defaultDownloadName) {
+      const link = document.createElement("a");
+      link.href = state.downloadUrl;
+      link.download = filename;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } else {
+      const response = await fetch(state.downloadUrl, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      fallbackBlobDownload(await response.blob(), filename);
+    }
     logger.success(`Download started: ${filename}`);
   } catch (err) {
     logger.error(`Download failed: ${err.message}`);
-    setError(err.message);
+    setError(err.message, "job");
   }
 }
 
@@ -3342,13 +3718,13 @@ function resetCurrentSession(options = {}) {
   state.kmlValidationError = null;
   state.osmValidationState = "empty";
   state.kmlValidationState = "empty";
-  state.jobId = null;
+  window.clearAstriMatchContext();
+  window.setCurrentJobId(null);
   state.currentJobStatus = null;
   state.cancelInFlight = false;
   state.downloadUrl = null;
   state.downloadName = defaultOutputMode === "dxf" ? "eva-vector-output.dxf" : "eva-vector-output.xlsx";
   state.downloadMode = state.outputMode;
-  state.downloadPanelDismissed = false;
   state.progress = 0;
   state.stats = {};
   state.durationLabel = "--";
@@ -3393,14 +3769,14 @@ function resetGeneratedOutput(options = {}) {
     clearInterval(state.pollingTimer);
     state.pollingTimer = null;
   }
-  state.jobId = null;
+  window.clearAstriMatchContext();
+  window.setCurrentJobId(null);
   state.currentJobStatus = null;
   state.cancelInFlight = false;
   state.downloadUrl = null;
   state.downloadName = defaultOutputMode === "dxf" ? "eva-vector-output.dxf" : "eva-vector-output.xlsx";
   state.defaultDownloadName = state.downloadName;
   state.downloadMode = state.outputMode;
-  state.downloadPanelDismissed = false;
   state.progress = 0;
   state.stats = {};
   state.durationLabel = "--";
@@ -3436,9 +3812,22 @@ async function parseJsonResponse(response) {
     payload = {};
   }
   if (!response.ok) {
-    throw new Error(payload.error || "Request gagal diproses.");
+    const error = new Error(payload.error || "Request gagal diproses.");
+    error.payload = payload;
+    error.status = response.status;
+    throw error;
   }
   return payload;
+}
+
+function isAstriBoqExistingSubmissionError(error) {
+  const payload = error?.payload || {};
+  const code = String(payload.code || error?.code || "").toUpperCase();
+  return Number(error?.status) === 409 && (
+    Boolean(payload.submission_id)
+    || code === "ASTRI_BOQ_SUBMISSION_CONFLICT"
+    || code === "ASTRI_BOQ_SUBMISSION_IN_PROGRESS"
+  );
 }
 
 function postFormDataWithProgress(url, formData, onProgress) {
@@ -3467,7 +3856,10 @@ function postFormDataWithProgress(url, formData, onProgress) {
         logger.success("Server menerima upload dan mengembalikan job.");
         resolve(payload);
       } else {
-        reject(new Error(payload.error || "Request gagal diproses."));
+        const error = new Error(payload.error || "Request gagal diproses.");
+        error.payload = payload;
+        error.status = xhr.status;
+        reject(error);
       }
     });
     xhr.addEventListener("error", () => reject(new Error("Upload gagal terkirim ke server.")));
@@ -3481,6 +3873,7 @@ const locationPopupState = {
   resolve: null,
   reject: null,
   value: { province: "", city: "", district: "", subdistrict: "", postal_code: "", area_name: "" },
+  requestId: 0,
 };
 
 async function fetchLocationJson(url) {
@@ -3547,6 +3940,7 @@ function fillSelect(key, rows, rowKey, selected) {
 
 async function refreshLocationDropdowns() {
   const v = locationPopupState.value;
+  const requestId = locationPopupState.requestId;
   const [provinces, cities, districts, subdistricts, postals, areas] = await Promise.all([
     fetchLocationJson('/api/regions/provinces?limit=1000'),
     fetchLocationJson(`/api/regions/cities?limit=1000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}`),
@@ -3555,6 +3949,7 @@ async function refreshLocationDropdowns() {
     fetchLocationJson(`/api/regions/postal-codes?limit=1000${v.province ? `&province=${encodeURIComponent(v.province)}` : ''}${v.city ? `&city=${encodeURIComponent(v.city)}` : ''}${v.district ? `&district=${encodeURIComponent(v.district)}` : ''}${v.subdistrict ? `&subdistrict=${encodeURIComponent(v.subdistrict)}` : ''}`),
     fetchLocationJson('/api/astri/areas?limit=1000'),
   ]);
+  if (requestId !== locationPopupState.requestId) return;
   fillSelect('province', provinces, 'province', v.province);
   fillSelect('city', v.province ? cities : [], 'city', v.city);
   fillSelect('district', v.city ? districts : [], 'district', v.district);
@@ -3579,24 +3974,44 @@ async function handleLocationChange(event) {
   if (key === 'city') Object.assign(locationPopupState.value, { district: '', subdistrict: '', postal_code: '' });
   if (key === 'district') Object.assign(locationPopupState.value, { subdistrict: '', postal_code: '' });
   if (key === 'subdistrict') Object.assign(locationPopupState.value, { postal_code: '' });
-  if (['province','city','district','subdistrict'].includes(key)) await refreshLocationDropdowns();
+  if (['province','city','district','subdistrict'].includes(key)) {
+    const requestId = ++locationPopupState.requestId;
+    try {
+      await refreshLocationDropdowns();
+    } catch (error) {
+      if (requestId === locationPopupState.requestId && !document.getElementById('eva-location-popup')?.classList.contains('hidden')) {
+        setError(error.message);
+        closeLocationPopup(false, error);
+      }
+    }
+  }
 }
 
-async function openLocationPopup(initial = {}) {
+function openLocationPopup(initial = {}) {
   ensureLocationPopup();
+  if (locationPopupState.reject) closeLocationPopup(false);
+  const requestId = ++locationPopupState.requestId;
   locationPopupState.value = { province: '', city: '', district: '', subdistrict: '', postal_code: '', area_name: '', ...initial };
   const popup = document.getElementById('eva-location-popup');
   popup.classList.remove('hidden'); popup.classList.add('flex');
-  await refreshLocationDropdowns();
-  return new Promise((resolve, reject) => { locationPopupState.resolve = resolve; locationPopupState.reject = reject; });
+  return new Promise((resolve, reject) => {
+    locationPopupState.resolve = resolve; locationPopupState.reject = reject;
+    refreshLocationDropdowns().catch((error) => {
+      if (locationPopupState.reject === reject && requestId === locationPopupState.requestId) {
+        setError(error.message);
+        closeLocationPopup(false, error);
+      }
+    });
+  });
 }
 
-function closeLocationPopup(ok) {
+function closeLocationPopup(ok, reason = null) {
   const popup = document.getElementById('eva-location-popup'); if (!popup) return;
   ['province','city','district','subdistrict','postal_code','area_name'].forEach((key) => { locationPopupState.value[key] = locSelect(key)?.value || ''; });
   const values = { ...locationPopupState.value };
+  locationPopupState.requestId += 1;
   popup.classList.add('hidden'); popup.classList.remove('flex');
-  if (ok) locationPopupState.resolve?.(values); else locationPopupState.reject?.(new Error('Batal pilih wilayah.'));
+  if (ok) locationPopupState.resolve?.(values); else locationPopupState.reject?.(reason || new Error('Batal pilih wilayah.'));
   locationPopupState.resolve = null; locationPopupState.reject = null;
 }
 
@@ -3765,8 +4180,9 @@ async function uploadSelectedFile() {
     }
     if (state.astriMatch?.matched) {
       formData.append("astri_cluster_code", state.astriMatch.cluster_code || "");
-      if (state.astriMatch.province) formData.append("province", state.astriMatch.province);
-      if (state.astriMatch.area_name) formData.append("area_name", state.astriMatch.area_name);
+      // Popup values are authoritative. ASTRI match only supplies missing values.
+      if (state.astriMatch.province && !locationOverrides?.province) formData.append("province", state.astriMatch.province);
+      if (state.astriMatch.area_name && !locationOverrides?.area_name) formData.append("area_name", state.astriMatch.area_name);
     }
     if (locationOverrides?.province) formData.append("province", locationOverrides.province);
     if (locationOverrides?.city) formData.append("city", locationOverrides.city);
@@ -3778,11 +4194,14 @@ async function uploadSelectedFile() {
     // Do not send raw-source folder filters. The server standardizes folder
     // names before DXF generation and exports every eligible folder.
 
+    // Bind diagnostics to the exact request, never later file selections.
+    const failureContext = { files: [...files], scope: formData.get("scope_type"), network: formData.get("network_type") };
     const payload = await postFormDataWithProgress("/upload", formData, (value) => {
       setProgress(value);
       setStatus("Mengunggah", `Mengunggah ${files.length} file ke server.`, "processing");
     });
-    state.jobId = payload.job_id;
+    window.setCurrentJobId(payload.job_id);
+    state.conversionFailureContext = { ...failureContext, jobId: payload.job_id };
     state.currentJobStatus = "queued";
     logger.success("Upload diterima. Job masuk antrean.");
     setStatus("Masuk antrean", "Job dibuat. Menunggu proses konversi.", "processing");
@@ -3791,7 +4210,8 @@ async function uploadSelectedFile() {
     setStatus("Error", "Upload gagal.", "error");
     setConsoleLive(false);
     logger.error(err.message);
-    setError(err.message);
+    // Rejected/uncertain uploads are not confirmed conversion failures.
+    setError(err.message, "job");
   } finally {
     state.uploadInFlight = false;
     renderValidationSummary();
@@ -3849,7 +4269,86 @@ function standardizerSummaryTitle(summary) {
   return "KMZ Standar selesai";
 }
 
+function setValidationResultCollapsed(isCollapsed) {
+  const collapsed = Boolean(isCollapsed);
+  if (els.downloadValidationSummary) els.downloadValidationSummary.hidden = collapsed;
+  if (els.validationResultToggle) {
+    els.validationResultToggle.textContent = collapsed ? "Lihat detail" : "Sembunyikan detail";
+    els.validationResultToggle.setAttribute("aria-expanded", String(!collapsed));
+  }
+}
+
+function renderLegacyValidationReport(report = state.standardizerSummary?.validation_report) {
+  if (!els.validationResultPanel || !els.downloadValidationSummary) return;
+  if (!report || (!report.status && !report.checks && !report.errors && !report.warnings && !report.files)) {
+    els.validationResultPanel.classList.add("hidden");
+    els.downloadValidationSummary.innerHTML = "";
+    setValidationResultCollapsed(true);
+    return;
+  }
+  const files = Array.isArray(report.files) && report.files.length
+    ? report.files
+    : [{ ...report, source_name: report.source_name || state.standardizerSummary?.source_name || "KMZ hasil convert" }];
+  const allErrors = files.reduce((n, file) => n + Number(file.error_count || (file.errors || []).length || 0), 0);
+  const allWarnings = files.reduce((n, file) => n + Number(file.warning_count || (file.warnings || []).length || 0), 0);
+  const globalTone = allErrors ? "error" : allWarnings ? "warning" : "success";
+  const globalLabel = globalTone === "error" ? "ERROR" : globalTone === "warning" ? "WARNING" : "VALID";
+  els.validationResultBadge.textContent = `${globalLabel} · ${formatNumber(allErrors)} error · ${formatNumber(allWarnings)} warning`;
+  els.validationResultBadge.dataset.tone = globalTone;
+
+  const categoryFor = (code = "") => {
+    const c = String(code).toUpperCase();
+    if (/FOLDER|EMPTY_|MISSING_|MISNAMED_FOLDER|UNTITLED_FOLDER/.test(c)) return "FOLDER / STRUKTUR";
+    if (/CABLE_FORMAT|LINE_COLOR|SLING|TOPOLOGY/.test(c)) return "TOPOLOGY";
+    if (/STYLE|ICON|COLOR|SCALE/.test(c)) return "NAMA / WARNA / ICON";
+    if (/DUPLICATE/.test(c)) return "DUPLIKAT";
+    if (/POLE|FAT|FDT|HH|HANDHOLE|ASSET|GEOMETRY|CLUSTER_CODE|UNTITLED|MISNAMED/.test(c)) return "FORMAT / NAMA";
+    return "VALIDASI LAIN";
+  };
+  const renderGroup = (title, items) => {
+    if (!items.length) return "";
+    const errors = items.filter((item) => item.tone === "error").length;
+    const warnings = items.length - errors;
+    const names = [...new Set(items.map((item) => item.name || item.folder || item.code || "item").filter(Boolean))];
+    const shownNames = names.slice(0, 3);
+    const summaryText = `Nama-nama item: ${shownNames.join(", ") || "-"}${names.length > shownNames.length ? `; ${formatNumber(names.length - shownNames.length)} item lain` : ""}`;
+    const renderIssue = (item) => `<li data-tone="${item.tone}"><b>${escapeHtml(item.message || item.code || item.tone)}</b>${item.folder ? ` <em>[${escapeHtml(item.folder)}]</em>` : ""}${item.name && item.name !== item.folder ? ` <small>${escapeHtml(item.name)}</small>` : ""}</li>`;
+    const first = renderIssue(items[0]);
+    const remaining = items.slice(1).map(renderIssue).join("");
+    const extra = items.length > 1 ? `<details><summary>+${formatNumber(items.length - 1)} detail lain</summary><ul class="validation-issue-list">${remaining}</ul></details>` : "";
+    const toneLabel = errors ? "ERROR" : "WARNING";
+    const countText = `${errors ? `${formatNumber(errors)} error` : ""}${errors && warnings ? " / " : ""}${warnings ? `${formatNumber(warnings)} warning` : ""}`;
+    return `<section class="legacy-validation-group"><div class="legacy-validation-group-title"><span>${escapeHtml(toneLabel)} ${escapeHtml(title)} <small>(${escapeHtml(countText)} / ${formatNumber(items.length)} item)</small></span></div><p class="legacy-validation-group-summary">${escapeHtml(summaryText)}</p><ul class="validation-issue-list">${first}</ul>${extra}</section>`;
+  };
+  const renderFile = (file, index) => {
+    const errors = (file.errors || []).map((item) => ({ ...item, tone: "error" }));
+    const warnings = (file.warnings || []).map((item) => ({ ...item, tone: "warning" }));
+    const issues = [...errors, ...warnings];
+    const tone = errors.length ? "error" : warnings.length ? "warning" : "success";
+    const label = tone === "error" ? "ERROR" : tone === "warning" ? "WARNING" : "VALID";
+    const groups = {};
+    issues.forEach((item) => { const key = categoryFor(item.code); (groups[key] ||= []).push(item); });
+    const summary = file.summary || {};
+    const checks = Array.isArray(file.checks) ? file.checks : [];
+    const folderOk = Number.isFinite(Number(summary.nonempty_required_folders))
+      ? Number(summary.nonempty_required_folders || 0)
+      : Math.max(0, Number(summary.required_folders || 0) - Number(summary.missing_folders || 0));
+    const groupEntries = Object.entries(groups);
+    const visibleGroups = groupEntries.slice(0, 3);
+    const hiddenGroups = groupEntries.slice(3);
+    const hiddenMarkup = hiddenGroups.length ? `<details class="legacy-validation-more-groups"><summary>Expand ${formatNumber(hiddenGroups.length)} jenis lainnya</summary>${hiddenGroups.map(([title, items]) => renderGroup(title, items)).join("")}</details>` : "";
+    return `<article class="legacy-validation-file-card" data-tone="${tone}">
+      <header class="legacy-validation-file-header"><div class="legacy-validation-file-state" data-tone="${tone}">${tone === "error" ? "×" : tone === "warning" ? "!" : "✓"}</div><div class="legacy-validation-file-title"><strong>${escapeHtml(file.source_name || `KMZ hasil convert ${index + 1}`)}</strong><small>${formatNumber(summary.placemarks || 0)} item · ${escapeHtml(file.scope_type || report.scope_type || "-")} · ${escapeHtml(file.network_type || report.network_type || "-")}</small></div><span class="legacy-validation-file-badge" data-tone="${tone}">${label}</span></header>
+      <div class="legacy-validation-auto-notice"><b>PERIKSA AUTO</b><span>Mode Auto terbaca: ${escapeHtml(file.scope_type || report.scope_type || "-")}</span><span>Topologi Auto terbaca: ${escapeHtml(file.network_type || report.network_type || "-")}</span><small>Pastikan mode/topologi sesuai struktur KMZ. Hasil ini hanya laporan akhir; output tidak diubah.</small></div>
+      <section class="legacy-validation-summary"><div class="legacy-validation-summary-title"><span>▤</span><strong>RINGKASAN PER JENIS</strong><span class="legacy-validation-counts"><b data-tone="error">${formatNumber(errors.length)} ERROR</b><b data-tone="warning">${formatNumber(warnings.length)} WARNING</b><small>${formatNumber(checks.length)} info / ${formatNumber(summary.placemarks || 0)} item</small></span></div><div class="validation-chip-list"><span class="validation-chip" data-tone="${folderOk === Number(summary.required_folders || 0) ? "success" : "error"}"><b>Folder wajib</b> ${formatNumber(folderOk)}/${formatNumber(summary.required_folders || 0)}</span><span class="validation-chip" data-tone="${Number(summary.cable_bad_format || 0) ? "error" : "success"}"><b>Cable</b> ${formatNumber(summary.cable_count || 0)} / ${formatNumber(summary.cable_bad_format || 0)} salah</span><span class="validation-chip" data-tone="${Number(summary.duplicate_points || 0) || Number(summary.duplicate_lines || 0) ? "warning" : "success"}"><b>Duplikat</b> ${formatNumber(Number(summary.duplicate_points || 0) + Number(summary.duplicate_lines || 0))}</span></div>${visibleGroups.map(([title, items]) => renderGroup(title, items)).join("")}${hiddenMarkup || (!groupEntries.length ? '<div class="legacy-validation-clean">✓ Tidak ada kesalahan terdeteksi pada KMZ hasil convert.</div>' : "")}</section>
+    </article>`;
+  };
+  els.downloadValidationSummary.innerHTML = `<div class="legacy-validation-report-stack">${files.map(renderFile).join("")}</div>`;
+  els.validationResultPanel.classList.remove("hidden");
+}
+
 function renderStandardizerSummary(summary = state.standardizerSummary) {
+  renderLegacyValidationReport(summary?.validation_report);
   if (!els.standardizerSummary) return;
   if (!summary) {
     els.standardizerSummary.classList.add("hidden");
@@ -3947,7 +4446,7 @@ async function standardizeKmzFile(event) {
       setProgress(Math.max(5, value));
     });
     mergeServerLogs(payload.logs || []);
-    state.jobId = payload.job_id;
+    window.setCurrentJobId(payload.job_id);
     state.standardizerSummary = payload.standardizer_summary || {};
     renderStandardizerSummary();
     setProgress(payload.progress || 100);
@@ -3955,17 +4454,49 @@ async function standardizeKmzFile(event) {
     setStatus("Selesai", payload.message || "KMZ standar siap diunduh.", "done");
     setConsoleLive(false);
     showDownloadPanel(payload.download_url, payload.download_name, payload.download_mimetype, "kmz");
-    setConsoleCollapsed(Boolean((state.standardizerSummary?.warnings || []).length || countConsoleSeverity("WARNING") || countConsoleSeverity("ERROR")) ? false : true);
     logger.success("KMZ berhasil distandardisasi. Output siap diunduh.");
   } catch (err) {
     setStatus("Error", "Standardizer gagal.", "error");
     setConsoleLive(false);
     logger.error(err.message);
-    setError(err.message);
+    setConversionFailure(err, { phase: "standardize", jobId: "", files: [file] });
   } finally {
     if (els.standardizerButton) els.standardizerButton.disabled = false;
   }
 }
+
+/**
+ * Publish an ASTRI ABD convert result into the main Converter KMZ workspace so the
+ * standardizer summary, stats and the single download button live in one place
+ * instead of being duplicated inside the Dokumen ABD card.
+ */
+function applyAbdConvertResultToWorkspace(payload = {}) {
+  if (!payload || !payload.download_url) return false;
+  clearConsoleLogs();
+  clearError();
+  hideDownloadButton();
+  setOutputMode("kmz");
+  if (payload.network_type) setNetworkType(payload.network_type);
+  if (payload.scope_type) {
+    state.scopeType = normalizeScopeType(payload.scope_type);
+    syncScopeTypeInputs();
+    syncOutputTargetInputs();
+  }
+  window.setCurrentJobId(payload.job_id || null);
+  state.standardizerSummary = payload.standardizer_summary || {};
+  renderStandardizerSummary();
+  setProgress(100);
+  setStats(payload.stats || {});
+  setStatus("Selesai", payload.message || "ABD standar EVA siap.", "done");
+  setConsoleLive(false);
+  showDownloadPanel(payload.download_url, payload.download_name, payload.download_mimetype, "kmz");
+  logger.success(`Convert ABD ASTRI selesai: ${payload.download_name || "KMZ standar"}.`);
+  if (payload.source_name) logger.info(`Sumber ASTRI: ${payload.source_name}.`);
+  return true;
+}
+
+// Bridge for the Dokumen ABD card: it owns no download UI of its own.
+window.evaApplyAbdConvertResult = applyAbdConvertResultToWorkspace;
 
 function startPolling() {
   if (state.pollingTimer) clearInterval(state.pollingTimer);
@@ -3977,6 +4508,7 @@ function startPolling() {
 async function pollStatus() {
   if (!state.jobId || state.statusPollInFlight) return;
   const pollJobId = state.jobId;
+  const failureContext = state.conversionFailureContext?.jobId === pollJobId ? state.conversionFailureContext : {};
   const pollRequestId = (state.statusPollRequestId || 0) + 1;
   state.statusPollRequestId = pollRequestId;
   state.statusPollInFlight = true;
@@ -4071,7 +4603,6 @@ async function pollStatus() {
       if (typeof window.ensureAstriPanel === "function") window.ensureAstriPanel();
       if (typeof window.refreshAstriStatus === "function") window.refreshAstriStatus();
       if (typeof window.matchAstriCluster === "function") window.matchAstriCluster();
-      setConsoleCollapsed(Boolean(allIssueRows().length || countConsoleSeverity("WARNING") || countConsoleSeverity("ERROR")) ? false : true);
       if (modeHas("dxf")) {
         await loadPreview(state.jobId);
       } else {
@@ -4098,8 +4629,8 @@ async function pollStatus() {
       setStatus(payload.status === "failed" ? "Gagal" : "Error", payload.error || payload.message, "error");
       state.hasError = true;
       logger.error(payload.error || payload.message);
-      setError(payload.error || payload.message);
       els.convertButton.disabled = false;
+      setConversionFailure(payload.error || payload.message, { ...failureContext, phase: "job", payload, jobId: pollJobId });
     }
   } catch (err) {
     state.statusPollFailures = (state.statusPollFailures || 0) + 1;
@@ -4114,7 +4645,7 @@ async function pollStatus() {
     setConsoleLive(false);
     setStatus("Error", "Gagal mengambil status job.", "error");
     logger.error(`Status polling failed: ${err.message}`);
-    setError(err.message);
+    setError(err.message, "job");
     els.convertButton.disabled = false;
   } finally {
     if (state.statusPollRequestId === pollRequestId) state.statusPollInFlight = false;
@@ -4142,7 +4673,7 @@ async function cancelCurrentJob() {
     state.cancelInFlight = false;
     updateCancelButton();
     logger.error(err.message);
-    setError(err.message);
+    setError(err.message, "job");
   }
 }
 
@@ -4182,7 +4713,7 @@ async function loadPreview(jobId) {
   } catch (err) {
     els.previewText.textContent = "Preview tidak dapat dimuat.";
     logger.warn(`Preview failed to load: ${err.message}`);
-    setError(err.message);
+    setError(err.message, "job");
   }
 }
 
@@ -4340,18 +4871,24 @@ addListener(els.clearLogButton, "click", clearConsoleLogs);
 addListener(els.copyLogButton, "click", copyConsoleLog);
 addListener(els.downloadLogButton, "click", downloadConsoleLog);
 addListener(els.consoleToggle, "click", () => setConsoleCollapsed(!state.consoleCollapsed));
+addListener(els.validationResultToggle, "click", () => setValidationResultCollapsed(!els.downloadValidationSummary || !els.downloadValidationSummary.hidden));
 addListener(els.cancelJobButton, "click", cancelCurrentJob);
 addListener(els.downloadButton, "click", saveOutputToLocal);
-addListener(els.downloadPanelDismiss, "click", () => {
-  state.downloadPanelDismissed = true;
-  els.downloadPanel?.classList.add("hidden");
-});
 addListener(els.convertAnotherButton, "click", () => resetCurrentSession({ force: true }));
 addListener(els.resetOutputNameButton, "click", () => resetGeneratedOutput({ force: true }));
-addListener(els.outputFileName, "blur", () => {
-  els.outputFileName.value = sanitizeOutputFileName(els.outputFileName.value, state.downloadMode);
-  els.downloadButton.download = els.outputFileName.value;
+function finishOutputRename(save = true) {
+  const name = save ? sanitizeOutputFileName(els.outputFileName.value, state.downloadMode) : state.downloadName;
+  els.outputFileName.value = name;
+  state.downloadName = name;
+  els.downloadButton.download = name;
+}
+addListener(els.outputFileName, "keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== "Escape") return;
+  event.preventDefault();
+  finishOutputRename(event.key === "Enter");
+  els.outputFileName.blur();
 });
+addListener(els.outputFileName, "blur", () => finishOutputRename());
 addListener(els.dxfEmptyCta, "click", () => {
   els.convertButton?.scrollIntoView({ behavior: "smooth", block: "center" });
   els.convertButton?.focus({ preventScroll: true });
@@ -4424,40 +4961,30 @@ renderSupportPanels();
     history: "eva.history",
   };
 
-  // ---------- Toast ----------
-  const toastIcons = {
-    success: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    info: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8h.01M11 12h1v5h1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    warning: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 9v4m0 3.5h.01M10.6 4.6 3.5 17.5A1.5 1.5 0 0 0 4.8 19.8h14.4a1.5 1.5 0 0 0 1.3-2.3L13.4 4.6a1.5 1.5 0 0 0-2.8 0Z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    error: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="m9 9 6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-  };
-
   function escHtml(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  const toastShown = new Set();
-  function showToast({ title, message = "", tone = "info", duration = 4500, dedupeKey = null } = {}) {
-    // All notifications are routed through the EVA Assistant — no separate
-    // toast popups. If the assistant isn't ready yet, retry shortly.
-    const payload = { title, message, tone, dedupeKey: dedupeKey || null };
-    if (typeof window.evaAssistantNotify === "function") {
-      window.evaAssistantNotify(payload);
-      return;
+  // ---------- Feedback bridge ----------
+  // Popup policy: routine feedback stays in page status/log. Critical errors
+  // and explicitly important events may open a popup.
+  const recentPopupKeys = new Map();
+  function showToast({ title, message = "", tone = "info", duration = 4500, important = false, dedupeKey = "" } = {}) {
+    if (!important && tone !== "error") {
+      window.evaSetInlineFeedback?.(title, message, tone);
+      return null;
     }
-    // Assistant widget mounts on DOMContentLoaded; queue a short retry so
-    // early notifications aren't lost.
-    let attempts = 0;
-    const retry = () => {
-      if (typeof window.evaAssistantNotify === "function") {
-        window.evaAssistantNotify(payload);
-        return;
-      }
-      if (attempts++ < 40) setTimeout(retry, 150);
-    };
-    setTimeout(retry, 150);
+    const severity = tone === "error" ? "error" : tone === "warning" ? "warning" : tone === "success" ? "success" : "info";
+    const key = tone === "error" ? `error:${String(message || "").trim()}` : (dedupeKey || `${severity}:${title || ""}:${message || ""}`);
+    const now = Date.now();
+    if (recentPopupKeys.has(key) && now - recentPopupKeys.get(key) < 1800) return null;
+    recentPopupKeys.set(key, now);
+    for (const [oldKey, timestamp] of recentPopupKeys) {
+      if (now - timestamp > 10000) recentPopupKeys.delete(oldKey);
+    }
+    return window.evaPopupFeedback?.({ title, message, severity }, { timeoutMs: duration });
   }
   window.evaToast = showToast;
 
@@ -4531,23 +5058,12 @@ renderSupportPanels();
       try { origSetStatus.call(this, label, message, tone); } catch (_) {}
       try { renderStageProgress(); } catch (_) {}
 
-      // Toast triggers — only on transitions
+      // Conversion state is shown in the page status, progress, log, and
+      // download panel. No completion/error popup here; setError owns one
+      // deduplicated important error notification.
       if (tone === "done" && prevTone !== "done") {
-        showToast({
-          title: "Konversi selesai",
-          message: state.downloadName || "Output siap diunduh.",
-          tone: "success",
-          dedupeKey: `done:${state.jobId || ""}`,
-        });
         try { saveJobToHistory(); } catch (_) {}
       } else if (tone === "error" && prevTone !== "error") {
-        showToast({
-          title: label || "Error",
-          message: message || "Terjadi error pada konversi.",
-          tone: "error",
-          duration: 8000,
-          dedupeKey: `err:${state.jobId || Date.now()}`,
-        });
         showRetryBar(message);
       } else if (tone !== "error") {
         hideRetryBar();
@@ -4712,6 +5228,7 @@ if (!bar || !message || state.errorScope !== "job") return;
   function openModal(id) {
     const node = document.getElementById(id);
     if (!node) return;
+    if (id === "helpModal" && node.classList.contains("hidden")) node._returnFocus = document.activeElement;
     node.classList.remove("hidden");
     node.setAttribute("aria-hidden", "false");
     node.removeAttribute("inert");
@@ -4722,10 +5239,15 @@ if (!bar || !message || state.errorScope !== "job") return;
   function closeModal(id) {
     const node = document.getElementById(id);
     if (!node) return;
+    const wasOpen = !node.classList.contains("hidden");
     node.classList.add("hidden");
     node.setAttribute("aria-hidden", "true");
     node.setAttribute("inert", "");
     document.body.style.overflow = "";
+    if (id === "helpModal" && wasOpen && node._returnFocus?.isConnected) {
+      node._returnFocus.focus();
+      node._returnFocus = null;
+    }
     if (id === "historyDrawer" && activityState?.timer) {
       clearInterval(activityState.timer);
       activityState.timer = null;
@@ -4742,14 +5264,72 @@ if (!bar || !message || state.errorScope !== "job") return;
   }
 
   function initModals() {
+    const abdDialog = document.getElementById("abdCadModal");
+    const abdFrame = document.getElementById("abdCadFrame");
+    if (abdDialog && abdFrame) {
+      const close = document.getElementById("abdCadClose");
+      const frameControls = () => [...(abdFrame.contentDocument?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex='-1'])") || [])]
+        .filter((node) => !node.hidden && node.getClientRects().length);
+      close.addEventListener("click", () => abdDialog.close());
+      abdDialog.addEventListener("close", () => {
+        document.body.style.overflow = abdDialog._previousOverflow || "";
+        abdDialog._returnFocus?.focus();
+      });
+      abdDialog.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") event.stopPropagation();
+        if (event.key === "Tab" && document.activeElement === close) {
+          event.preventDefault();
+          const controls = frameControls();
+          (event.shiftKey ? controls.at(-1) : controls[0])?.focus();
+        }
+      });
+      abdFrame.addEventListener("load", () => {
+        abdFrame.contentDocument.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            abdDialog.close();
+          } else if (event.key === "Tab") {
+            const controls = frameControls();
+            const edge = event.shiftKey ? controls[0] : controls.at(-1);
+            if (event.target === edge) {
+              event.preventDefault();
+              close.focus();
+            }
+          }
+        });
+      });
+      abdDialog.addEventListener("click", (event) => {
+        const rect = abdDialog.getBoundingClientRect();
+        if (event.target === abdDialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) abdDialog.close();
+      });
+    }
+    document.querySelectorAll(".modal-backdrop[role='dialog']").forEach((modal) => {
+      modal.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab" || modal.classList.contains("hidden")) return;
+        const focusable = [...modal.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex='-1'])")]
+          .filter((node) => !node.hidden && node.getClientRects().length && getComputedStyle(node).visibility !== "hidden");
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    });
     document.addEventListener("click", (e) => {
-      const shortcutCard = e.target && e.target.closest && e.target.closest(".fdt-card-coding, .fdt-card-core, .fdt-card-rfs, .fdt-card-gdr, .fdt-card-kmz");
+      const shortcutCard = e.target && e.target.closest && e.target.closest(".fdt-card-coding, .fdt-card-core, .fdt-card-rfs, .fdt-card-gdr, .fdt-card-kmz, .fdt-card-stella, .fdt-card-abd-cad");
       if (shortcutCard) {
         if (shortcutCard.classList.contains("fdt-card-coding")) openFdtCoding();
         if (shortcutCard.classList.contains("fdt-card-core")) openCoreman();
         if (shortcutCard.classList.contains("fdt-card-rfs")) openRfsDashboard();
         if (shortcutCard.classList.contains("fdt-card-gdr")) openGdrDashboard();
         if (shortcutCard.classList.contains("fdt-card-kmz")) openKmzCoords();
+        if (shortcutCard.classList.contains("fdt-card-stella")) document.dispatchEvent(new CustomEvent("eva:open-stella"));
+        if (shortcutCard.classList.contains("fdt-card-abd-cad")) openAbdCad(shortcutCard);
         return;
       }
       const closeAttr = e.target && e.target.closest && e.target.closest("[data-close-modal]");
@@ -4767,25 +5347,19 @@ if (!bar || !message || state.errorScope !== "job") return;
     });
 
     const helpBtn = document.getElementById("header-help") || document.getElementById("helpButton");
-    const footerHelpBtn = document.getElementById("footerHelpButton");
     const fdtBtn = document.getElementById("fdtCodingButton");
     const fdtCard = document.querySelector(".fdt-card-coding");
     const coremanCard = document.querySelector(".fdt-card-core");
     const rfsCard = document.querySelector(".fdt-card-rfs");
     const gdrCard = document.querySelector(".fdt-card-gdr");
     const kmzCard = document.querySelector(".fdt-card-kmz");
-    const footerShortBtn = document.getElementById("footerShortcutsButton");
-    const footerHistBtn = document.getElementById("footerHistoryButton");
     if (helpBtn) helpBtn.addEventListener("click", () => openHelp());
-    if (footerHelpBtn) footerHelpBtn.addEventListener("click", () => openHelp());
-    if (footerShortBtn) footerShortBtn.addEventListener("click", () => openHelp());
     if (fdtBtn) fdtBtn.addEventListener("click", () => openFdtCoding());
     if (fdtCard) fdtCard.addEventListener("click", () => openFdtCoding());
     if (coremanCard) coremanCard.addEventListener("click", () => openCoreman());
     if (rfsCard) rfsCard.addEventListener("click", () => openRfsDashboard());
     if (gdrCard) gdrCard.addEventListener("click", () => openGdrDashboard());
     if (kmzCard) kmzCard.addEventListener("click", () => openKmzCoords());
-    if (footerHistBtn) footerHistBtn.addEventListener("click", () => openHistory());
     window.addEventListener("message", (event) => {
       if (event.origin !== window.location.origin) return;
       if (event.data && event.data.type === "eva-close-fdt-modal") {
@@ -4832,31 +5406,45 @@ if (!bar || !message || state.errorScope !== "job") return;
     openModal("rfsModal");
   }
 
+  function showMainPopupFeedback(title, message, severity = "info") {
+    if (severity !== "warning" && severity !== "error") return null;
+    if (typeof window.showNotification === "function") {
+      return window.showNotification({ title, message, severity }, { timeoutMs: 5200 });
+    }
+    if (typeof showPopup === "function") {
+      showPopup([title, message].filter(Boolean).join("\n"), true);
+    }
+    return null;
+  }
+
   async function openGdrDashboard() {
     try {
       const resp = await fetch("/api/astri/status", {credentials: "include"});
       const status = await resp.json().catch(() => null);
       if (!resp.ok || !status || !status.connected) {
-        if (typeof showPopup === "function") {
-          showPopup("Login ASTRI dulu dari panel utama sebelum buka GDR.");
-        } else {
-          window.alert("Login ASTRI dulu dari panel utama sebelum buka GDR.");
-        }
+        showMainPopupFeedback("ASTRI", "Login ASTRI dulu dari panel utama sebelum buka GDR.", "warning");
         return;
       }
     } catch (error) {
       console.warn("ASTRI status check failed before opening GDR", error);
-      if (typeof showPopup === "function") {
-        showPopup("Status ASTRI belum bisa dicek. Coba login ulang dari panel utama.");
-      } else {
-        window.alert("Status ASTRI belum bisa dicek. Coba login ulang dari panel utama.");
-      }
+      showMainPopupFeedback("ASTRI", "Status ASTRI belum bisa dicek. Coba login ulang dari panel utama.", "error");
       return;
     }
     const frame = document.getElementById("gdrFrame");
     const url = frame?.dataset?.src || "/gdr";
     if (frame && !frame.src) frame.src = url;
     openModal("gdrModal");
+  }
+
+  function openAbdCad(opener) {
+    const dialog = document.getElementById("abdCadModal");
+    const frame = document.getElementById("abdCadFrame");
+    if (!dialog || !frame || dialog.open) return;
+    dialog._returnFocus = opener;
+    dialog._previousOverflow = document.body.style.overflow;
+    if (!frame.getAttribute("src")) frame.src = frame.dataset.src;
+    dialog.showModal();
+    document.body.style.overflow = "hidden";
   }
 
   function openKmzCoords() {
@@ -4885,37 +5473,7 @@ if (!bar || !message || state.errorScope !== "job") return;
   }
 
   
-  // --- ASTRI Magic Login Handler ---
-  (function() {
-    const openLink = document.getElementById("astriOpenLink");
-    if (!openLink) return;
-    openLink.addEventListener("click", async function(e) {
-      e.preventDefault();
-      const originalText = openLink.textContent;
-      openLink.textContent = "Memuat...";
-      openLink.style.pointerEvents = "none";
-      try {
-        const resp = await fetch("/api/astri/magic-token", {
-          method: "POST",
-          credentials: "include",
-          headers: {"Content-Type": "application/json"}
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.token) {
-          alert(data.error || "Gagal generate login ASTRI. Pastikan sudah login ASTRI di EVA.");
-          return;
-        }
-        var redirectUrl = state.astriMatch?.requirement_url || "";
-        window.open("/astri/magic-login/" + data.token + "?redirect=" + encodeURIComponent(redirectUrl), "_blank");
-      } catch (err) {
-        alert("Error: " + (err.message || "Gagal koneksi ke server."));
-      } finally {
-        openLink.textContent = originalText;
-        openLink.style.pointerEvents = "";
-      }
-    });
-  })();
-  // --- End ASTRI Magic Login Handler ---
+
 
   // ---------- Folder checklist (in help modal) ----------
   function populateFolderChecklist() {
@@ -5663,7 +6221,7 @@ if (!bar || !message || state.errorScope !== "job") return;
   }
 
   
-// ---------- ASTRI Upload Integration ----------
+// ---------- DRM APD Integration ----------
 var astriGlassButton = "rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(16,185,129,0.10)]  transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-emerald-50 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_12px_30px_rgba(14,165,233,0.18)] active:translate-y-0";
 var astriPrimaryButton = "rounded-xl border border-emerald-400/60 bg-gradient-to-b from-sky-500/85 to-cyan-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_12px_28px_rgba(8,145,178,0.26)]  transition hover:-translate-y-0.5 hover:from-emerald-500 hover:to-teal-600 active:translate-y-0";
 var astriInput = "rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-2 text-sm text-zinc-800 shadow-inner outline-none  transition placeholder:text-zinc-400 focus:border-sky-400 focus:bg-white/90 focus:ring-2 focus:ring-sky-200/70";
@@ -5673,6 +6231,40 @@ var astriSubfeederBtn = "rounded-xl border border-emerald-300/50 bg-gradient-to-
 var astriSubfeederGlass = "rounded-xl border border-emerald-200/70 bg-emerald-50/55 px-3 py-2 text-xs font-bold text-emerald-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(16,185,129,0.10)]  transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50/75 active:translate-y-0";
 var astriFeederBtn = "rounded-xl border border-rose-300/50 bg-gradient-to-b from-rose-500/85 to-rose-600/85 px-4 py-2 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_24px_rgba(244,63,94,0.25)]  transition hover:-translate-y-0.5 hover:from-rose-500 hover:to-rose-600 active:translate-y-0";
 var astriFeederGlass = "rounded-xl border border-rose-200/70 bg-rose-50/55 px-3 py-2 text-xs font-bold text-rose-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(244,63,94,0.10)]  transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-50/75 active:translate-y-0";
+
+function wrapSupportModules(panel, dashboardCards) {
+  if (!panel || !dashboardCards || document.getElementById("supportModulesPanel")) return;
+  const supportPanel = document.createElement("section");
+  supportPanel.id = "supportModulesPanel";
+  supportPanel.className = "mt-4 overflow-hidden rounded-[22px] border border-sky-200/70 bg-white/55 p-4 shadow-[0_18px_60px_rgba(14,165,233,0.14)] backdrop-blur-2xl ring-1 ring-white/70";
+  supportPanel.setAttribute("aria-labelledby", "supportModulesTitle");
+  supportPanel.innerHTML = `
+    <div class="mb-3">
+      <h3 id="supportModulesTitle" class="text-sm font-black uppercase tracking-[0.18em] text-sky-800">Modul Pendukung</h3>
+      <p class="mt-1 text-xs text-zinc-500">Akses data, monitoring, dan utilitas EVA.</p>
+    </div>
+  `;
+  supportPanel.appendChild(dashboardCards);
+  panel.insertAdjacentElement("afterend", supportPanel);
+}
+
+function orderMainWorkspace() {
+  const workspace = document.querySelector(".right-workspace");
+  if (!workspace) return;
+  [
+    "resultDashboard",
+    "validationResultPanel",
+    "previewWorkspacePanel",
+    "astriIntegrationPanel",
+    "documentAbdPanel",
+    "stellaIntegrationPanel",
+    "supportModulesPanel",
+  ].forEach((id) => {
+    const node = document.getElementById(id);
+    if (node?.parentElement === workspace) workspace.appendChild(node);
+  });
+}
+
 function ensureAstriPanel() {
   const existingPanel = document.getElementById("astriIntegrationPanel");
   if (!existingPanel) {
@@ -5683,23 +6275,22 @@ function ensureAstriPanel() {
     panel.innerHTML = `
       <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 class="text-sm font-black uppercase tracking-[0.18em] text-emerald-800">ASTRI Upload</h3>
-          <p id="astriStatusText" class="mt-1 text-xs text-zinc-500">Belum login ASTRI.</p>
+          <h3 class="text-sm font-black uppercase tracking-[0.18em] text-emerald-800">DRM APD</h3>
         </div>
-        <button id="astriClearButton" type="button" class="${astriGlassButton}">Logout</button>
+        <p id="astriStatusText" class="mt-1 text-xs text-zinc-500" role="status" aria-live="polite">Menghubungkan ASTRI...</p>
       </div>
-      <div id="astriLoginForm" class="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-        <input id="astriUsernameInput" type="text" class="${astriInput}" placeholder="Username ASTRI" autocomplete="username">
-        <input id="astriPasswordInput" type="password" class="${astriInput}" placeholder="Password ASTRI" autocomplete="current-password">
+      <div id="astriLoginForm" hidden class="hidden mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+        <input id="astriUsernameInput" type="text" class="${astriInput}" placeholder="Username ASTRI" autocomplete="username" aria-label="Username ASTRI">
+        <input id="astriPasswordInput" type="password" class="${astriInput}" placeholder="Password ASTRI" autocomplete="current-password" aria-label="Password ASTRI">
         <button id="astriLoginButton" type="button" class="${astriPrimaryButton}">Login ASTRI</button>
       </div>
       <div class="mt-3 grid gap-2 md:grid-cols-[140px_140px_1fr_auto]">
-        <select id="astriTargetTypeSelect" class="${astriInput}">
+        <select id="astriTargetTypeSelect" class="${astriInput}" aria-label="Scope ASTRI">
           <option value="cluster">Cluster</option>
           <option value="subfeeder">Subfeeder</option>
           <option value="feeder">Feeder</option>
         </select>
-        <select id="astriStatusFilter" class="${astriInput}">
+        <select id="astriStatusFilter" class="${astriInput}" aria-label="Status ASTRI">
           <option value="">Semua status</option>
           <option value="Approved 2">Approved 2</option>
           <option value="Approved 3">Approved 3</option>
@@ -5713,23 +6304,23 @@ function ensureAstriPanel() {
           <option value="Successful">Successful</option>
           <option value="Unsuccessful">Unsuccessful</option>
         </select>
-        <input id="astriClusterSearchInput" type="text" class="${astriInput}" placeholder="Search nama/kode cluster/subfeeder/feeder ASTRI">
+        <input id="astriClusterSearchInput" type="text" class="${astriInput}" placeholder="Nama/kode target ASTRI" aria-label="Cari target ASTRI">
         <button id="astriClusterSearchButton" type="button" class="${astriGlassButton}">Search</button>
       </div>
-      <select id="astriClusterSelect" class="mt-2 hidden w-full ${astriInput}"></select>
+      <select id="astriClusterSelect" class="mt-2 hidden w-full ${astriInput}" aria-label="Pilih hasil pencarian ASTRI"></select>
       <div id="astriMatchBox" class="mt-3 hidden rounded-2xl border border-sky-200/70 bg-white/45 p-3 text-sm text-zinc-700 shadow-inner "></div>
       <div class="mt-3 flex flex-wrap gap-2">
         <button id="astriMatchButton" type="button" class="${astriGlassButton}">Cari Match ASTRI</button>
         <button id="astriApdConvertButton" type="button" class="${astriGlassButton}">Convert dari APD ASTRI</button>
         <button id="astriUploadButton" type="button" class="${astriGlassButton}">Upload Document</button>
-        <button id="astriVerifyButton" type="button" class="${astriGlassButton}">Verify</button>
-        <button id="astriUnverifyButton" type="button" class="${astriGlassButton}">Unverify</button>
+        <button id="astriVerifyButton" type="button" class="${astriGlassButton}" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Verify</button>
+        <button id="astriUnverifyButton" type="button" class="${astriGlassButton}" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Unverify</button>
         <button id="astriDownloadLatestButton" type="button" class="${astriGlassButton}">Download Document</button>
         <button id="astriScheduleButton" type="button" class="${astriGlassButton}">Approve Schedule</button>
         <button id="astriAddBoqButton" type="button" class="${astriGlassButton}">Add BOQ</button>
         <a id="astriOpenLink" class="${astriGlassButton} hidden" target="_blank" rel="noopener">Buka ASTRI</a>
       </div>
-      <p id="astriUploadResult" class="mt-3 text-xs text-zinc-500"></p>
+
     `;
     const resultDashboard = document.getElementById("resultDashboard");
     if (resultDashboard) {
@@ -5744,8 +6335,8 @@ function ensureAstriPanel() {
       "align-items:center",
       "justify-content:center",
       "width:100%",
-      "min-height:0",
-      "padding:0.5rem 0.55rem",
+      "min-height:44px",
+      "padding:0.75rem",
       "line-height:1",
       "cursor:pointer",
       "text-align:center",
@@ -5760,23 +6351,23 @@ function ensureAstriPanel() {
     ].join(";") + ";";
     const titleStyle = "width:100%;font-size:0.78rem;font-weight:800;line-height:1.2;margin:0;text-align:center;color:#24B47E;letter-spacing:0.01em;";
     dashboardCards.innerHTML = `
-      <section class="fdt-coding-panel fdt-card-coding" aria-label="Coding FDT database" style="${cardStyle}">
-        <h3 style="${titleStyle}">Coding FDT</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-core" aria-label="Manajemen Core" style="${cardStyle}">
-        <h3 style="${titleStyle}">ManCore</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-rfs" aria-label="RFS dashboard" style="${cardStyle}">
-        <h3 style="${titleStyle}">RFS</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-gdr" aria-label="GDR dashboard" style="${cardStyle}">
-        <h3 style="${titleStyle}">GDR</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-kmz" aria-label="KMZ ke Excel koordinat" style="${cardStyle}">
-        <h3 style="${titleStyle}">KMZ ke Excel Koordinat</h3>
-      </section>
+      <button type="button" class="fdt-coding-panel fdt-card-coding" aria-label="Coding FDT database" style="${cardStyle}">
+        <span style="${titleStyle}">Coding FDT</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-gdr" aria-label="GDR dashboard" style="${cardStyle}">
+        <span style="${titleStyle}">GDR</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-kmz" aria-label="KMZ ke Excel koordinat" style="${cardStyle}">
+        <span style="${titleStyle}">KMZ ke Excel Koordinat</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-stella" aria-label="Buka STELLA" style="${cardStyle}">
+        <span style="${titleStyle}">STELLA</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-abd-cad" aria-label="Buka ABD CAD" style="${cardStyle}">
+        <span style="${titleStyle}">ABD CAD</span>
+      </button>
     `;
-    panel.insertAdjacentElement("afterend", dashboardCards);
+    wrapSupportModules(panel, dashboardCards);
     dashboardCards.querySelectorAll(".fdt-coding-panel").forEach((card) => {
       card.addEventListener("mouseenter", () => {
         card.style.transform = "translateY(-1px)";
@@ -5801,8 +6392,8 @@ function ensureAstriPanel() {
       "align-items:center",
       "justify-content:center",
       "width:100%",
-      "min-height:0",
-      "padding:0.5rem 0.55rem",
+      "min-height:44px",
+      "padding:0.75rem",
       "line-height:1",
       "cursor:pointer",
       "text-align:center",
@@ -5817,23 +6408,23 @@ function ensureAstriPanel() {
     ].join(";") + ";";
     const titleStyle = "width:100%;font-size:0.78rem;font-weight:800;line-height:1.2;margin:0;text-align:center;color:#24B47E;letter-spacing:0.01em;";
     dashboardCards.innerHTML = `
-      <section class="fdt-coding-panel fdt-card-coding" aria-label="Coding FDT database" style="${cardStyle}">
-        <h3 style="${titleStyle}">Coding FDT</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-core" aria-label="Manajemen Core" style="${cardStyle}">
-        <h3 style="${titleStyle}">ManCore</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-rfs" aria-label="RFS dashboard" style="${cardStyle}">
-        <h3 style="${titleStyle}">RFS</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-gdr" aria-label="GDR dashboard" style="${cardStyle}">
-        <h3 style="${titleStyle}">GDR</h3>
-      </section>
-      <section class="fdt-coding-panel fdt-card-kmz" aria-label="KMZ ke Excel koordinat" style="${cardStyle}">
-        <h3 style="${titleStyle}">KMZ ke Excel Koordinat</h3>
-      </section>
+      <button type="button" class="fdt-coding-panel fdt-card-coding" aria-label="Coding FDT database" style="${cardStyle}">
+        <span style="${titleStyle}">Coding FDT</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-gdr" aria-label="GDR dashboard" style="${cardStyle}">
+        <span style="${titleStyle}">GDR</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-kmz" aria-label="KMZ ke Excel koordinat" style="${cardStyle}">
+        <span style="${titleStyle}">KMZ ke Excel Koordinat</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-stella" aria-label="Buka STELLA" style="${cardStyle}">
+        <span style="${titleStyle}">STELLA</span>
+      </button>
+      <button type="button" class="fdt-coding-panel fdt-card-abd-cad" aria-label="Buka ABD CAD" style="${cardStyle}">
+        <span style="${titleStyle}">ABD CAD</span>
+      </button>
     `;
-    panel.insertAdjacentElement("afterend", dashboardCards);
+    wrapSupportModules(panel, dashboardCards);
     dashboardCards.querySelectorAll(".fdt-coding-panel").forEach((card) => {
       card.addEventListener("mouseenter", () => {
         card.style.transform = "translateY(-1px)";
@@ -5854,7 +6445,7 @@ function ensureAstriPanel() {
     modal.id = "astriScheduleModal";
     modal.className = "fixed inset-0 z-50 hidden overflow-y-auto bg-black/60 p-4";
     modal.innerHTML = `
-      <div class="mx-auto max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
+      <div class="mx-auto relative max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="text-lg font-bold text-zinc-900">Approve Schedule ASTRI</h3>
@@ -5873,96 +6464,177 @@ function ensureAstriPanel() {
     modal.id = "astriClusterModal";
     modal.className = "fixed inset-0 z-50 hidden overflow-y-auto bg-black/60 p-4";
     modal.innerHTML = `
-      <div class="mx-auto max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
+      <div class="mx-auto relative max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="text-lg font-bold text-indigo-900">Cluster ASTRI</h3>
             <p id="astriClusterMatchInfo" class="text-xs text-zinc-500"></p>
+            <div id="astriClusterBoqFeedback" class="mt-2 hidden rounded-lg border px-3 py-2 text-xs" aria-live="polite"></div>
             <p id="astriClusterDonationInfo" class="mt-1 hidden text-xs text-zinc-500"></p>
           </div>
           <button id="astriClusterModalClose" type="button" class="${astriGlassButton}">Tutup</button>
         </div>
-        <p id="astriClusterResult" class="mb-3 text-xs text-zinc-500"></p>
+
         <div id="astriClusterContent" class="max-h-[75vh] overflow-y-auto rounded-xl border border-indigo-100 p-3 text-sm"></div>
       </div>
     `;
     document.body.appendChild(modal);
-    document.getElementById("astriClusterModalClose")?.addEventListener("click", () => modal.classList.add("hidden"));
+    document.getElementById("astriClusterModalClose")?.addEventListener("click", () => { modal.classList.add("hidden"); clearAstriBoqContext(); });
   }
   if (!document.getElementById("astriSubfeederModal")) {
     const modal = document.createElement("div");
     modal.id = "astriSubfeederModal";
     modal.className = "fixed inset-0 z-50 hidden overflow-y-auto bg-black/60 p-4";
     modal.innerHTML = `
-      <div class="mx-auto max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
+      <div class="mx-auto relative max-w-6xl rounded-2xl bg-white p-4 shadow-2xl">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="text-lg font-bold text-emerald-900">Subfeeder ASTRI</h3>
             <p id="astriSubfeederMatchInfo" class="text-xs text-zinc-500"></p>
+            <div id="astriSubfeederBoqFeedback" class="mt-2 hidden rounded-lg border px-3 py-2 text-xs" aria-live="polite"></div>
           </div>
           <button id="astriSubfeederModalClose" type="button" class="${astriGlassButton}">Tutup</button>
         </div>
-        <p id="astriSubfeederResult" class="mb-3 text-xs text-zinc-500"></p>
+
         <div id="astriSubfeederContent" class="max-h-[75vh] overflow-y-auto rounded-xl border border-emerald-100 p-3 text-sm"></div>
       </div>
     `;
     document.body.appendChild(modal);
-    document.getElementById("astriSubfeederModalClose")?.addEventListener("click", () => modal.classList.add("hidden"));
+    document.getElementById("astriSubfeederModalClose")?.addEventListener("click", () => { modal.classList.add("hidden"); clearAstriBoqContext(); });
   }
   if (!window._astriPanelBound) {
     window._astriPanelBound = true;
+    const runButtonAction = (id, label, handler) => {
+      const button = document.getElementById(id);
+      if (!button) return;
+      button.addEventListener("click", () => runAstriButtonAction(button, label, handler));
+    };
     document.getElementById("astriTargetTypeSelect")?.addEventListener("change", onAstriTargetTypeChange);
-    document.getElementById("astriClusterSearchButton")?.addEventListener("click", searchAstriTargets);
-    document.getElementById("astriClusterSearchInput")?.addEventListener("keydown", (event) => { if (event.key === "Enter") searchAstriTargets(); });
-    document.getElementById("astriClusterSelect")?.addEventListener("change", selectAstriSearchResult);
-    document.getElementById("astriLoginButton")?.addEventListener("click", loginAstriSession);
-    document.getElementById("astriClearButton")?.addEventListener("click", clearAstriSession);
-    document.getElementById("astriMatchButton")?.addEventListener("click", matchAstriCluster);
-    document.getElementById("astriApdConvertButton")?.addEventListener("click", convertFromAstriApd);
-    document.getElementById("astriUploadButton")?.addEventListener("click", uploadAstriOutputs);
-    document.getElementById("astriVerifyButton")?.addEventListener("click", verifyAstriOutputs);
-    document.getElementById("astriUnverifyButton")?.addEventListener("click", unverifyAstriOutputs);
-    document.getElementById("astriDownloadLatestButton")?.addEventListener("click", downloadAstriLatestDocuments);
-    document.getElementById("astriScheduleButton")?.addEventListener("click", openAstriScheduleForm);
-    document.getElementById("astriAddBoqButton")?.addEventListener("click", () => {
-      if (isAstriSubfeederTarget()) { subfeederAction("addboq"); }
-      else if (isAstriFeederTarget()) { feederAction("addboq"); }
-      else { clusterAction("addboq"); }
+    runButtonAction("astriClusterSearchButton", "Mencari ASTRI...", searchAstriTargets);
+    document.getElementById("astriClusterSearchInput")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runAstriButtonAction(document.getElementById("astriClusterSearchButton"), "Mencari ASTRI...", searchAstriTargets);
+      }
     });
+    document.getElementById("astriClusterSelect")?.addEventListener("change", selectAstriSearchResult);
+    runButtonAction("astriLoginButton", "Login ASTRI...", loginAstriSession);
+    runButtonAction("astriMatchButton", "Mencari Match ASTRI...", matchAstriCluster);
+    runButtonAction("astriApdConvertButton", "Convert APD ASTRI...", convertFromAstriApd);
+    runButtonAction("astriUploadButton", "Upload Document...", uploadAstriOutputs);
+    runButtonAction("astriVerifyButton", "Memeriksa status dokumen...", runAstriVerifyAction);
+    runButtonAction("astriUnverifyButton", "Memeriksa status dokumen...", runAstriUnverifyAction);
+    runButtonAction("astriDownloadLatestButton", "Download Document...", downloadAstriLatestDocuments);
+    runButtonAction("astriScheduleButton", "Membuka Approve Schedule...", () => runAstriMutableAction("schedule"));
+    runButtonAction("astriAddBoqButton", "Membuka Add BOQ...", () => runAstriMutableAction("addboq"));
     document.getElementById("astriStatusFilter")?.addEventListener("change", () => {
       state.astriStatusFilterValue = document.getElementById("astriStatusFilter")?.value || "";
-      searchAstriTargets();
+      runAstriButtonAction(document.getElementById("astriClusterSearchButton"), "Mencari ASTRI...", searchAstriTargets);
     });
   }
+  orderMainWorkspace();
   refreshAstriPanelButtonStyles();
   syncAstriTargetTypeFromScope();
+  document.getElementById("astriClusterSearchInput")?.addEventListener("input", refreshAstriActionGates);
+  refreshAstriActionGates();
 }
 
-function setAstriStatus(text, connected = false) {
+function setAstriStatus(text, connected = false, needsLogin = false) {
   const node = document.getElementById("astriStatusText");
   const loginForm = document.getElementById("astriLoginForm");
-  const clearBtn = document.getElementById("astriClearButton");
   if (node) {
-    node.textContent = connected ? "Connected" : text;
-    node.className = connected ? "mt-1 text-xs font-semibold text-cyan-700" : "mt-1 text-xs text-zinc-500";
+    node.textContent = text;
+    node.className = connected ? "mt-1 text-xs font-semibold text-emerald-700" : "mt-1 text-xs text-zinc-500";
+    node.setAttribute("aria-busy", state.astriAuthState === "reconnecting" ? "true" : "false");
   }
+  state.astriNeedsLogin = Boolean(needsLogin) && !connected;
   if (loginForm) {
-    loginForm.classList.toggle("hidden", Boolean(connected));
+    loginForm.hidden = !state.astriNeedsLogin;
+    loginForm.classList.toggle("hidden", !state.astriNeedsLogin);
   }
-  if (clearBtn) {
-    clearBtn.classList.toggle("hidden", !connected);
+  if (!state.astriNeedsLogin) {
+    const passwordInput = document.getElementById("astriPasswordInput");
+    if (passwordInput) passwordInput.value = "";
   }
+  const wasConnected = Boolean(state.astriConnected);
+  state.astriConnected = Boolean(connected);
+  const details = document.getElementById("astriActionsDetails");
+  if (details && wasConnected !== state.astriConnected) details.open = state.astriConnected;
+  refreshAstriActionGates();
+}
+
+function applyAstriConnectionStatus(payload = {}) {
+  state.astriLinked = Boolean(payload.linked);
+  state.astriAuthState = payload.auth_state || (payload.connected ? "connected" : "unavailable");
+  const usernameInput = document.getElementById("astriUsernameInput");
+  if (usernameInput) {
+    usernameInput.readOnly = state.astriLinked;
+    if (state.astriLinked) usernameInput.value = payload.username || "";
+  }
+  const needsLogin = payload.needs_login === true && ["first_login", "credentials_invalid", "credentials_missing"].includes(state.astriAuthState);
+  const labels = {
+    first_login: "Hubungkan akun ASTRI sekali. Username ini akan tetap terikat ke akun EVA ini.",
+    credentials_invalid: "Tidak terhubung. Kredensial ASTRI ditolak; perbarui password akun yang sama.",
+    credentials_missing: "Tidak terhubung. Masukkan password sekali untuk mengaktifkan koneksi otomatis.",
+    reconnecting: "Menghubungkan ASTRI...",
+    unavailable: "Tidak terhubung. EVA akan mencoba menghubungkan kembali secara otomatis.",
+  };
+  setAstriStatus(payload.connected ? `Terhubung: ${payload.username || "ASTRI"}` : labels[state.astriAuthState] || labels.unavailable,
+    payload.connected === true, needsLogin);
+}
+
+function scheduleAstriStatusRefresh(milliseconds) {
+  clearTimeout(state.astriStatusTimer);
+  state.astriStatusTimer = setTimeout(() => {
+    if (document.hidden) { scheduleAstriStatusRefresh(30000); return; }
+    refreshAstriStatus();
+  }, milliseconds);
 }
 
 
 function onAstriTargetTypeChange(event) {
   state.astriTargetType = event.currentTarget.value || "cluster";
-  state.astriMatch = null;
+  clearAstriMatchContext();
   state.astriSearchItems = [];
+  window.evaClearInlineFeedback?.("astriInlineFeedback");
+  applyAstriWorkOrderStatus(null);
+  applyAstriDocumentVerificationStatus(null);
   document.getElementById("astriClusterSelect")?.classList.add("hidden");
   document.getElementById("astriMatchBox")?.classList.add("hidden");
   document.getElementById("astriOpenLink")?.classList.add("hidden");
   refreshAstriPanelButtonStyles();
+}
+function refreshAstriActionGates() {
+  const connected = Boolean(state.astriConnected);
+  const matched = Boolean(activeAstriMatchForJob());
+  const job = Boolean(state.jobId);
+  const canSearchDirect = state.astriTargetType === "feeder" || state.astriTargetType === "subfeeder";
+  const typedTarget = canSearchDirect && Boolean(document.getElementById("astriClusterSearchInput")?.value.trim());
+  const hint = document.getElementById("astriActionHint");
+  if (hint) hint.textContent = !connected
+    ? state.astriNeedsLogin ? "Lengkapi kredensial ASTRI untuk mengaktifkan aksi." : "Menunggu koneksi ASTRI pulih otomatis."
+    : !matched
+      ? "Cari dan pilih target ASTRI sebelum menjalankan aksi. Convert dari APD dapat mencari match dari input."
+      : !job
+        ? "Target terpilih. Convert dari APD atau jalankan konversi untuk mengaktifkan Upload Document."
+        : "Target dan job tersedia. Pilih aksi ASTRI sesuai status dokumen/WO.";
+  const gates = {
+    astriMatchButton: [connected && (job || typedTarget), "Login dan isi kode feeder/subfeeder, atau jalankan konversi dulu."],
+    astriApdConvertButton: [connected && (matched || job || typedTarget), "Login dan cari/pilih target ASTRI dulu."],
+    astriUploadButton: [connected && job, "Login dan jalankan konversi dulu."],
+    astriDownloadLatestButton: [connected && matched, "Login dan pilih target ASTRI dulu."],
+    astriScheduleButton: [connected && matched, "Login dan pilih target ASTRI dulu."],
+    astriAddBoqButton: [connected && matched, "Login dan pilih target ASTRI dulu."],
+  };
+  Object.entries(gates).forEach(([id, [ready, reason]]) => {
+    const button = document.getElementById(id);
+    if (!button || button.dataset.astriSubmitLoading === "1" || button.dataset.astriSubmitBlocked === "1") return;
+    button.disabled = !ready;
+    button.setAttribute("aria-disabled", String(!ready));
+    button.title = ready ? "" : reason;
+  });
+  applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+  applyAstriDocumentVerificationStatus(state.astriDocumentVerification);
 }
 function refreshAstriPanelButtonStyles() {
   const targetType = state.astriTargetType || "cluster";
@@ -5981,6 +6653,671 @@ function refreshAstriPanelButtonStyles() {
       }
     }
   });
+  refreshAstriActionGates();
+}
+
+function clearAstriBoqContext() {
+  state.astriBoqRequestId += 1;
+  state.astriBoqSupplierRequestId += 1;
+  state.astriBoqManualRequestId += 1;
+  astriBoqSetPermit();
+  state.astriPendingDonation = null;
+  state.astriBoqMatch = null;
+  state.astriBoqMatchJobId = null;
+  state.astriBoqScope = null;
+  state.astriBoqItems = [];
+}
+
+function clearAstriMatchContext() {
+  document.getElementById("astriBoqResult")?.remove();
+  state.astriMatch = null;
+  state.astriMatchJobId = null;
+  clearAstriBoqContext();
+  state.astriWorkOrderStatus = null;
+  state.astriDocumentVerification = null;
+  refreshAstriActionGates();
+}
+
+function setCurrentJobId(jobId) {
+  const nextJobId = String(jobId || "") || null;
+  if (state.jobId !== nextJobId) {
+    state.conversionFailureContext = null;
+    document.getElementById("astriBoqResult")?.remove();
+    clearAstriBoqContext();
+    state.astriWorkOrderStatusRequestId += 1;
+    state.astriDocumentVerificationRequestId += 1;
+    if (state.astriMatchJobId !== nextJobId) {
+      state.astriMatch = null;
+      state.astriMatchJobId = null;
+      state.astriWorkOrderStatus = null;
+      state.astriDocumentVerification = null;
+    }
+  }
+  state.jobId = nextJobId;
+  refreshAstriActionGates();
+}
+
+function astriMatchBelongsToJob(match, matchJobId, jobId = state.jobId) {
+  if (!match?.matched) return false;
+  const currentJobId = jobId || null;
+  return currentJobId ? matchJobId === currentJobId : !matchJobId;
+}
+
+function activeAstriMatchForJob(jobId = state.jobId) {
+  if (astriMatchBelongsToJob(state.astriBoqMatch, state.astriBoqMatchJobId, jobId)) return state.astriBoqMatch;
+  if (astriMatchBelongsToJob(state.astriMatch, state.astriMatchJobId, jobId)) return state.astriMatch;
+  return null;
+}
+
+function activeAstriScopeMatch(type, jobId = state.jobId) {
+  const match = activeAstriMatchForJob(jobId);
+  if (!match?.matched) return null;
+  const scope = String(match.scope || match.target_type || type || "cluster").toLowerCase();
+  return scope === type ? match : null;
+}
+
+async function ensureAstriJobMatch(type, jobId = state.jobId) {
+  const current = activeAstriScopeMatch(type, jobId);
+  if (current) return current;
+  if (!jobId) return null;
+  const requestJobId = jobId;
+  const readContext = astriBoqReadContext(type);
+  const url = type === "subfeeder"
+    ? `/api/astri/subfeeder/match/${encodeURIComponent(requestJobId)}`
+    : type === "feeder"
+      ? `/api/astri/feeder/match/${encodeURIComponent(requestJobId)}`
+      : `/api/astri/match/${encodeURIComponent(requestJobId)}`;
+  const payload = await fetch(url, { credentials: "include", cache: "no-store" }).then(parseJsonResponse);
+  if (!astriBoqReadCurrent(readContext)) return null;
+  return payload?.matched ? payload : null;
+}
+
+function astriScopeCode(match, scope = null) {
+  const selectedScope = scope || match?.scope || match?.target_type || state.astriTargetType || "cluster";
+  if (selectedScope === "subfeeder") return match?.subfeeder_code || "";
+  if (selectedScope === "feeder") return match?.feeder_code || match?.target_osp_route_code || "";
+  return match?.cluster_code || "";
+}
+
+function astriMatchQuery(match, scope = null) {
+  const selectedScope = scope || match?.scope || match?.target_type || state.astriTargetType || "cluster";
+  const code = astriScopeCode(match, selectedScope);
+  const query = {
+    scope: selectedScope,
+    work_order_number: match?.work_order_number || "",
+    vendor_label: match?.vendor_label || "",
+  };
+  if (selectedScope === "subfeeder") query.subfeeder_code = code;
+  else if (selectedScope === "feeder") {
+    query.feeder_code = code;
+    query.target_osp_route_code = code;
+  } else query.cluster_code = code;
+  return query;
+}
+
+function applyAstriDocumentVerificationStatus(status) {
+  state.astriDocumentVerification = status || null;
+  const available = Boolean(status?.available);
+  const verifyButton = document.getElementById("astriVerifyButton");
+  const unverifyButton = document.getElementById("astriUnverifyButton");
+  const unverifiedCount = Number(status?.unverified_count || 0);
+  const verifiedCount = Number(status?.verified_count || 0);
+  const verifyEnabled = state.astriConnected && Boolean(activeAstriMatchForJob()) && available && unverifiedCount > 0;
+  const unverifyEnabled = state.astriConnected && Boolean(activeAstriMatchForJob()) && available && unverifiedCount === 0 && verifiedCount > 0 && Boolean(status?.all_verified);
+  const verificationLoading = verifyButton?.dataset.astriSubmitLoading === "1"
+    || unverifyButton?.dataset.astriSubmitLoading === "1";
+  if (verificationLoading) return;
+  if (verifyButton) {
+    verifyButton.hidden = false;
+    verifyButton.disabled = !verifyEnabled;
+    verifyButton.setAttribute("aria-disabled", verifyEnabled ? "false" : "true");
+    verifyButton.title = verifyEnabled
+      ? `${unverifiedCount} dokumen ASTRI belum terverifikasi.`
+      : (available ? "Semua dokumen sudah terverifikasi." : "Status dokumen ASTRI belum tersedia.");
+  }
+  if (unverifyButton) {
+    unverifyButton.hidden = false;
+    unverifyButton.disabled = !unverifyEnabled;
+    unverifyButton.setAttribute("aria-disabled", unverifyEnabled ? "false" : "true");
+    unverifyButton.title = unverifyEnabled
+      ? `${verifiedCount} dokumen ASTRI sudah terverifikasi.`
+      : (available ? "Masih ada dokumen yang belum terverifikasi." : "Status dokumen ASTRI belum tersedia.");
+  }
+}
+
+async function refreshAstriDocumentVerification(matchOverride = null) {
+  const match = matchOverride || activeAstriMatchForJob() || {};
+  const scope = match.scope || match.target_type || state.astriTargetType || "cluster";
+  const code = astriScopeCode(match, scope);
+  const requestId = ++state.astriDocumentVerificationRequestId;
+  applyAstriDocumentVerificationStatus(null);
+  if (!match.matched || !code || !match.work_order_number) return null;
+  try {
+    const query = new URLSearchParams(astriMatchQuery(match, scope));
+    const status = await fetch(`/api/astri/document-verification-status?${query}`, {
+      credentials: "include",
+      cache: "no-store",
+    }).then(parseJsonResponse);
+    if (requestId !== state.astriDocumentVerificationRequestId) return status;
+    applyAstriDocumentVerificationStatus(status);
+    return status;
+  } catch (error) {
+    if (requestId === state.astriDocumentVerificationRequestId) {
+      applyAstriDocumentVerificationStatus({ available: false, error: error.message });
+      showAstriMenuFeedback("Status dokumen ASTRI gagal dicek", "Verify/Unverify dinonaktifkan sampai status semua dokumen terbaca.", "warning");
+    }
+    return null;
+  }
+}
+
+async function runAstriVerifyAction() {
+  const status = await refreshAstriDocumentVerification();
+  if (!status?.available || Number(status.unverified_count || 0) < 1) {
+    showAstriMenuFeedback("Verify belum siap", status?.available ? "Tidak ada dokumen yang perlu di-verify." : "Status semua dokumen belum terbaca.", "warning");
+    return null;
+  }
+  return verifyAstriOutputs();
+}
+
+async function runAstriUnverifyAction() {
+  const status = await refreshAstriDocumentVerification();
+  const allVerified = Boolean(status?.all_verified)
+    && Number(status?.unverified_count || 0) === 0
+    && Number(status?.verified_count || 0) > 0;
+  if (!status?.available || !allVerified) {
+    showAstriMenuFeedback("Unverify belum siap", status?.available ? "Masih ada dokumen yang belum terverifikasi." : "Status semua dokumen belum terbaca.", "warning");
+    return null;
+  }
+  return unverifyAstriOutputs();
+}
+
+function applyAstriWorkOrderStatus(status) {
+  state.astriWorkOrderStatus = status || null;
+  ["astriScheduleButton", "astriAddBoqButton"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    if (button.dataset.astriSubmitLoading === "1" || button.dataset.astriSubmitBlocked === "1") return;
+    const locked = Boolean(
+      !state.astriConnected
+      || !activeAstriMatchForJob()
+      || status?.unavailable
+      || status?.successful
+      || (id === "astriScheduleButton" && status?.closed)
+    );
+    button.disabled = locked;
+    button.setAttribute("aria-disabled", locked ? "true" : "false");
+    button.title = !state.astriConnected || !activeAstriMatchForJob()
+      ? "Login dan pilih target ASTRI dulu."
+      : locked && (status?.closed || status?.successful)
+        ? `Status WO ASTRI sudah ${status?.latest_status_label || "terminal"}`
+        : status?.unavailable
+          ? "Status WO ASTRI belum dapat diverifikasi"
+          : "";
+    button.style.opacity = locked ? "0.75" : "";
+    button.style.cursor = locked ? "not-allowed" : "";
+  });
+}
+
+function syncAstriWorkOrderStatusUi(status, match) {
+  const scope = status?.scope || match?.scope || match?.target_type || state.astriTargetType || "cluster";
+  const merged = {
+    ...(match || {}),
+    ...(status || {}),
+    matched: true,
+    scope,
+    target_type: status?.target_type || match?.target_type || scope,
+  };
+  const code = astriScopeCode(merged, scope);
+  const workOrder = String(merged.work_order_number || "").trim();
+  const itemIndex = (state.astriSearchItems || []).findIndex((item) => (
+    astriScopeCode(item, scope).trim().toLowerCase() === code.trim().toLowerCase()
+    && String(item.work_order_number || "").trim().toLowerCase() === workOrder.toLowerCase()
+  ));
+  if (itemIndex >= 0) {
+    const item = { ...state.astriSearchItems[itemIndex], ...status };
+    state.astriSearchItems[itemIndex] = item;
+    const option = [...(document.getElementById("astriClusterSelect")?.options || [])]
+      .find((candidate) => candidate.value === String(itemIndex));
+    if (option) {
+      const displayCode = item.cluster_code || item.subfeeder_code || item.feeder_code || item.target_osp_route_code || code;
+      const displayName = item.cluster_name || item.subfeeder_name || item.feeder_name || "";
+      option.textContent = `${displayCode} - ${displayName} | ${workOrder} | ${item.latest_status_label || item.latest_status_name || "-"}`;
+    }
+  }
+  renderAstriMatch(merged);
+  applyAstriWorkOrderStatus(status);
+  syncAstriOpenModalWorkOrderStatus(status);
+  return merged;
+}
+
+async function refreshAstriWorkOrderStatus({ notify = false, matchOverride = null } = {}) {
+  const match = matchOverride || activeAstriMatchForJob() || {};
+  const scope = match.scope || match.target_type || state.astriTargetType || "cluster";
+  const scopeCode = astriScopeCode(match, scope);
+  if (!match.matched || !scopeCode || !match.work_order_number) {
+    applyAstriWorkOrderStatus(null);
+    throw new Error("Cari dan pilih match ASTRI dulu.");
+  }
+  const query = new URLSearchParams(astriMatchQuery(match, scope));
+  const requestId = ++state.astriWorkOrderStatusRequestId;
+  const jobId = state.jobId || null;
+  const matchKey = astriBoqMatchKey(match, scope);
+  const isCurrent = () => jobId === (state.jobId || null)
+    && matchKey === astriBoqMatchKey(activeAstriScopeMatch(scope), scope);
+  try {
+    const status = await fetch(`/api/astri/work-order/status?${query}`, { credentials: "include", cache: "no-store" }).then(parseJsonResponse);
+    if (requestId === state.astriWorkOrderStatusRequestId && isCurrent()) syncAstriWorkOrderStatusUi(status, match);
+    return status;
+  } catch (error) {
+    if (requestId === state.astriWorkOrderStatusRequestId && isCurrent()) {
+      syncAstriWorkOrderStatusUi({
+        unavailable: true,
+        latest_status_label: "Tidak dapat diverifikasi",
+        latest_status_name: "unavailable",
+        successful: false,
+        closed: false,
+        boq_terminal: false,
+      }, match);
+    }
+    error.astriStatusHandled = true;
+    throw error;
+  }
+}
+
+async function refreshAstriWorkOrderStatusAfterAction(matchOverride = null, expectedStatus = "") {
+  const match = { ...(matchOverride || activeAstriMatchForJob() || {}) };
+  if (!match.matched) return null;
+  const scope = match.scope || match.target_type || state.astriTargetType || "cluster";
+  const jobId = state.jobId || null;
+  const matchKey = astriBoqMatchKey(match, scope);
+  let requestId = state.astriWorkOrderStatusRequestId;
+  const isCurrent = () => requestId === state.astriWorkOrderStatusRequestId
+    && jobId === (state.jobId || null) && Boolean(matchKey)
+    && matchKey === astriBoqMatchKey(activeAstriScopeMatch(scope), scope);
+  let status = null;
+  for (let attempt = 0; attempt < (expectedStatus ? 3 : 1); attempt += 1) {
+    if (!isCurrent()) return null;
+    const pending = refreshAstriWorkOrderStatus({ matchOverride: match });
+    requestId = state.astriWorkOrderStatusRequestId;
+    status = await pending.catch(() => null);
+    if (!status || !isCurrent()) return null;
+    if (!expectedStatus || status.latest_status_label === expectedStatus || status.closed || status.successful) return status;
+    if (attempt < 2) await waitForAstriBoqPoll(1500);
+  }
+  return status;
+}
+
+function handleAstriMutationError(error, title = "Action ASTRI gagal") {
+  const status = error?.payload?.wo_status;
+  if (status) {
+    syncAstriWorkOrderStatusUi(status, state.astriMatch || {});
+    return true;
+  }
+  if (error?.astriStatusHandled) return true;
+  if (/add boq/i.test(title)) {
+    const type = state.astriBoqScope || (isAstriSubfeederTarget() ? "subfeeder" : isAstriFeederTarget() ? "feeder" : "cluster");
+    showAstriBoqModalFeedback(type, title, error?.message || "Request gagal diproses.", "error", true);
+  } else {
+    showAstriMenuFeedback(
+      title,
+      error?.message || "Request gagal diproses.",
+      "error",
+      5200,
+      true,
+    );
+  }
+  return false;
+}
+
+function showAstriActionOpening(_action) {
+  if (_action === "addboq") return null;
+  const label = "Approve Schedule";
+  return showAstriInlineProgress(label, "Memeriksa status WO ASTRI...");
+}
+
+function showAstriSubmitResult(title, message, severity = "success") {
+  return showAstriMenuFeedback(title, message, severity, 5200, true);
+}
+
+function astriBoqModalFeedbackTarget(type) {
+  const prefix = type === "subfeeder" ? "astriSubfeeder" : "astriCluster";
+  let root = document.getElementById(`${prefix}BoqFeedback`);
+  if (!root) {
+    const matchInfo = document.getElementById(`${prefix}MatchInfo`);
+    if (!matchInfo) return null;
+    root = document.createElement("div");
+    root.id = `${prefix}BoqFeedback`;
+    root.className = "mt-2 hidden rounded-lg border px-3 py-2 text-xs";
+    matchInfo.insertAdjacentElement("afterend", root);
+  }
+  return root;
+}
+
+function showAstriBoqModalFeedback(type, title, message, severity = "info", persistent = false) {
+  const root = astriBoqModalFeedbackTarget(type);
+  if (!root) return null;
+  const styles = {
+    success: ["border-emerald-200", "bg-emerald-50", "text-emerald-800"],
+    info: ["border-sky-200", "bg-sky-50", "text-sky-800"],
+    warning: ["border-amber-200", "bg-amber-50", "text-amber-800"],
+    error: ["border-rose-200", "bg-rose-50", "text-rose-800"],
+  };
+  root.className = "mt-2 rounded-lg border px-3 py-2 text-xs shadow-sm " + (styles[severity] || styles.info).join(" ");
+  root.style.removeProperty("position");
+  root.style.removeProperty("right");
+  root.style.removeProperty("top");
+  root.style.removeProperty("z-index");
+  root.style.removeProperty("max-width");
+  root.setAttribute("role", severity === "error" || severity === "warning" ? "alert" : "status");
+  const token = String((Number(root.dataset.astriFeedbackToken || 0) + 1));
+  root.dataset.astriFeedbackToken = token;
+  root.replaceChildren();
+  const strong = document.createElement("strong");
+  strong.textContent = title || "Info";
+  const body = document.createElement("div");
+  body.className = "mt-1 whitespace-pre-wrap";
+  body.textContent = message || "";
+  root.append(strong, body);
+  root.classList.remove("hidden");
+  if (!persistent) window.setTimeout(() => {
+    if (root.dataset.astriFeedbackToken === token) root.classList.add("hidden");
+  }, 5200);
+  return {
+    remove() {
+      if (root.dataset.astriFeedbackToken === token) root.classList.add("hidden");
+    },
+    update(nextMessage) {
+      if (root.dataset.astriFeedbackToken === token) body.textContent = nextMessage || "";
+    },
+  };
+}
+
+function showAstriBoqCardResult(type, match, succeeded, jobId) {
+  const key = astriSubmitLockKey(match);
+  if (state.jobId !== jobId || key !== astriSubmitLockKey(activeAstriScopeMatch(type) || {})
+    || key !== astriSubmitLockKey(state.astriMatch || {})) return;
+  const panel = document.getElementById("astriIntegrationPanel");
+  if (!panel) return;
+  const root = document.getElementById("astriBoqResult") || document.createElement("div");
+  root.id = "astriBoqResult";
+  root.className = "mt-2 rounded-lg border px-3 py-2 text-xs shadow-sm " + (succeeded
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : "border-rose-200 bg-rose-50 text-rose-800");
+  root.textContent = succeeded ? "Add BOQ sukses" : "Add BOQ gagal";
+  root.dataset.astriStatusKey = key;
+  root.dataset.astriJobId = jobId || "";
+  root.setAttribute("role", succeeded ? "status" : "alert");
+  root.tabIndex = -1;
+  panel.appendChild(root);
+  if (succeeded) {
+    const modalId = type === "subfeeder" ? "astriSubfeederModal" : "astriClusterModal";
+    const modal = document.getElementById(modalId);
+    if (modal?.querySelector("#astriBoqSubmitButton")?.dataset.astriStatusKey === key) {
+      modal.classList.add("hidden");
+      root.focus({ preventScroll: true });
+      root.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+
+function showAstriBoqDualFeedback(type, title, message, severity = "info", persistent = false) {
+  const modal = showAstriBoqModalFeedback(type, title, message, severity, persistent);
+  return {
+    remove() {
+      modal?.remove?.();
+    },
+    update(nextMessage) {
+      modal?.update?.(nextMessage);
+    },
+  };
+}
+
+function showAstriBoqDualProgress(type, title, message, persistent = false) {
+  const modal = showAstriBoqModalFeedback(type, title, message, "info", persistent);
+  return {
+    remove() {
+      modal?.remove?.();
+    },
+    update(nextMessage) {
+      modal?.update?.(nextMessage);
+    },
+  };
+}
+
+function showAstriMenuFeedback(title, message, severity = "info", timeoutMs = 5200, important = false) {
+  if (!important && severity !== "error") {
+    return window.evaSetAstriInlineFeedback?.(title, message, severity) || null;
+  }
+  const notification = window.showNotification?.(
+    { title, message, severity },
+    { timeoutMs },
+  );
+  return notification || window.evaSetAstriInlineFeedback?.(title, message, severity) || null;
+}
+
+function showAstriActionProgress(title, message, persistent = false) {
+  return showAstriInlineProgress(title, message, persistent);
+}
+
+async function runAstriButtonAction(button, label, action) {
+  const loading = setAstriSubmitLoading(button, label);
+  if (!loading) return null;
+  try {
+    return await action();
+  } finally {
+    loading.restore();
+    applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+    applyAstriDocumentVerificationStatus(state.astriDocumentVerification);
+  }
+}
+
+const astriSubmitLocks = new Set();
+const astriSubmitBlockedButtons = new Map();
+
+function captureAstriSubmitButton(button) {
+  return {
+    innerHTML: button.innerHTML,
+    disabled: button.disabled,
+    ariaBusy: button.getAttribute("aria-busy"),
+    ariaDisabled: button.getAttribute("aria-disabled"),
+    title: button.getAttribute("title"),
+    cursorWait: button.classList.contains("cursor-wait"),
+    opacity70: button.classList.contains("opacity-70"),
+  };
+}
+
+function restoreAstriSubmitButton(button, original) {
+  if (!button || !original) return;
+  button.innerHTML = original.innerHTML;
+  button.disabled = original.disabled;
+  button.classList.remove("cursor-wait", "opacity-70");
+  if (original.cursorWait) button.classList.add("cursor-wait");
+  if (original.opacity70) button.classList.add("opacity-70");
+  if (original.ariaBusy === null) button.removeAttribute("aria-busy");
+  else button.setAttribute("aria-busy", original.ariaBusy);
+  if (original.ariaDisabled === null) button.removeAttribute("aria-disabled");
+  else button.setAttribute("aria-disabled", original.ariaDisabled);
+  if (original.title === null) button.removeAttribute("title");
+  else button.setAttribute("title", original.title);
+  delete button.dataset.astriSubmitLoading;
+  delete button.dataset.astriSubmitBlocked;
+}
+
+function markAstriSubmitBlocked(button, key) {
+  if (!button || !key || button.dataset.astriSubmitLoading === "1" || button.dataset.astriSubmitBlocked === "1") return;
+  let blockedButtons = astriSubmitBlockedButtons.get(key);
+  if (!blockedButtons) {
+    blockedButtons = new Map();
+    astriSubmitBlockedButtons.set(key, blockedButtons);
+  }
+  blockedButtons.set(button, captureAstriSubmitButton(button));
+  button.dataset.astriSubmitBlocked = "1";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.setAttribute("aria-disabled", "true");
+  button.setAttribute("title", "Proses ASTRI untuk WO ini masih berjalan.");
+  button.classList.add("cursor-wait", "opacity-70");
+  button.innerHTML = `<svg class="mr-1.5 inline-block h-3.5 w-3.5 animate-spin align-[-2px]" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".3"></circle><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path></svg><span>WO sedang diproses...</span>`;
+}
+
+function releaseAstriSubmitLock(key) {
+  if (!key) return;
+  astriSubmitLocks.delete(key);
+  const blockedButtons = astriSubmitBlockedButtons.get(key);
+  blockedButtons?.forEach((original, button) => restoreAstriSubmitButton(button, original));
+  astriSubmitBlockedButtons.delete(key);
+}
+
+function lockAstriBoqSiblingControls(key, activeButton = null) {
+  if (!key) return;
+  document.querySelectorAll("#astriAddBoqButton, #astriBoqSubmitButton").forEach((button) => {
+    if (button !== activeButton) markAstriSubmitBlocked(button, key);
+  });
+}
+
+function astriSubmitLockKey(match) {
+  const scope = String(match?.scope || match?.target_type || state.astriTargetType || "cluster").trim().toLowerCase();
+  const code = astriScopeCode(match || {}, scope);
+  const workOrder = String(match?.work_order_number || "").trim();
+  return code && workOrder ? [scope, code, workOrder].join(":") : "";
+}
+
+function setAstriSubmitLoading(button, label = "Memproses...", lockKey = "") {
+  const key = String(lockKey || "");
+  if (button?.dataset.astriSubmitLoading === "1") return null;
+  if (key && astriSubmitLocks.has(key)) {
+    markAstriSubmitBlocked(button, key);
+    return null;
+  }
+  if (key) astriSubmitLocks.add(key);
+  if (!button) {
+    return {
+      update() {},
+      restore() { releaseAstriSubmitLock(key); },
+    };
+  }
+  const original = captureAstriSubmitButton(button);
+  let restored = false;
+  const update = (nextLabel) => {
+    const text = String(nextLabel || "Memproses...");
+    button.setAttribute("title", text);
+    button.innerHTML = `<svg class="mr-1.5 inline-block h-3.5 w-3.5 animate-spin align-[-2px]" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".3"></circle><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path></svg><span>${text}</span>`;
+  };
+  button.dataset.astriSubmitLoading = "1";
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.setAttribute("aria-disabled", "true");
+  button.classList.add("cursor-wait", "opacity-70");
+  update(label);
+  return {
+    update,
+    restore() {
+      if (restored) return;
+      restored = true;
+      restoreAstriSubmitButton(button, original);
+      releaseAstriSubmitLock(key);
+    },
+  };
+}
+
+function applyAstriModalSubmitWorkOrderStatus(button, status, action) {
+  if (!button || button.dataset?.astriSubmitLoading === "1" || button.dataset?.astriSubmitBlocked === "1") return;
+  const locked = Boolean(
+    !status
+    || status?.unavailable
+    || status?.successful
+    || (action === "schedule" && status?.closed)
+  );
+  button.disabled = locked;
+  button.setAttribute("aria-disabled", locked ? "true" : "false");
+  button.title = locked
+    ? !status || status?.unavailable
+      ? "Status WO ASTRI belum dapat diverifikasi"
+      : `Status WO ASTRI sudah ${status?.latest_status_label || "terminal"}`
+    : "";
+  button.style.opacity = locked ? "0.5" : "";
+  button.style.cursor = locked ? "not-allowed" : "";
+}
+
+function astriSubmitMatchesStatusIdentity(button, status) {
+  const expected = String(button?.dataset?.astriStatusKey || "");
+  const actual = status ? astriSubmitLockKey(status) : "";
+  return Boolean(expected && actual && expected === actual);
+}
+
+function syncAstriOpenModalWorkOrderStatus(status) {
+  const scheduleButton = document.querySelector('#astriScheduleContent form button[type="submit"]');
+  applyAstriModalSubmitWorkOrderStatus(
+    scheduleButton,
+    astriSubmitMatchesStatusIdentity(scheduleButton, status) ? status : null,
+    "schedule",
+  );
+  document.querySelectorAll("#astriBoqSubmitButton").forEach((button) => {
+    applyAstriModalSubmitWorkOrderStatus(
+      button,
+      astriSubmitMatchesStatusIdentity(button, status) ? status : null,
+      "addboq",
+    );
+  });
+}
+
+function summarizeAstriBatch(results, successLabel, emptyMessage) {
+  const items = Array.isArray(results) ? results : [];
+  const okCount = items.filter((item) => item.ok).length;
+  const skippedCount = items.filter((item) => item.skipped).length;
+  const failedCount = items.filter((item) => !item.ok && !item.skipped).length;
+  const summary = items.length
+    ? items.map((item) => item.skipped ? `${item.target}: SKIP` : `${item.target}: ${item.ok ? successLabel : (item.error || item.status_code || "gagal")}`).join(" | ")
+    : emptyMessage;
+  const severity = failedCount ? "warning" : okCount === items.length && items.length ? "success" : "info";
+  return { total: items.length, okCount, skippedCount, failedCount, summary, severity };
+}
+
+function summarizeAstriUploadBatch(results) {
+  const requiredTargets = ["kmz", "boq"];
+  const byTarget = new Map(
+    (Array.isArray(results) ? results : []).map((item) => [String(item.target || "").toLowerCase(), item]),
+  );
+  const items = requiredTargets.map((target) => byTarget.get(target) || {
+    target,
+    ok: false,
+    error: "Hasil upload tidak tersedia.",
+  });
+  const failed = items.filter((item) => !item.ok);
+  const summary = items
+    .map((item) => `${String(item.target).toUpperCase()}: ${item.ok ? "OK" : (item.error || item.status_code || "gagal")}`)
+    .join(" | ");
+  return {
+    total: items.length,
+    okCount: items.length - failed.length,
+    skippedCount: 0,
+    failedCount: failed.length,
+    summary,
+    severity: failed.length ? "warning" : "success",
+  };
+}
+
+async function runAstriMutableAction(action) {
+  const openingNotification = showAstriActionOpening(action);
+  const activeMatch = activeAstriMatchForJob();
+  let status;
+  try {
+    status = await refreshAstriWorkOrderStatus({ notify: true, matchOverride: activeMatch });
+  } catch (_error) {
+    openingNotification?.remove?.();
+    return;
+  }
+  openingNotification?.remove?.();
+  if (status.successful || (action === "schedule" && status.closed)) return;
+  if (action === "schedule") {
+    return openAstriScheduleForm();
+  } else if (isAstriSubfeederTarget()) {
+    return subfeederAction("addboq");
+  } else if (isAstriFeederTarget()) {
+    return feederAction("addboq");
+  } else {
+    return clusterAction("addboq");
+  }
 }
 
 function syncAstriTargetTypeFromScope() {
@@ -6006,17 +7343,21 @@ function isAstriFeederTarget() {
 }
 
 async function searchAstriTargets() {
-  const result = document.getElementById("astriUploadResult");
   const input = document.getElementById("astriClusterSearchInput");
   const select = document.getElementById("astriClusterSelect");
   const query = input?.value?.trim() || "";
   const status = document.getElementById("astriStatusFilter")?.value?.trim() || "";
   state.astriTargetType = document.getElementById("astriTargetTypeSelect")?.value || state.astriTargetType || "cluster";
+  state.astriMatch = null;
+  state.astriMatchJobId = null;
+  clearAstriBoqContext();
+  state.astriWorkOrderStatusRequestId += 1;
+  state.astriDocumentVerificationRequestId += 1;
   if (!query && !status) {
-    if (result) result.textContent = "Masukkan nama/kode atau pilih Status WO.";
+    showAstriMenuFeedback("Pencarian ASTRI", "Masukkan nama/kode atau pilih Status WO.", "warning");
     return;
   }
-  if (result) result.textContent = "Mencari data ASTRI...";
+  const progress = showAstriActionProgress("Pencarian ASTRI", "Mencari data ASTRI...");
   try {
     const url = `/api/astri/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(state.astriTargetType)}&status=${encodeURIComponent(status)}`;
     const controller = new AbortController();
@@ -6030,16 +7371,31 @@ async function searchAstriTargets() {
     const items = payload.items || [];
     state.astriSearchItems = items;
     state.astriStatusFilterValue = status;
-    if (!select) return;
+    progress?.remove?.();
+    if (!select) {
+      showAstriMenuFeedback("Pencarian ASTRI gagal", "Panel hasil pencarian tidak tersedia.", "error");
+      return;
+    }
     if (!items.length) {
+      clearAstriMatchContext();
+      applyAstriWorkOrderStatus(null);
+      applyAstriDocumentVerificationStatus(null);
       select.classList.add("hidden");
-      if (result) result.textContent = "Data ASTRI tidak ditemukan.";
+      showAstriMenuFeedback("Data ASTRI tidak ditemukan", "Ubah kata kunci atau filter status WO.", "warning");
       return;
     }
     renderAstriFilteredResults(select);
-    if (result) result.textContent = `${items.length} hasil ditemukan${status ? ` untuk status ${status}` : ""}.`;
+    showAstriMenuFeedback(
+      "Pencarian ASTRI selesai",
+      `${items.length} hasil ditemukan${status ? ` untuk status ${status}` : ""}.`,
+      "success",
+    );
   } catch (error) {
-    if (result) result.textContent = error.name === "AbortError" ? "Search ASTRI timeout. Pilih scope spesifik atau isi kode cluster." : error.message;
+    progress?.remove?.();
+    const message = error.name === "AbortError"
+      ? "Search ASTRI timeout. Pilih scope spesifik atau isi kode cluster."
+      : error.message;
+    showAstriMenuFeedback("Pencarian ASTRI gagal", message, "error");
   }
 }
 
@@ -6062,65 +7418,140 @@ function selectAstriSearchResult() {
   const select = document.getElementById("astriClusterSelect");
   const item = state.astriSearchItems?.[Number(select?.value || 0)];
   if (!item) return;
+  clearAstriBoqContext();
   state.astriMatch = item;
-  renderAstriMatch(item);
+  state.astriMatchJobId = state.jobId || null;
+  renderAstriMatch(item, state.jobId);
+  const selectedStatus = {
+    scope: item.target_type || state.astriTargetType || "cluster",
+    cluster_code: item.cluster_code || "",
+    subfeeder_code: item.subfeeder_code || "",
+    feeder_code: item.feeder_code || "",
+    target_osp_route_code: item.target_osp_route_code || "",
+    work_order_number: item.work_order_number || "",
+    latest_status_label: item.latest_status_label || "",
+    latest_status_name: item.latest_status_name || "",
+    successful: (item.latest_status_label || "").trim().toLowerCase() === "successful"
+      && (item.latest_status_name || "").trim().toLowerCase() === "successful",
+    closed: (item.latest_status_label || "").trim().toLowerCase() === "closed"
+      && (item.latest_status_name || "").trim().toLowerCase() === "closed",
+  };
+  applyAstriWorkOrderStatus(selectedStatus);
+  refreshAstriWorkOrderStatus({ matchOverride: item }).catch(() => null);
 }
 
 async function refreshAstriStatus() {
   ensureAstriPanel();
-  try {
-    const payload = await fetch("/api/astri/status", {credentials: "include"}).then(parseJsonResponse);
-    setAstriStatus(payload.connected ? "Connected" : "Belum login ASTRI.", payload.connected);
-  } catch (error) {
-    setAstriStatus("Status ASTRI tidak bisa dicek.", false);
+  if (state.astriLoginInFlight) return;
+  if (state.astriStatusPromise) return state.astriStatusPromise;
+  const generation = state.astriAuthGeneration || 0;
+  clearTimeout(state.astriStatusTimer);
+  if (!state.astriConnected && !state.astriNeedsLogin) {
+    state.astriAuthState = "reconnecting";
+    setAstriStatus("Menghubungkan ASTRI...", false, false);
   }
+  state.astriStatusPromise = (async () => {
+    try {
+      const payload = await fetch("/api/astri/status", {
+        credentials: "same-origin", signal: AbortSignal.timeout(45000),
+      }).then(parseJsonResponse);
+      if (generation !== (state.astriAuthGeneration || 0)) return;
+      applyAstriConnectionStatus(payload);
+      if (!state.astriNeedsLogin) scheduleAstriStatusRefresh(payload.connected ? 300000 : 30000);
+    } catch (error) {
+      if (generation !== (state.astriAuthGeneration || 0)) return;
+      state.astriAuthState = "unavailable";
+      setAstriStatus("Tidak terhubung. EVA akan mencoba kembali secara otomatis.", false, false);
+      scheduleAstriStatusRefresh(30000);
+    } finally {
+      state.astriStatusPromise = null;
+    }
+  })();
+  return state.astriStatusPromise;
 }
 
 async function loginAstriSession() {
+  if (state.astriLoginInFlight) return;
   const username = document.getElementById("astriUsernameInput")?.value || "";
   const passwordInput = document.getElementById("astriPasswordInput");
   const password = passwordInput?.value || "";
-  const result = document.getElementById("astriUploadResult");
-  if (result) result.textContent = "Login ASTRI...";
+  if (!username.trim() || !password) {
+    setAstriStatus("Isi username dan password ASTRI.", false, true);
+    return;
+  }
+  state.astriLoginInFlight = true;
+  state.astriAuthGeneration = (state.astriAuthGeneration || 0) + 1;
+  clearTimeout(state.astriStatusTimer);
+  state.astriAuthState = "reconnecting";
+  setAstriStatus("Menghubungkan ASTRI...", false, false);
   try {
     const payload = await fetch("/api/astri/login", {
-      credentials: "include",
-      method: "POST",
+      credentials: "same-origin", method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     }).then(parseJsonResponse);
-    if (passwordInput) passwordInput.value = "";
-    setAstriStatus("Connected", true);
-    if (result) result.textContent = "Login ASTRI berhasil.";
+    applyAstriConnectionStatus({ ...payload, auth_state: "connected", needs_login: false });
+    scheduleAstriStatusRefresh(300000);
   } catch (error) {
-    if (result) result.textContent = error.message;
-    setAstriStatus("Login ASTRI gagal.", false);
+    const payload = error.payload || {};
+    if (payload.auth_state) {
+      applyAstriConnectionStatus(payload);
+    } else {
+      state.astriAuthState = "unavailable";
+      setAstriStatus("Tidak terhubung. EVA akan memeriksa kembali secara otomatis.", false, false);
+    }
+    if (!state.astriNeedsLogin) scheduleAstriStatusRefresh(30000);
+  } finally {
+    if (passwordInput) passwordInput.value = "";
+    state.astriLoginInFlight = false;
   }
 }
 
-async function clearAstriSession() {
-  await fetch("/api/astri/logout", {credentials: "include", method: "POST" }).catch(() => null);
-  setAstriStatus("Belum login ASTRI.", false);
-  state.astriMatch = null;
-  const result = document.getElementById("astriUploadResult");
-  if (result) result.textContent = "ASTRI session dibersihkan.";
-}
-
-function renderAstriMatch(payload) {
+function renderAstriMatch(payload, jobId = state.jobId) {
+  if (jobId && state.jobId && jobId !== state.jobId) return;
+  if (state.astriBoqScope && astriBoqMatchKey(activeAstriScopeMatch(state.astriBoqScope), state.astriBoqScope)
+    !== astriBoqMatchKey(payload, state.astriBoqScope)) clearAstriBoqContext();
   const box = document.getElementById("astriMatchBox");
   const link = document.getElementById("astriOpenLink");
+  const boqResult = document.getElementById("astriBoqResult");
+  if (boqResult && (boqResult.dataset.astriStatusKey !== astriSubmitLockKey(payload || {})
+    || boqResult.dataset.astriJobId !== String(jobId || ""))) boqResult.remove();
   state.astriMatch = payload;
+  state.astriMatchJobId = payload?.matched ? (jobId || null) : null;
+  refreshAstriActionGates();
   if (!box) return;
   if (!payload?.matched) {
     box.classList.remove("hidden");
     box.innerHTML = `<strong>Match tidak ditemukan.</strong><br><span>Query: ${escapeHtml(payload?.query || "")}</span>`;
     link?.classList.add("hidden");
+    applyAstriWorkOrderStatus(null);
+    applyAstriDocumentVerificationStatus(null);
     return;
   }
+  const statusLabel = payload.unavailable
+    ? "Tidak dapat diverifikasi"
+    : payload.latest_status_label || payload.latest_status_name || "-";
+  const successful = Boolean(payload.successful) || (
+    (payload.latest_status_label || "").trim().toLowerCase() === "successful"
+    && (payload.latest_status_name || "").trim().toLowerCase() === "successful"
+  );
+  const closed = Boolean(payload.closed) || (
+    (payload.latest_status_label || "").trim().toLowerCase() === "closed"
+    && (payload.latest_status_name || "").trim().toLowerCase() === "closed"
+  );
+  const actionStatus = payload.unavailable
+    ? "Status live belum dapat diverifikasi. Approve Schedule dan Add BOQ dikunci."
+    : successful
+      ? "Approve Schedule dan Add BOQ dikunci."
+      : closed
+        ? "Approve Schedule dikunci. Add BOQ tetap tersedia."
+        : "";
   box.classList.remove("hidden");
   box.innerHTML = `
     <strong>${escapeHtml(payload.cluster_code)} - ${escapeHtml(payload.cluster_name)}</strong><br>
     <span>WO: ${escapeHtml(payload.work_order_number)}</span><br>
+    <span>Status WO: <strong>${escapeHtml(statusLabel)}</strong></span><br>
+    ${actionStatus ? `<span>${escapeHtml(actionStatus)}</span><br>` : ""}
     <span>Vendor: ${escapeHtml(payload.vendor_label || payload.vendor_name || "-")}</span><br>
     <span>${(payload.target_type === "feeder" ? "Route Length" : "HP")}: ${escapeHtml(payload.target_type === "feeder" ? (payload.route_length || "-") : (payload.homepass || "-"))} | Net: ${escapeHtml(payload.net_type || "-")}</span>
   `;
@@ -6128,60 +7559,90 @@ function renderAstriMatch(payload) {
     link.href = payload.requirement_url;
     link.classList.remove("hidden");
   }
+  if (payload.latest_status_label || payload.latest_status_name) {
+    applyAstriWorkOrderStatus({
+      scope: payload.target_type || state.astriTargetType || "cluster",
+      cluster_code: payload.cluster_code || "",
+      subfeeder_code: payload.subfeeder_code || "",
+      feeder_code: payload.feeder_code || "",
+      target_osp_route_code: payload.target_osp_route_code || "",
+      work_order_number: payload.work_order_number || "",
+      latest_status_label: payload.latest_status_label || "",
+      latest_status_name: payload.latest_status_name || "",
+      successful,
+      closed,
+      unavailable: Boolean(payload.unavailable),
+    });
+  }
+  refreshAstriDocumentVerification(payload);
 }
 
 async function matchAstriCluster() {
-  const result = document.getElementById("astriUploadResult");
   const input = document.getElementById("astriClusterSearchInput");
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
-  if ((isSubfeeder || isFeeder) && state.astriMatch?.matched) {
-    if (result) result.textContent = "Match sudah ada dari pencarian.";
-    return state.astriMatch;
+  const currentMatch = activeAstriMatchForJob();
+  if ((isSubfeeder || isFeeder) && currentMatch) {
+    showAstriMenuFeedback("Match ASTRI", "Match sudah ada dari pencarian.", "info");
+    return currentMatch;
   }
   // For feeder/subfeeder without jobId: search ASTRI directly using the query in search box
   if (!state.jobId && (isSubfeeder || isFeeder)) {
     const query = input?.value?.trim() || "";
     if (!query) {
-      if (result) result.textContent = "Masukkan kode feeder/subfeeder di search box, lalu klik Cari Match.";
+      showAstriMenuFeedback("Cari Match ASTRI", "Masukkan kode feeder/subfeeder di search box, lalu klik Cari Match.", "warning");
       return null;
     }
-    if (result) result.textContent = "Mencari match ASTRI...";
+    const progress = showAstriActionProgress("Cari Match ASTRI", "Mencari match ASTRI...");
     try {
       const searchType = isSubfeeder ? "subfeeder" : "feeder";
       const payload = await fetch(`/api/astri/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(searchType)}`).then(parseJsonResponse);
       const items = payload.items || [];
+      progress?.remove?.();
       if (!items.length) {
-        if (result) result.textContent = "Data ASTRI tidak ditemukan untuk: " + query;
+        showAstriMenuFeedback("Match ASTRI tidak ditemukan", `Data ASTRI tidak ditemukan untuk: ${query}`, "warning");
         return null;
       }
       state.astriSearchItems = items;
       state.astriMatch = items[0];
-      renderAstriMatch(items[0]);
-      if (result) result.textContent = "Match ASTRI ditemukan: " + (items[0].cluster_code || query);
+      state.astriMatchJobId = state.jobId || null;
+      renderAstriMatch(items[0], state.jobId);
+      showAstriMenuFeedback("Match ASTRI ditemukan", items[0].cluster_code || query, "success");
       return items[0];
     } catch (error) {
-      if (result) result.textContent = error.message;
+      progress?.remove?.();
+      showAstriMenuFeedback("Cari Match ASTRI gagal", error.message, "error");
       return null;
     }
   }
   if (!state.jobId) {
-    if (result) result.textContent = "Belum ada job convert.";
+    showAstriMenuFeedback("Cari Match ASTRI", "Belum ada job convert.", "warning");
     return null;
   }
-  if (result) result.textContent = "Mencari match ASTRI...";
+  const progress = showAstriActionProgress("Cari Match ASTRI", "Mencari match ASTRI...");
   try {
     const url = isSubfeeder
       ? `/api/astri/subfeeder/match/${encodeURIComponent(state.jobId)}`
       : isFeeder
         ? `/api/astri/feeder/match/${encodeURIComponent(state.jobId)}`
         : `/api/astri/match/${encodeURIComponent(state.jobId)}`;
+    const jobIdAtMatch = state.jobId;
     const payload = await fetch(url).then(parseJsonResponse);
-    renderAstriMatch(payload);
-    if (result) result.textContent = payload.matched ? "Match ASTRI ditemukan." : "Match ASTRI tidak ditemukan.";
+    if (state.jobId !== jobIdAtMatch) {
+      progress?.remove?.();
+      return null;
+    }
+    renderAstriMatch(payload, jobIdAtMatch);
+    progress?.remove?.();
+    showAstriMenuFeedback(
+      payload.matched ? "Match ASTRI ditemukan" : "Match ASTRI tidak ditemukan",
+      payload.matched ? "Data ASTRI siap digunakan." : "Coba periksa data hasil convert atau cari manual.",
+      payload.matched ? "success" : "warning",
+    );
     return payload;
   } catch (error) {
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    showAstriMenuFeedback("Cari Match ASTRI gagal", error.message, "error");
     return null;
   }
 }
@@ -6194,18 +7655,17 @@ if (typeof window !== "undefined") {
 
 
 async function convertFromAstriApd() {
-  const result = document.getElementById("astriUploadResult");
   let match = state.astriMatch;
   if (!match?.matched) {
     match = await matchAstriCluster();
   }
   if (!match?.matched) {
-    if (result) result.textContent = "Cari match ASTRI dulu.";
+    showAstriMenuFeedback("Convert dari APD ASTRI", "Cari match ASTRI dulu.", "warning");
     return;
   }
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
-  if (result) result.textContent = "Mengambil KMZ dari APD ASTRI lalu convert...";
+  const progress = showAstriActionProgress("Convert dari APD ASTRI", "Mengambil KMZ dari APD ASTRI lalu memulai convert...");
   try {
     const payload = await fetch("/api/astri/apd/convert", {
       credentials: "include",
@@ -6213,28 +7673,32 @@ async function convertFromAstriApd() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ match, subfeeder: isSubfeeder, feeder: isFeeder }),
     }).then(parseJsonResponse);
-    state.jobId = payload.job_id;
+    setCurrentJobId(payload.job_id);
     renderAstriMatch(payload.match);
-    if (result) result.textContent = `APD ASTRI masuk antrean convert: ${payload.filename || "KMZ"} (${payload.job_id}).`;
-    if (typeof showPopup === "function") showPopup(`Convert dari APD ASTRI dimulai: ${payload.filename || "KMZ"}`);
+    progress?.remove?.();
+    showAstriMenuFeedback(
+      "Convert dari APD ASTRI dimulai",
+      `${payload.filename || "KMZ"} masuk antrean convert. Job: ${payload.job_id}.`,
+      "success",
+    );
     if (typeof startPolling === "function") startPolling();
   } catch (error) {
-    if (result) result.textContent = error.message;
-    if (typeof showPopup === "function") showPopup(error.message);
+    progress?.remove?.();
+    showAstriMenuFeedback("Convert dari APD ASTRI gagal", error.message, "error");
   }
 }
 
 async function uploadAstriOutputs() {
-  const result = document.getElementById("astriUploadResult");
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
+  const activeMatch = state.astriMatch;
   if (!state.jobId) {
-    if (result) result.textContent = "Belum ada job convert.";
+    showAstriMenuFeedback("Upload Document", "Belum ada job convert.", "warning");
     return;
   }
-  if (result) result.textContent = "Upload Document ke ASTRI...";
+  const progress = showAstriActionProgress("Upload Document", "Mengirim dokumen ke ASTRI...");
   try {
-    const targets = (isSubfeeder || isFeeder) ? ["kmz", "boq"] : ["kmz", "boq", "hpdb"];
+    const targets = ["kmz", "boq"];
     const url = isSubfeeder
       ? `/api/astri/subfeeder/upload/${encodeURIComponent(state.jobId)}`
       : isFeeder
@@ -6246,10 +7710,20 @@ async function uploadAstriOutputs() {
       body: JSON.stringify({ targets }),
     }).then(parseJsonResponse);
     renderAstriMatch(payload.match);
-    const summary = (payload.results || []).map((item) => `${item.target}: ${item.ok ? "OK" : (item.error || item.status_code || "gagal")}`).join(" | ");
-    if (result) result.textContent = summary || "Upload selesai.";
+    const batch = summarizeAstriUploadBatch(payload.results);
+    progress?.remove?.();
+    showAstriMenuFeedback(
+      batch.failedCount ? "Upload Document belum lengkap" : "Upload Document selesai",
+      `${batch.okCount}/${batch.total} OK. ${batch.summary}`,
+      batch.severity,
+      5200,
+      true,
+    );
   } catch (error) {
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    handleAstriMutationError(error);
+  } finally {
+    await refreshAstriWorkOrderStatusAfterAction(activeMatch);
   }
 }
 
@@ -6265,14 +7739,13 @@ function filenameFromContentDisposition(value, fallback) {
 }
 
 async function downloadAstriLatestDocuments() {
-  const result = document.getElementById("astriUploadResult");
   if (!state.astriMatch?.matched) {
-    if (result) result.textContent = "Cari match ASTRI dulu.";
+    showAstriMenuFeedback("Download Document", "Cari match ASTRI dulu.", "warning");
     return;
   }
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
-  if (result) result.textContent = "Mengambil file terbaru per dokumen ASTRI...";
+  const progress = showAstriActionProgress("Download Document", "Menyiapkan file terbaru dari ASTRI...");
   try {
     const response = await fetch("/api/astri/latest-documents/download", {credentials: "include", 
       method: "POST",
@@ -6287,22 +7760,24 @@ async function downloadAstriLatestDocuments() {
     const blob = await response.blob();
     const fallbackName = `${state.astriMatch.cluster_code || "ASTRI"} - ${state.astriMatch.cluster_name || "DOCUMENTS"}.zip`;
     fallbackBlobDownload(blob, filenameFromContentDisposition(response.headers.get("Content-Disposition"), fallbackName));
-    if (result) result.textContent = "ZIP file terbaru ASTRI mulai didownload.";
+    progress?.remove?.();
+    showAstriMenuFeedback("Download Document dimulai", "ZIP dokumen terbaru ASTRI sedang di-download.", "success");
   } catch (error) {
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    showAstriMenuFeedback("Download Document gagal", error.message, "error");
   }
 }
 
 
 async function verifyAstriOutputs() {
-  const result = document.getElementById("astriUploadResult");
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
+  const activeMatch = state.astriMatch;
   if (!state.astriMatch?.matched) {
-    if (result) result.textContent = "Cari match ASTRI dulu.";
+    showAstriMenuFeedback("Verify", "Cari match ASTRI dulu.", "warning");
     return;
   }
-  if (result) result.textContent = "Proses verify...";
+  const progress = showAstriActionProgress("Verify", "Memverifikasi dokumen di ASTRI...");
   try {
     let payload;
     if (isSubfeeder) {
@@ -6325,27 +7800,34 @@ async function verifyAstriOutputs() {
       }).then(parseJsonResponse);
     }
     renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter((item) => item.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map((item) => item.skipped ? `${item.target}: SKIP` : `${item.target}: ${item.ok ? "VERIFIED" : (item.error || item.status_code || "gagal")}`).join(" | ")
-      : "Tidak ada dokumen yang perlu diverifikasi.";
-    if (result) result.textContent = `[${okCount}/${total}] ${summary}`;
+    await refreshAstriDocumentVerification(payload.match);
+    const batch = summarizeAstriBatch(payload.results, "VERIFIED", "Tidak ada dokumen yang perlu diverifikasi.");
+    progress?.remove?.();
+    showAstriMenuFeedback(
+      batch.failedCount ? "Verify belum lengkap" : "Verify selesai",
+      `[${batch.okCount}/${batch.total}] ${batch.summary}`,
+      batch.severity,
+      5200,
+      true,
+    );
   } catch (error) {
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    handleAstriMutationError(error);
+  } finally {
+    await refreshAstriWorkOrderStatusAfterAction(activeMatch);
   }
 }
 
 
 async function unverifyAstriOutputs() {
-  const result = document.getElementById("astriUploadResult");
   const isSubfeeder = isAstriSubfeederTarget();
   const isFeeder = isAstriFeederTarget();
+  const activeMatch = state.astriMatch;
   if (!state.astriMatch?.matched) {
-    if (result) result.textContent = "Cari match ASTRI dulu.";
+    showAstriMenuFeedback("Unverify", "Cari match ASTRI dulu.", "warning");
     return;
   }
-  if (result) result.textContent = "Proses unverify...";
+  const progress = showAstriActionProgress("Unverify", "Membatalkan verifikasi dokumen di ASTRI...");
   try {
     let payload;
     if (isSubfeeder) {
@@ -6368,52 +7850,64 @@ async function unverifyAstriOutputs() {
       }).then(parseJsonResponse);
     }
     renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter((item) => item.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map((item) => {
-          if (item.skipped) return `${item.target}: SKIP`;
-          return `${item.target}: ${item.ok ? "UNVERIFIED" : (item.error || item.status_code || "gagal")}`;
-        }).join(" | ")
-      : "Tidak ada dokumen yang perlu di-unverify.";
-    if (result) result.textContent = `[${okCount}/${total}] ${summary}`;
+    await refreshAstriDocumentVerification(payload.match);
+    const batch = summarizeAstriBatch(payload.results, "UNVERIFIED", "Tidak ada dokumen yang perlu di-unverify.");
+    progress?.remove?.();
+    showAstriMenuFeedback(
+      batch.failedCount ? "Unverify belum lengkap" : "Unverify selesai",
+      `[${batch.okCount}/${batch.total}] ${batch.summary}`,
+      batch.severity,
+      5200,
+      true,
+    );
   } catch (error) {
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    handleAstriMutationError(error);
+  } finally {
+    await refreshAstriWorkOrderStatusAfterAction(activeMatch);
   }
 }
 
 
 async function openAstriScheduleForm() {
-  const result = document.getElementById("astriUploadResult");
   const modal = document.getElementById("astriScheduleModal");
   const content = document.getElementById("astriScheduleContent");
-  const isSubfeeder = isAstriSubfeederTarget();
   if (!state.astriMatch?.matched) {
-    if (result) result.textContent = "Cari match ASTRI dulu.";
+    showAstriMenuFeedback("Approve Schedule", "Cari match ASTRI dulu.", "warning");
     return;
   }
-  if (!modal || !content) return;
+  if (!modal || !content) {
+    showAstriMenuFeedback("Approve Schedule gagal", "Form Approve Schedule tidak tersedia.", "error");
+    return;
+  }
   modal.classList.remove("hidden");
-  content.innerHTML = `<div class="text-sm text-zinc-500">Loading form Approve Schedule dari ASTRI...</div>`;
+  content.innerHTML = "";
+  const progress = showAstriActionProgress("Membuka Approve Schedule", "Memuat form dari ASTRI...");
   try {
-    const url = isSubfeeder
-      ? `/api/astri/subfeeder/schedule/form?${new URLSearchParams(state.astriMatch || {}).toString()}`
-      : `/api/astri/schedule/form?${new URLSearchParams(state.astriMatch || {}).toString()}`;
+    const scope = state.astriMatch?.scope || state.astriMatch?.target_type || state.astriTargetType || "cluster";
+    const query = new URLSearchParams(astriMatchQuery(state.astriMatch || {}, scope));
+    const url = scope === "subfeeder"
+      ? `/api/astri/subfeeder/schedule/form?${query}`
+      : scope === "feeder"
+        ? `/api/astri/feeder/schedule/form?${query}`
+        : `/api/astri/schedule/form?${query}`;
     const payload = await fetch(url).then(parseJsonResponse);
     renderAstriMatch(payload.match);
     const formHtml = "";
     const fields = payload.fields || [];
     if (!formHtml && !fields.length) {
-      content.innerHTML = `<div class="rounded-lg bg-yellow-50 p-3 text-sm font-semibold text-yellow-700">Tidak ada field form ditemukan.</div>`;
-      if (result) result.textContent = "Form Approve Schedule tidak tersedia.";
+      progress?.remove?.();
+      modal.classList.add("hidden");
+      showAstriMenuFeedback("Approve Schedule tidak tersedia", "Tidak ada field form dari ASTRI.", "warning");
       return;
     }
     if (formHtml) {
       content.innerHTML = formHtml;
       const form = document.getElementById("eva-astri-approve-schedule-form");
       if (!form) {
-        content.innerHTML = `<div class="rounded-lg bg-yellow-50 p-3 text-sm font-semibold text-yellow-700">Form Approve Schedule tidak valid.</div>`;
-        if (result) result.textContent = "Form Approve Schedule tidak valid.";
+        progress?.remove?.();
+        modal.classList.add("hidden");
+        showAstriMenuFeedback("Approve Schedule gagal", "Form Approve Schedule tidak valid.", "error");
         return;
       }
       form.className = "grid gap-3 md:grid-cols-2";
@@ -6427,21 +7921,87 @@ async function openAstriScheduleForm() {
           <button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button>
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button>
         </div>`);
+      form.insertAdjacentHTML("afterbegin", `<input type="hidden" name="__eva_scope" value="${escapeHtml(state.astriMatch?.target_type || state.astriTargetType || "cluster")}"><input type="hidden" name="__eva_cluster_code" value="${escapeHtml(state.astriMatch?.cluster_code || "")}"><input type="hidden" name="__eva_work_order_number" value="${escapeHtml(state.astriMatch?.work_order_number || "")}">`);
       form.addEventListener("submit", submitAstriScheduleForm);
     } else {
+      const scheduleButton = payload.button || {};
+      const scheduleButtonValues = {
+        "approve-drm-schedule-work-order-number-input": scheduleButton["data-work-order-number"] || "",
+        "approve-drm-schedule-osp-route-code-input": scheduleButton["data-osp-route-code"] || "",
+        "approve-drm-schedule-osp-route-uuid-input": scheduleButton["data-osp-route-uuid"] || "",
+        "approve-drm-schedule-osp-route-name-input": scheduleButton["data-osp-route-name"] || "",
+        "approve-drm-schedule-osp-route-label-input": scheduleButton["data-osp-route-label"] || "",
+        "approve-drm-schedule-assigned-vendor-name-input": scheduleButton["data-assigned-vendor-name"] || "",
+        "approve-drm-schedule-appointment-date-input": scheduleButton["data-appointment-date"] || "",
+        "approve-drm-schedule-appointment-slot-name-input": scheduleButton["data-appointment-slot-name"] || "",
+      };
       const fieldHtml = fields.map((f) => {
         const label = escapeHtml(f.label || f.id.replace(/-/g, " ").replace(/_/g, " "));
-        const val = escapeHtml(f.value);
-        if (f.hidden) return `<input type="hidden" name="${escapeHtml(f.name)}" value="${val}">`;
+        const rawValue = f.value || scheduleButtonValues[f.id] || "";
+        const val = escapeHtml(rawValue);
+        if (f.hidden) return `<input type="hidden" id="${escapeHtml(f.id)}" name="${escapeHtml(f.name)}" value="${val}">`;
+        if (f.type === "radio_group") {
+          const options = (f.options || []).map((o) => `<button type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-zinc-800 hover:bg-emerald-50 disabled:opacity-50" data-schedule-radio-option data-value="${escapeHtml(o.value || "")}" data-relation="${escapeHtml(JSON.stringify(o.relation || {}))}"${o.disabled ? " disabled" : ""}>${escapeHtml(o.text || o.value || "")}</button>`).join("");
+          const radios = (f.options || []).map((o) => `<input class="sr-only" type="radio" name="${escapeHtml(f.name)}" value="${escapeHtml(o.value || "")}"${String(o.value || "") === String(f.value || "") ? " checked" : ""}>`).join("");
+          const selected = (f.options || []).find((o) => String(o.value || "") === String(f.value || ""));
+          const selectedText = selected?.text || label;
+          return `<div id="astri-schedule-radio-${escapeHtml(f.id)}" class="relative text-xs font-bold text-zinc-700" data-schedule-radio-group data-schedule-radio-name="${escapeHtml(f.name)}"><span class="block">${label}</span><button type="button" class="mt-1 flex w-full items-center justify-between rounded-lg border border-zinc-300 bg-white px-3 py-2 text-left text-xs font-medium text-zinc-800" data-schedule-radio-toggle aria-expanded="false"><span data-schedule-radio-current>${escapeHtml(selectedText)}</span><span aria-hidden="true">▾</span></button><div class="hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-lg border border-zinc-300 bg-white p-1 shadow-xl" data-schedule-radio-menu><input type="search" class="mb-1 w-full rounded border border-zinc-200 px-2 py-1 text-xs font-normal" placeholder="Cari ${label}..." data-schedule-radio-search><div data-schedule-radio-options>${options}</div></div>${radios}</div>`;
+        }
         if (f.type === "select") {
-          const opts = (f.options || []).map((o) => `<option value="${escapeHtml(o.value)}"${o.value === f.value ? " selected" : ""}>${escapeHtml(o.text)}</option>`).join("");
+          const opts = (f.options || []).map((o) => `<option value="${escapeHtml(o.value)}"${o.value === f.value ? " selected" : ""}${o.disabled ? " disabled" : ""}>${escapeHtml(o.text)}</option>`).join("");
           return `<label class="text-xs font-bold text-zinc-700">${label}<select id="${escapeHtml(f.id)}" name="${escapeHtml(f.name)}" class="mt-1 w-full ${astriInput}">${opts}</select></label>`;
         }
         const readonly = f.readonly ? " readonly" : "";
-        return `<label class="text-xs font-bold text-zinc-700">${label}<input type="${escapeHtml(f.type)}" name="${escapeHtml(f.name)}" value="${val}" class="mt-1 w-full ${astriInput}"${readonly} placeholder="${escapeHtml(f.placeholder)}"></label>`;
+        return `<label class="text-xs font-bold text-zinc-700">${label}<input id="${escapeHtml(f.id)}" type="${escapeHtml(f.type)}" name="${escapeHtml(f.name)}" value="${val}" class="mt-1 w-full ${astriInput}"${readonly} placeholder="${escapeHtml(f.placeholder)}"></label>`;
       }).join("");
-      content.innerHTML = `<form id="eva-astri-approve-schedule-form" class="grid gap-3 md:grid-cols-2">${fieldHtml}<div class="col-span-full mt-2 flex justify-end gap-2"><button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button><button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button></div></form>`;
+      const evaStatusFields = `<input type="hidden" name="__eva_scope" value="${escapeHtml(state.astriMatch?.target_type || state.astriTargetType || "cluster")}"><input type="hidden" name="__eva_cluster_code" value="${escapeHtml(state.astriMatch?.cluster_code || "")}"><input type="hidden" name="__eva_work_order_number" value="${escapeHtml(state.astriMatch?.work_order_number || "")}">`;
+      const feederOltName = scope === "feeder" ? `<input type="hidden" name="osp_route[olt_name]" value="">` : "";
+      const relationPanel = scope === "feeder" ? `<div id="astriScheduleDeviceRelation" class="col-span-full hidden rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-950" aria-live="polite"><div class="mb-2 font-bold uppercase tracking-wide text-emerald-800">ODC &amp; Site Relationship</div><div class="grid gap-2 md:grid-cols-3"><div><span class="block text-[10px] uppercase text-emerald-700">Selected Device</span><strong data-relation-field="device">-</strong></div><div><span class="block text-[10px] uppercase text-emerald-700">ODC</span><span data-relation-field="odc">-</span></div><div><span class="block text-[10px] uppercase text-emerald-700">Site</span><span data-relation-field="site">-</span></div></div></div>` : "";
+      content.innerHTML = `<form id="eva-astri-approve-schedule-form" class="grid gap-3 md:grid-cols-2">${evaStatusFields}${feederOltName}${fieldHtml}${relationPanel}<div class="col-span-full mt-2 flex justify-end gap-2"><button type="button" class="${astriGlassButton}" onclick="document.getElementById('astriScheduleModal')?.classList.add('hidden')">Batal</button><button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700">Submit Approve Schedule</button></div></form>`;
       document.getElementById("eva-astri-approve-schedule-form")?.addEventListener("submit", submitAstriScheduleForm);
+      if (scope === "feeder") {
+        const form = document.getElementById("eva-astri-approve-schedule-form");
+        const groups = [...(form?.querySelectorAll("[data-schedule-radio-group]") || [])];
+        const typeSelect = form?.querySelector('[name="osp_route[olt_type]"]');
+        const areaSelect = form?.querySelector("#approve-drm-schedule-olt-area-select");
+        const hiddenOlt = form?.querySelector('[name="osp_route[olt_name]"]');
+        const relationPanel = form?.querySelector("#astriScheduleDeviceRelation");
+        const relationField = (key) => relationPanel?.querySelector(`[data-relation-field="${key}"]`);
+        const groupIsMetro = (group) => (group?.dataset.scheduleRadioName || "").includes("metro");
+        const groupFor = (type) => groups.find((group) => groupIsMetro(group) === (type === "metro"));
+        const selectOption = (group, option) => {
+          const value = option?.dataset.value || "";
+          groups.forEach((item) => {
+            const active = item === group;
+            item.querySelectorAll('input[type="radio"]').forEach((input) => { input.checked = active && input.value === value; input.disabled = !active; });
+            item.querySelector("[data-schedule-radio-current]")?.replaceChildren(document.createTextNode(active ? option.textContent.trim() : (groupIsMetro(item) ? "Select Metro" : "Select OLT")));
+            item.querySelectorAll("[data-schedule-radio-option]").forEach((candidate) => candidate.classList.toggle("bg-emerald-100", candidate === option));
+          });
+          if (hiddenOlt) hiddenOlt.value = value;
+          if (relationPanel) {
+            let relation = {}; try { relation = JSON.parse(option?.dataset.relation || "{}"); } catch (_) {}
+            relationField("device") && (relationField("device").textContent = relation.device_label || option?.textContent.trim() || value || "-");
+            relationField("odc") && (relationField("odc").textContent = String(relation.site_is_odc) === "1" ? [relation.odc_code, relation.odc_label || relation.odc_name].filter(Boolean).join(" · ") : (value ? "Not assigned" : "-"));
+            relationField("site") && (relationField("site").textContent = [relation.site_code, relation.site_label || relation.site_name].filter(Boolean).join(" · ") || "-");
+            relationPanel.classList.toggle("hidden", !value);
+          }
+        };
+        groups.forEach((group) => {
+          const toggle = group.querySelector("[data-schedule-radio-toggle]");
+          const menu = group.querySelector("[data-schedule-radio-menu]");
+          const search = group.querySelector("[data-schedule-radio-search]");
+          toggle?.addEventListener("click", () => { const open = menu?.classList.toggle("hidden") === false; toggle.setAttribute("aria-expanded", String(open)); if (open) search?.focus(); });
+          search?.addEventListener("input", () => { const q = search.value.trim().toLowerCase(); group.querySelectorAll("[data-schedule-radio-option]").forEach((item) => item.classList.toggle("hidden", q && !item.textContent.toLowerCase().includes(q))); });
+          group.querySelectorAll("[data-schedule-radio-option]").forEach((option) => option.addEventListener("click", () => { if (!option.disabled) { selectOption(group, option); menu?.classList.add("hidden"); toggle?.setAttribute("aria-expanded", "false"); } }));
+        });
+        const setActive = () => {
+          const type = typeSelect?.value || "";
+          groups.forEach((group) => { const active = type === "metro" ? groupIsMetro(group) : type === "olt" ? !groupIsMetro(group) : false; group.classList.toggle("opacity-50", !active); group.querySelectorAll('input[type="radio"]').forEach((input) => { input.disabled = !active; if (!active) input.checked = false; }); group.querySelectorAll("[data-schedule-radio-option]").forEach((option) => { option.disabled = !active || !option.dataset.value; }); });
+          if (!type && hiddenOlt) hiddenOlt.value = "";
+        };
+        const populate = async (type, area) => { const group = groupFor(type); const options = group?.querySelector("[data-schedule-radio-options]"); if (!group || !options || !area) return; options.innerHTML = `<div class="px-3 py-2 text-xs text-zinc-500">Memuat ${type.toUpperCase()}...</div>`; try { const data = await fetch(`/api/astri/${type === "metro" ? "metro" : "olt"}-list?area=${encodeURIComponent(area)}`).then(r => r.json()); options.innerHTML = ""; (data.data || []).forEach((item) => { const option = document.createElement("button"); option.type = "button"; option.className = "block w-full px-3 py-2 text-left text-xs font-medium text-zinc-800 hover:bg-emerald-50"; option.dataset.scheduleRadioOption = ""; option.dataset.value = item.value || ""; option.dataset.relation = JSON.stringify(item.relation || {}); option.textContent = item.text || item.value || ""; option.addEventListener("click", () => { selectOption(group, option); group.querySelector("[data-schedule-radio-menu]")?.classList.add("hidden"); }); options.appendChild(option); }); if (!data.data?.length) options.innerHTML = `<div class="px-3 py-2 text-xs text-zinc-500">Tidak ada ${type.toUpperCase()} untuk area ini</div>`; } catch (_) { options.innerHTML = `<div class="px-3 py-2 text-xs text-red-600">Gagal memuat ${type.toUpperCase()}</div>`; } };
+        typeSelect?.addEventListener("change", () => { setActive(); populate(typeSelect.value, areaSelect?.value); }); areaSelect?.addEventListener("change", () => populate(typeSelect?.value, areaSelect.value)); setActive(); if (typeSelect?.value && areaSelect?.value) populate(typeSelect.value, areaSelect.value);
+      }
     }
     // Search textbox for large ASTRI OLT/Feeder lists. Keeps original select as
     // submitted field, while text input matches option text/code case-insensitively.
@@ -6574,35 +8134,87 @@ async function openAstriScheduleForm() {
       makeScheduleAutocomplete(oltEl, "OLT");
       if (oltAreaEl.value) loadOlts(oltAreaEl.value);
     }
-    if (result) result.textContent = "Form Approve Schedule siap.";
+    const scheduleSubmitButton = content.querySelector('form button[type="submit"]');
+    if (scheduleSubmitButton) {
+      scheduleSubmitButton.dataset.astriStatusKey = astriSubmitLockKey(state.astriMatch || {});
+    }
+    progress?.remove?.();
+    syncAstriOpenModalWorkOrderStatus(state.astriWorkOrderStatus);
+    showAstriMenuFeedback("Approve Schedule siap", "Periksa form lalu submit ke ASTRI.", "success");
   } catch (error) {
-    content.innerHTML = `<div class="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">${escapeHtml(error.message)}</div>`;
-    if (result) result.textContent = error.message;
+    progress?.remove?.();
+    content.innerHTML = "";
+    modal.classList.add("hidden");
+    showAstriMenuFeedback("Approve Schedule gagal", error.message, "error");
   }
 }
 
 
 async function submitAstriScheduleForm(event) {
   event.preventDefault();
-  const result = document.getElementById("astriUploadResult");
+  // Event.currentTarget is cleared after the first await; retain the submitted form now.
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement)) {
+    showAstriMenuFeedback("Approve Schedule gagal", "Form Approve Schedule tidak tersedia.", "error");
+    return;
+  }
   const isSubfeeder = isAstriSubfeederTarget();
+  const isFeeder = isAstriFeederTarget();
   if (!state.astriMatch?.matched) return;
-  if (result) result.textContent = "Submitting Approve Schedule ke ASTRI...";
+  const activeMatch = { ...state.astriMatch };
+  const submitJobId = state.jobId || null;
+  const scope = activeMatch.scope || activeMatch.target_type || state.astriTargetType || "cluster";
+  const matchKey = astriBoqMatchKey(activeMatch, scope);
+  const isCurrent = () => submitJobId === (state.jobId || null)
+    && matchKey === astriBoqMatchKey(activeAstriScopeMatch(scope), scope)
+    && form === document.querySelector('#astriScheduleContent form');
+  const submitLoading = setAstriSubmitLoading(
+    form.querySelector('button[type="submit"]'),
+    "Memeriksa status...",
+    astriSubmitLockKey(activeMatch),
+  );
+  if (!submitLoading) return;
+  let progress = showAstriActionProgress("Approve Schedule", "Memeriksa status WO ASTRI...", true);
+  let expectedWoStatus = "";
   try {
-    const url = isSubfeeder ? "/api/astri/subfeeder/schedule/approve" : "/api/astri/schedule/approve";
+    const status = await refreshAstriWorkOrderStatus({ matchOverride: activeMatch });
+    if (!isCurrent() || status.successful || status.closed) return;
+    submitLoading.update("Mengirim Approve Schedule ke ASTRI...");
+    progress?.remove?.();
+    progress = showAstriActionProgress("Approve Schedule", "Mengirim Approve Schedule ke ASTRI...", true);
+    const url = isSubfeeder ? "/api/astri/subfeeder/schedule/approve" : isFeeder ? "/api/astri/feeder/schedule/approve" : "/api/astri/schedule/approve";
     const payload = await fetch(url, {
       method: "POST",
-      body: new FormData(event.currentTarget),
+      body: new FormData(form),
     }).then(parseJsonResponse);
+    if (!isCurrent()) return;
     if (payload.ok) {
-      if (result) result.textContent = `Approve Schedule submitted (${payload.status_code}).`;
+      expectedWoStatus = "In Progress";
       document.getElementById("astriScheduleModal")?.classList.add("hidden");
+      showAstriSubmitResult("Approve Schedule selesai", "Approve Schedule berhasil dikirim ke ASTRI.");
     } else {
       const reason = payload.reason || "";
-      if (result) result.textContent = reason ? `Approve Schedule gagal: ${reason}` : `Approve Schedule gagal (${payload.status_code}).`;
+      showAstriMenuFeedback(
+        "Approve Schedule gagal",
+        reason || `Approve Schedule gagal (${payload.status_code || "tanpa status"}).`,
+        "error",
+      );
     }
   } catch (error) {
-    if (result) result.textContent = error.message;
+    handleAstriMutationError(error);
+  } finally {
+    progress?.remove?.();
+    if (isCurrent()) await refreshAstriWorkOrderStatusAfterAction(activeMatch, expectedWoStatus);
+    submitLoading.restore();
+    applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+    const scheduleSubmitButton = form.querySelector('button[type="submit"]');
+    applyAstriModalSubmitWorkOrderStatus(
+      scheduleSubmitButton,
+      astriSubmitMatchesStatusIdentity(scheduleSubmitButton, state.astriWorkOrderStatus)
+        ? state.astriWorkOrderStatus
+        : null,
+      "schedule",
+    );
   }
 }
 
@@ -6612,7 +8224,6 @@ function clusterAction(action) {
   const matchInfo = document.getElementById("astriClusterMatchInfo");
   const donationInfo = document.getElementById("astriClusterDonationInfo");
   const content = document.getElementById("astriClusterContent");
-  const resultEl = document.getElementById("astriClusterResult");
   if (!modal || !content) return;
   if (state.astriMatch?.matched) {
     const m = state.astriMatch;
@@ -6621,14 +8232,15 @@ function clusterAction(action) {
     matchInfo.textContent = "Match dulu sebelum action.";
   }
   if (donationInfo) donationInfo.classList.add("hidden");
-  resultEl.textContent = "";
   modal.classList.remove("hidden");
   if (action === "addboq") {
     state.astriPendingDonation = null;
-    openAstriBoqPreviewFor("cluster");
+    const preview = openAstriBoqPreviewFor("cluster");
+    const donationContext = astriBoqReadContext("cluster");
     const code = state.astriMatch?.cluster_code || "";
     if (code) {
       fetch(`/api/astri/donation?cluster_code=${encodeURIComponent(code)}`).then(r => r.json()).then(d => {
+        if (!astriBoqReadCurrent(donationContext)) return;
         if (d.found) {
           // Donation vendor is only donation metadata. Never overwrite the
           // matched project vendor, because BOQ supplier map needs that vendor.
@@ -6647,36 +8259,26 @@ function clusterAction(action) {
           `;
           donationInfo.classList.remove("hidden");
         }
-        if (d.found && d.donation.permit_rt_rw) {
+        if (d.found) {
           if (typeof d.donation.pph_pct === "number") {
-            if (!state.astriMatch) state.astriMatch = {};
-            state.astriMatch.pph_pct = d.donation.pph_pct;
+            if (state.astriMatch) state.astriMatch.pph_pct = d.donation.pph_pct;
+            if (state.astriBoqMatch) state.astriBoqMatch.pph_pct = d.donation.pph_pct;
           }
-          const fillPermit = () => {
-            const permitInput = document.getElementById("astriBoqPermitRtRw");
-            if (permitInput) {
-              permitInput.value = state.astriPendingDonation.permit_rt_rw;
-              // Re-trigger auto description so PR desc includes donation line
-              const clusterContent = document.getElementById("astriClusterContent");
-              if (clusterContent) refreshAutoDescription("cluster", clusterContent);
-              return;
-            }
-            setTimeout(fillPermit, 200);
-          };
-          fillPermit();
+          const plantInput = content.querySelector("#astriBoqPlantCode");
+          if (plantInput && d.donation.area_plant_code) plantInput.value = d.donation.area_plant_code;
+          refreshAutoDescription("cluster", content);
         }
       }).catch(() => {});
     }
-    return;
+    return preview;
   }
-  if (action === "schedule") { openAstriScheduleForm(); return; }
+  if (action === "schedule") { return openAstriScheduleForm(); }
   content.innerHTML = `<p class="text-sm text-zinc-500">Klik tombol action di atas untuk ${action}.</p>`;
 }
 function subfeederAction(action) {
   const modal = document.getElementById("astriSubfeederModal");
   const matchInfo = document.getElementById("astriSubfeederMatchInfo");
   const content = document.getElementById("astriSubfeederContent");
-  const resultEl = document.getElementById("astriSubfeederResult");
   if (!modal || !content) return;
   if (state.astriMatch?.matched) {
     const m = state.astriMatch;
@@ -6684,10 +8286,9 @@ function subfeederAction(action) {
   } else {
     matchInfo.textContent = "Match dulu sebelum action.";
   }
-  resultEl.textContent = "";
   modal.classList.remove("hidden");
-  if (action === "addboq") { openAstriBoqPreviewFor("subfeeder"); return; }
-  if (action === "schedule") { openAstriScheduleForm(); return; }
+  if (action === "addboq") { return openAstriBoqPreviewFor("subfeeder"); }
+  if (action === "schedule") { return openAstriScheduleForm(); }
   content.innerHTML = `<p class="text-sm text-zinc-500">Klik tombol action di atas untuk ${action}.</p>`;
 }
 
@@ -6695,7 +8296,6 @@ async function feederAction(action) {
   const modal = document.getElementById("astriClusterModal");
   const matchInfo = document.getElementById("astriClusterMatchInfo");
   const content = document.getElementById("astriClusterContent");
-  const resultEl = document.getElementById("astriClusterResult");
   if (!modal || !content) return;
   if (state.astriMatch?.matched) {
     const m = state.astriMatch;
@@ -6704,112 +8304,10 @@ async function feederAction(action) {
     matchInfo.textContent = "Cari dan pilih match dulu.";
     return;
   }
-  resultEl.textContent = "";
   modal.classList.remove("hidden");
-  if (action === "addboq") { openAstriBoqPreviewFor("feeder"); return; }
-  if (action === "schedule") { openAstriScheduleForm(); return; }
+  if (action === "addboq") { return openAstriBoqPreviewFor("feeder"); }
+  if (action === "schedule") { return openAstriScheduleForm(); }
   content.innerHTML = `<p class="text-sm text-zinc-500">Klik tombol action di atas untuk ${action}.</p>`;
-}
-
-async function clusterDoVerify() {
-  const resultEl = document.getElementById("astriClusterResult");
-  if (!state.astriMatch?.matched) { if (resultEl) resultEl.textContent = "Cari match ASTRI dulu."; return; }
-  if (resultEl) resultEl.textContent = "Proses verify cluster...";
-  try {
-    const payload = await fetch("/api/astri/verify", {credentials: "include", 
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ match: state.astriMatch, targets: "all" }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter(i => i.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map(i => i.skipped ? `${i.target}: SKIP` : `${i.target}: ${i.ok ? "VERIFIED" : (i.error || i.status_code || "gagal")}`).join(" | ")
-      : "Tidak ada dokumen yang perlu diverifikasi.";
-    if (resultEl) resultEl.textContent = `[${okCount}/${total}] ${summary}`;
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
-}
-async function clusterDoUnverify() {
-  const resultEl = document.getElementById("astriClusterResult");
-  if (!state.astriMatch?.matched) { if (resultEl) resultEl.textContent = "Cari match ASTRI dulu."; return; }
-  if (resultEl) resultEl.textContent = "Proses unverify cluster...";
-  try {
-    const payload = await fetch("/api/astri/unverify", {credentials: "include", 
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ match: state.astriMatch, targets: "all" }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter(i => i.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map(i => i.skipped ? `${i.target}: SKIP` : `${i.target}: ${i.ok ? "UNVERIFIED" : (i.error || i.status_code || "gagal")}`).join(" | ")
-      : "Tidak ada dokumen yang perlu di-unverify.";
-    if (resultEl) resultEl.textContent = `[${okCount}/${total}] ${summary}`;
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
-}
-async function clusterDoUpload() {
-  const resultEl = document.getElementById("astriClusterResult");
-  if (!state.jobId) { if (resultEl) resultEl.textContent = "Belum ada job convert."; return; }
-  if (resultEl) resultEl.textContent = "Upload Document ke ASTRI...";
-  try {
-    const payload = await fetch(`/api/astri/upload/${encodeURIComponent(state.jobId)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targets: ["kmz", "boq", "hpdb"] }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const summary = (payload.results || []).map(i => `${i.target}: ${i.ok ? "OK" : (i.error || i.status_code || "gagal")}`).join(" | ");
-    if (resultEl) resultEl.textContent = summary || "Upload selesai.";
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
-}
-async function subfeederDoVerify() {
-  const resultEl = document.getElementById("astriSubfeederResult");
-  if (!state.astriMatch?.matched) { if (resultEl) resultEl.textContent = "Match subfeeder ASTRI dulu."; return; }
-  if (resultEl) resultEl.textContent = "Proses verify subfeeder...";
-  try {
-    const payload = await fetch("/api/astri/subfeeder/verify", {credentials: "include", 
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ match: state.astriMatch }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter(i => i.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map(i => i.skipped ? `${i.target}: SKIP` : `${i.target}: ${i.ok ? "VERIFIED" : (i.error || i.status_code || "gagal")}`).join(" | ")
-      : "Tidak ada dokumen yang perlu diverifikasi.";
-    if (resultEl) resultEl.textContent = `[${okCount}/${total}] ${summary}`;
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
-}
-async function subfeederDoUnverify() {
-  const resultEl = document.getElementById("astriSubfeederResult");
-  if (!state.astriMatch?.matched) { if (resultEl) resultEl.textContent = "Match subfeeder ASTRI dulu."; return; }
-  if (resultEl) resultEl.textContent = "Proses unverify subfeeder...";
-  try {
-    const payload = await fetch("/api/astri/subfeeder/unverify", {credentials: "include", 
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ match: state.astriMatch }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const total = (payload.results || []).length;
-    const okCount = (payload.results || []).filter(i => i.ok).length;
-    const summary = total > 0
-      ? (payload.results || []).map(i => i.skipped ? `${i.target}: SKIP` : `${i.target}: ${i.ok ? "UNVERIFIED" : (i.error || i.status_code || "gagal")}`).join(" | ")
-      : "Tidak ada dokumen yang perlu di-unverify.";
-    if (resultEl) resultEl.textContent = `[${okCount}/${total}] ${summary}`;
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
-}
-async function subfeederDoUpload() {
-  const resultEl = document.getElementById("astriSubfeederResult");
-  if (!state.jobId) { if (resultEl) resultEl.textContent = "Belum ada job convert."; return; }
-  if (resultEl) resultEl.textContent = "Upload Document ke ASTRI...";
-  try {
-    const payload = await fetch(`/api/astri/subfeeder/upload/${encodeURIComponent(state.jobId)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targets: ["kmz", "boq"] }),
-    }).then(parseJsonResponse);
-    renderAstriMatch(payload.match);
-    const summary = (payload.results || []).map(i => `${i.target}: ${i.ok ? "OK" : (i.error || i.status_code || "gagal")}`).join(" | ");
-    if (resultEl) resultEl.textContent = summary || "Upload selesai.";
-  } catch (e) { if (resultEl) resultEl.textContent = e.message; }
 }
 
 
@@ -6818,30 +8316,105 @@ async function refreshAutoDescription(type, content) {
   if (!content) return;
   const autoEl = content.querySelector("#astriBoqPrAutoDesc");
   if (!autoEl) return;
+  const readContext = astriBoqReadContext(type || "cluster");
+  const requestId = autoEl._astriDescriptionRequestId = (autoEl._astriDescriptionRequestId || 0) + 1;
   autoEl.textContent = "Memuat deskripsi...";
   try {
     const scope = type || "cluster";
-    const match = state.astriBoqMatch || state.astriMatch || {};
+    const match = activeAstriScopeMatch(type) || {};
     const adResp = await fetch("/api/astri/boq/auto-description", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ scope, match, items: state.astriBoqItems || [], permit_rt_rw: content.querySelector("#astriBoqPermitRtRw")?.value || "", donation_nominal: state.astriPendingDonation?.nominal || "", donation_vendor: state.astriPendingDonation?.vendor || "" })
+      body: JSON.stringify({ scope, match, items: state.astriBoqItems || [], permit_rt_rw: state.astriBoqPermit?.available ? state.astriBoqPermit.value : "", donation_nominal: state.astriPendingDonation?.nominal || "", donation_vendor: state.astriPendingDonation?.vendor || "" })
     }).then(r => r.json());
+    if (requestId !== autoEl._astriDescriptionRequestId || !astriBoqReadCurrent(readContext)) return;
     autoEl.textContent = adResp.description || "(auto kosong)";
   } catch(e) {
+    if (requestId !== autoEl._astriDescriptionRequestId || !astriBoqReadCurrent(readContext)) return;
     autoEl.textContent = "Gagal muat auto description: " + e.message;
   }
 }
 
+function astriBoqMatchKey(match, type = "cluster") {
+  const scope = String(match?.scope || match?.target_type || type).toLowerCase();
+  const code = String(astriScopeCode(match, scope)).trim();
+  const wo = String(match?.work_order_number || "").trim();
+  if (!match?.matched || !code || !wo) return "";
+  const vendor = (value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const area = scope === "feeder" ? match.osp_route_area || match.area : match.cluster_area || match.area;
+  const plant = scope === "feeder" ? match.osp_route_area_plant_code || match.area_plant_code : match.cluster_area_plant_code || match.area_plant_code;
+  return JSON.stringify([scope, code, wo, vendor(match.vendor_label), String(match.assigned_vendor_name || match.vendor_name || match.vendor_label || ""), String(area || ""), String(plant || ""), String(match.assigned_subcont_vendor_name || "")]);
+}
+
+function astriBoqReadContext(type = state.astriBoqScope || "cluster", match = activeAstriScopeMatch(type)) {
+  return { type, jobId: state.jobId || null, key: astriBoqMatchKey(match, type), requestId: state.astriBoqRequestId };
+}
+
+function astriBoqReadCurrent(context, requireOpen = true) {
+  const modal = document.getElementById(context.type === "subfeeder" ? "astriSubfeederModal" : "astriClusterModal");
+  return context.requestId === state.astriBoqRequestId && context.jobId === (state.jobId || null)
+    && context.type === state.astriBoqScope && context.key === astriBoqMatchKey(activeAstriScopeMatch(context.type), context.type)
+    && (!requireOpen || Boolean(modal && !modal.classList.contains("hidden")));
+}
+
+function astriBoqSetPermit(permit = null, message = "0") {
+  const available = permit?.source === "ASTRI" && permit.available === true
+    && typeof permit.value === "string" && permit.value.trim() !== "";
+  state.astriBoqPermit = { available, value: available ? permit.value : null, message };
+  const content = document.getElementById(state.astriBoqScope === "subfeeder" ? "astriSubfeederContent" : "astriClusterContent");
+  const field = content?.querySelector("#astriBoqPermitRtRw");
+  if (field) field.textContent = available ? permit.value : message;
+}
+
+function isAstriBoqPermitItem(item) {
+  const code = String(item?.code || "").trim().replace(/\.0+$/, "");
+  return code === "500002155" || /\bRT\s*\/\s*RW\b|\bCOMMUNITY\s+PERMIT\b/i.test(String(item?.description || ""));
+}
+
 async function openAstriBoqPreviewFor(type) {
   state.astriBoqScope = type;
+  state.astriBoqRequestId += 1;
+  state.astriBoqSupplierRequestId += 1;
+  state.astriBoqManualRequestId += 1;
+  state.astriBoqItems = [];
+  astriBoqSetPermit();
   const isSubfeeder = type === "subfeeder";
   const isFeeder = type === "feeder";
   const modalId = isSubfeeder ? "astriSubfeederModal" : "astriClusterModal";
   const modal = document.getElementById(modalId);
   const content = document.getElementById(isSubfeeder ? "astriSubfeederContent" : "astriClusterContent");
-  if (!modal || !content) return;
+  if (!modal || !content) {
+    showAstriBoqModalFeedback(type, "Add BOQ gagal", "Form Add BOQ tidak tersedia.", "error");
+    return;
+  }
+  const otherModalId = isSubfeeder ? "astriClusterModal" : "astriSubfeederModal";
+  document.getElementById(otherModalId)?.classList.add("hidden");
+  const otherContent = document.getElementById(isSubfeeder ? "astriClusterContent" : "astriSubfeederContent");
+  if (otherContent) otherContent.innerHTML = "";
   modal.classList.remove("hidden");
-  content.innerHTML = `<div class="text-sm text-zinc-500">Loading...</div>`;
+  content.innerHTML = "";
+  const jobIdAtOpen = state.jobId || null;
+  let jobMatch = activeAstriScopeMatch(type, jobIdAtOpen);
+  const readContext = astriBoqReadContext(type, jobMatch);
+  if (jobIdAtOpen && !jobMatch) {
+    try {
+      jobMatch = await ensureAstriJobMatch(type, jobIdAtOpen);
+      if (!astriBoqReadCurrent(readContext)) return;
+      if (jobMatch) {
+        state.astriBoqMatch = jobMatch;
+        state.astriBoqMatchJobId = jobIdAtOpen;
+        readContext.key = astriBoqMatchKey(jobMatch, type);
+      }
+    } catch (error) {
+      if (!astriBoqReadCurrent(readContext)) return;
+      showAstriBoqModalFeedback(type, "Add BOQ gagal", error.message || "Match ASTRI job tidak tersedia.", "error");
+      return;
+    }
+  }
+  if (!jobIdAtOpen && !jobMatch && !activeAstriScopeMatch(type, null)) {
+    showAstriBoqModalFeedback(type, "Add BOQ", "Cari match ASTRI dulu.", "warning", true);
+    return;
+  }
+  let progress = showAstriBoqDualProgress(type, "Membuka Add BOQ", "Memuat item BOQ dari ASTRI...", true);
   try {
     let payload;
     if (state.jobId) {
@@ -6850,20 +8423,45 @@ async function openAstriBoqPreviewFor(type) {
         : isFeeder
         ? `/api/astri/feeder/boq/preview/${encodeURIComponent(state.jobId)}`
         : `/api/astri/boq/preview/${encodeURIComponent(state.jobId)}`;
-      payload = await fetch(url).then(parseJsonResponse);
-    } else if (state.astriMatch?.matched) {
-      const m = state.astriMatch;
-      const q = new URLSearchParams({ cluster_code: m.cluster_code || "", work_order_number: m.work_order_number || "", vendor_label: m.vendor_label || "", cluster_name: m.cluster_name || "", area: m.area || "", area_plant_code: m.area_plant_code || "" });
-      payload = await fetch(isFeeder ? `/api/astri/feeder/boq/preview/nojob?${q}` : `/api/astri/subfeeder/boq/preview/nojob?${q}`).then(parseJsonResponse);
+      const selected = jobMatch || activeAstriScopeMatch(type, jobIdAtOpen) || {};
+      const query = new URLSearchParams(astriMatchQuery(selected, type));
+      payload = await fetch(`${url}?${query}`).then(parseJsonResponse);
+    } else if (activeAstriScopeMatch(type, null)) {
+      const m = activeAstriScopeMatch(type, null);
+      const scopeQuery = astriMatchQuery(m, type);
+      Object.assign(scopeQuery, {
+        vendor_label: m.vendor_label || "",
+        assigned_vendor_name: m.assigned_vendor_name || "",
+        cluster_name: m.cluster_name || "",
+        subfeeder_name: m.subfeeder_name || "",
+        feeder_name: m.feeder_name || "",
+        area: m.area || "",
+        cluster_area: m.cluster_area || m.area || "",
+        osp_route_area: m.osp_route_area || m.area || "",
+        area_plant_code: m.area_plant_code || "",
+        cluster_area_plant_code: m.cluster_area_plant_code || m.area_plant_code || "",
+        osp_route_area_plant_code: m.osp_route_area_plant_code || m.area_plant_code || "",
+      });
+      const endpoint = type === "feeder" ? "/api/astri/feeder/boq/preview/nojob" : type === "subfeeder" ? "/api/astri/subfeeder/boq/preview/nojob" : "/api/astri/boq/preview/nojob";
+      payload = await fetch(`${endpoint}?${new URLSearchParams(scopeQuery)}`).then(parseJsonResponse);
     } else {
-      content.innerHTML = `<div class="rounded-lg bg-yellow-50 p-3 text-sm font-semibold text-yellow-700">Cari match ASTRI dulu.</div>`;
+      progress?.remove?.();
+      modal.classList.add("hidden");
+      showAstriBoqModalFeedback(type, "Add BOQ", "Cari match ASTRI dulu.", "warning", true);
       return;
     }
-    renderAstriMatch(payload.match);
-    const hasItems = (payload.items || []).length > 0;
+    if (!astriBoqReadCurrent(readContext)) return;
+    const responseMatch = payload.match || {};
+    if (astriBoqMatchKey(responseMatch, type) !== readContext.key) throw new Error("Identitas preview BOQ berbeda dari target terpilih.");
+    renderAstriMatch(responseMatch, jobIdAtOpen);
+    state.astriBoqMatch = responseMatch;
+    state.astriBoqMatchJobId = responseMatch?.matched ? jobIdAtOpen : null;
     let items = await mergeAstriSupplierMap(payload.items || []);
+    if (!astriBoqReadCurrent(readContext)) return;
+    const hasItems = items.length > 0;
     const itemRows = items.map((item, idx) => `
-      <tr class="border-b border-zinc-100">
+      <tr class="border-b border-zinc-100" data-boq-item-code="${escapeHtml(String(item.code || ""))}">
+        <td class="px-2 py-1 text-center"><span data-boq-status-idx="${idx}" role="img" aria-label="Belum dikirim" title="Belum dikirim">—</span></td>
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
         <td class="px-2 py-1">${escapeHtml(item.supplier || "")}</td>
@@ -6875,7 +8473,7 @@ async function openAstriBoqPreviewFor(type) {
     content.innerHTML = `
       <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div class="rounded-lg ${isSubfeeder ? "bg-emerald-50 text-emerald-800" : "bg-indigo-50 text-indigo-800"} p-3 text-sm">
-          <strong>BOQ siap.</strong> File: ${escapeHtml(payload.filename || "-")} &middot; ${payload.total_items || 0} item
+          <strong>BOQ siap.</strong> File: ${escapeHtml(payload.filename || "-")} &middot; ${items.length} item
         </div>
         <label class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 shadow-sm transition hover:bg-sky-100">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
@@ -6883,30 +8481,41 @@ async function openAstriBoqPreviewFor(type) {
           <input id="astriBoqManualFileInput" type="file" accept=".xlsx,.xls" class="hidden">
         </label>
       </div>
-      <div class="mb-3 grid gap-3 md:grid-cols-2">
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center gap-2"><label class="text-xs font-bold text-zinc-700">PR Description</label><button type="button" id="astriCopyPrDesc" class="rounded border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-200 transition">📋 Copy</button></div>
-          <div id="astriBoqPrAutoDesc" class="w-full min-h-24 whitespace-pre-wrap rounded-lg border border-zinc-700/30 bg-zinc-900/40 p-2 text-xs text-zinc-300" style="max-height:200px;overflow:auto">Memuat...</div>
-          <textarea id="astriBoqPrDescription" class="min-h-16 w-full ${astriInput}" placeholder="Override deskripsi PR (kosongkan untuk pakai auto)"></textarea>
-          <label class="block text-[10px] text-zinc-400">Link Attachment (Google Drive):</label>
+      <div class="astri-boq-metadata mb-3">
+        <div class="astri-boq-description">
+          <div class="astri-boq-heading"><span class="text-xs font-bold text-zinc-700">PR Description</span><button type="button" id="astriCopyPrDesc" class="rounded border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-200 transition">📋 Copy</button></div>
+          <div id="astriBoqPrAutoDesc" class="whitespace-pre-wrap rounded-lg border p-3 text-xs" style="max-height:200px;overflow:auto">Memuat...</div>
+        </div>
+        <div class="astri-boq-permit">
+          <div class="astri-boq-heading text-xs font-bold text-zinc-700">Permit RT/RW (ASTRI)</div>
+          <div id="astriBoqPermitRtRw" role="status" aria-label="Permit RT/RW (ASTRI)" class="rounded-lg border px-3 py-2 text-sm">${escapeHtml(state.astriBoqPermit?.available ? state.astriBoqPermit.value : state.astriBoqPermit?.message || '0')}</div>
+        </div>
+        <div class="astri-boq-wide flex flex-col gap-1.5">
+          <label for="astriBoqPrDescription" class="text-xs font-semibold text-zinc-700">Override deskripsi PR <span class="font-normal text-zinc-500">(opsional)</span></label>
+          <textarea id="astriBoqPrDescription" rows="2" class="min-h-16 w-full ${astriInput}" placeholder="Kosongkan untuk pakai deskripsi otomatis"></textarea>
+        </div>
+        <div class="astri-boq-wide flex flex-col gap-1.5">
+          <label for="astriBoqAttachmentLink" class="text-xs font-semibold text-zinc-700">Link Attachment (Google Drive)</label>
           <input id="astriBoqAttachmentLink" type="url" class="w-full ${astriInput}" placeholder="https://drive.google.com/drive/folders/...">
         </div>
-        ${isSubfeeder ? '' : `<label class="text-xs font-bold text-zinc-700">Permit RT/RW
-          <input id="astriBoqPermitRtRw" type="text" class="mt-1 w-full ${astriInput}" placeholder="Isi permit RT/RW jika ada">
-        </label>
         <!-- Plant Code auto -->
-          <input id="astriBoqPlantCode" type="hidden" value="${escapeHtml(payload.match?.area_plant_code || '')}">`}
+        <input id="astriBoqPlantCode" type="hidden" value="${escapeHtml(payload.match?.area_plant_code || '')}">
       </div>
       <div class="mb-3 flex justify-end">
         <button id="astriBoqSubmitButton" type="button" class="rounded-lg ${submitBtnClass} px-4 py-2 text-xs font-bold text-white">Submit Add BOQ</button>
       </div>
       <div class="overflow-x-auto rounded-lg border border-zinc-200">
         <table class="min-w-full text-xs">
-          <thead class="bg-zinc-50 text-left text-zinc-600"><tr><th class="px-2 py-2">Code</th><th class="px-2 py-2">Description</th><th class="px-2 py-2">Supplier</th><th class="px-2 py-2 text-right">Material</th><th class="px-2 py-2 text-right">Service</th><th class="px-2 py-2">Unit</th></tr></thead>
-          <tbody id="astriBoqTableBody">${itemRows || '<tr><td colspan="6" class="p-3 text-zinc-500">Tidak ada item BOQ terisi.</td></tr>'}</tbody>
+          <thead class="bg-zinc-50 text-left text-zinc-600"><tr><th scope="col" class="px-2 py-2 text-center">Status</th><th class="px-2 py-2">Code</th><th class="px-2 py-2">Description</th><th class="px-2 py-2">Supplier</th><th class="px-2 py-2 text-right">Material</th><th class="px-2 py-2 text-right">Service</th><th class="px-2 py-2">Unit</th></tr></thead>
+          <tbody id="astriBoqTableBody">${itemRows || '<tr><td colspan="7" class="p-3 text-zinc-500">Tidak ada item BOQ terisi.</td></tr>'}</tbody>
         </table>
       </div>`;
-    content.querySelector("#astriBoqSubmitButton")?.addEventListener("click", () => submitAstriBoq(state.astriBoqItems || [], type));
+    const boqSubmitButton = content.querySelector("#astriBoqSubmitButton");
+    if (boqSubmitButton) {
+      boqSubmitButton.dataset.astriStatusKey = astriSubmitLockKey(payload.match || state.astriMatch || {});
+      boqSubmitButton.addEventListener("click", () => submitAstriBoq(state.astriBoqItems || [], type));
+    }
+    syncAstriOpenModalWorkOrderStatus(state.astriWorkOrderStatus);
     content.querySelector("#astriCopyPrDesc")?.addEventListener("click", () => {
       const autoDesc = content.querySelector("#astriBoqPrAutoDesc")?.textContent || "";
       const overrideDesc = content.querySelector("#astriBoqPrDescription")?.value || "";
@@ -6921,6 +8530,7 @@ async function openAstriBoqPreviewFor(type) {
     // Auto-refresh description when qty changes (debounced)
     let _descTimer = null;
     content.addEventListener("input", (e) => {
+      if (!astriBoqReadCurrent(readContext)) return;
       if (e.target.classList.contains("astri-boq-qty-mat") || e.target.classList.contains("astri-boq-qty-svc")) {
         const idx = parseInt(e.target.dataset.idx);
         if (!isNaN(idx) && state.astriBoqItems?.[idx]) {
@@ -6933,11 +8543,10 @@ async function openAstriBoqPreviewFor(type) {
     });
     content.querySelector("#astriBoqManualFileInput")?.addEventListener("change", onAstriBoqManualFileUpload);
     state.astriBoqItems = items || [];
-    state.astriBoqMatch = payload.match || state.astriMatch || {};
-    // Fill permit RT/RW + plant code from pending donation lookup (post-render, avoids race with innerHTML rebuild)
+    state.astriBoqMatch = responseMatch;
+    state.astriBoqMatchJobId = responseMatch?.matched ? jobIdAtOpen : null;
+    // Donation remains PR/plant metadata only; permit is the native ASTRI snapshot.
     if (!isSubfeeder && state.astriPendingDonation && state.astriPendingDonation.cluster_code === (state.astriMatch?.cluster_code || "")) {
-      const permitInput = content.querySelector("#astriBoqPermitRtRw");
-      if (permitInput && state.astriPendingDonation) permitInput.value = state.astriPendingDonation.permit_rt_rw;
       const plantInput = content.querySelector("#astriBoqPlantCode");
       const donationPlant = state.astriPendingDonation.area_plant_code || state.astriBoqMatch?.area_plant_code || "";
       if (plantInput && donationPlant) plantInput.value = donationPlant;
@@ -6945,37 +8554,71 @@ async function openAstriBoqPreviewFor(type) {
     }
     // Fetch auto PR description — reusable
     refreshAutoDescription(type, content);
+    progress = showAstriBoqDualFeedback(
+      type,
+      "Add BOQ siap",
+      hasItems ? `${items.length} item BOQ siap diperiksa.` : "Tidak ada item BOQ terisi.",
+      hasItems ? "success" : "warning",
+      true,
+    );
   } catch (error) {
-    content.innerHTML = `<div class="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">${escapeHtml(error.message)}</div>`;
+    if (!astriBoqReadCurrent(readContext)) return;
+    progress = showAstriBoqDualFeedback(type, "Add BOQ gagal", error.message, "error", true);
+    content.innerHTML = "";
   }
 }
 
 
 async function mergeAstriSupplierMap(items) {
-  if (!Array.isArray(items) || !items.length) return items;
+  const readContext = astriBoqReadContext();
+  const requestId = ++state.astriBoqSupplierRequestId;
+  const selectedScope = state.astriBoqScope || "cluster";
+  const requestMatch = { ...(activeAstriScopeMatch(selectedScope) || {}) };
+  const matchKey = astriBoqMatchKey(requestMatch, selectedScope);
+  items = (Array.isArray(items) ? items : []).filter((item) => !isAstriBoqPermitItem(item));
+  astriBoqSetPermit();
   try {
     let url = "";
     if (state.jobId) {
-      url = `/api/astri/boq/supplier-map/${encodeURIComponent(state.jobId)}`;
+      const selected = activeAstriScopeMatch(state.astriBoqScope || "cluster") || {};
+      const scope = state.astriBoqScope || selected.scope || selected.target_type || "cluster";
+      const query = new URLSearchParams(astriMatchQuery(selected, scope));
+      url = selected.matched ? `/api/astri/boq/supplier-map/${encodeURIComponent(state.jobId)}?${query}` : "";
     } else {
-      // Add BOQ modal owns its current ASTRI match. state.astriMatch can be stale/null.
-      const m = state.astriBoqMatch || state.astriMatch || {};
-      if (m.matched && (m.cluster_code || m.feeder_code)) {
+      // No-job Add BOQ still uses the selected match, never a previous job match.
+      const m = activeAstriScopeMatch(state.astriBoqScope || "cluster", null) || {};
+      if (m.matched && (m.cluster_code || m.subfeeder_code || m.feeder_code)) {
+        const scope = state.astriBoqScope || m.scope || m.target_type || "cluster";
         const q = new URLSearchParams({
-          scope: state.astriBoqScope || m.scope || "cluster",
-          cluster_code: m.cluster_code || "",
-          feeder_code: m.feeder_code || "",
-          work_order_number: m.work_order_number || "",
-          vendor_label: m.vendor_label || "",
+          ...astriMatchQuery(m, scope),
+          assigned_vendor_name: m.assigned_vendor_name || "",
+          ...(scope === "feeder" ? {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_label || "",
+            osp_route_area: m.osp_route_area || m.area || "",
+            osp_route_area_plant_code: m.osp_route_area_plant_code || m.area_plant_code || "",
+          } : state.astriBoqScope === "subfeeder" ? {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_label || "",
+            cluster_area: m.cluster_area || m.area || "",
+            cluster_area_plant_code: m.cluster_area_plant_code || m.area_plant_code || "",
+          } : {
+            assigned_vendor_name: m.assigned_vendor_name || m.vendor_name || m.vendor_label || "",
+            vendor_label: m.vendor_label || "",
+            area: m.area || "",
+            area_plant_code: m.area_plant_code || "",
+          }),
           cluster_name: m.cluster_name || "",
-          area: m.area || "",
-          area_plant_code: m.area_plant_code || "",
         });
         url = `/api/astri/boq/supplier-map?${q}`;
       }
     }
     if (!url) return items;
-    const payload = await fetch(url).then(parseJsonResponse);
+    const payload = await fetch(url, { credentials: "include", cache: "no-store" }).then(parseJsonResponse);
+    if (requestId !== state.astriBoqSupplierRequestId || !astriBoqReadCurrent(readContext)) return items;
+    if (!matchKey || astriBoqMatchKey(payload.match, selectedScope) !== matchKey) {
+      astriBoqSetPermit(null, "Permit ASTRI tidak tersedia untuk target ini");
+      return items;
+    }
+    astriBoqSetPermit(payload.permit);
     const suppliers = payload.suppliers || {};
     if (!Object.keys(suppliers).length) return items;
     return items.map((item) => {
@@ -6990,6 +8633,8 @@ async function mergeAstriSupplierMap(items) {
       };
     });
   } catch (error) {
+    if (requestId !== state.astriBoqSupplierRequestId || !astriBoqReadCurrent(readContext)) return items;
+    astriBoqSetPermit(null, "Gagal memuat permit dari ASTRI");
     console.warn("ASTRI supplier map gagal", error);
     return items;
   }
@@ -7000,107 +8645,364 @@ async function onAstriBoqManualFileUpload(event) {
   if (!file) return;
   const tbody = document.getElementById("astriBoqTableBody");
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-zinc-500">Parse BOQ file: ' + escapeHtml(file.name) + '...</td></tr>';
+  const boqType = state.astriBoqScope || (!document.getElementById("astriSubfeederModal")?.classList.contains("hidden") ? "subfeeder" : "cluster");
+  const readContext = astriBoqReadContext(boqType);
+  const requestId = ++state.astriBoqManualRequestId;
+  let progress = showAstriBoqDualProgress(boqType, "Upload BOQ Manual", `Memproses ${file.name}...`, true);
   try {
     const form = new FormData();
     form.append("file", file);
     // Backend uses this match to fetch original ASTRI boq[CODE][vendor_name].
-    const activeAstriMatch = { ...(state.astriBoqMatch || state.astriMatch || {}) };
+    const activeAstriMatch = { ...(activeAstriScopeMatch(state.astriBoqScope || "cluster") || {}) };
     activeAstriMatch.scope = activeAstriMatch.scope || state.astriBoqScope || "cluster";
     form.append("astri_match", JSON.stringify(activeAstriMatch));
     const payload = await fetch("/api/astri/boq/parse-file", {
       method: "POST",
       body: form,
     }).then(parseJsonResponse);
-    let items = payload.items || [];
-    if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-zinc-500">' + escapeHtml(payload.error || "Tidak ada item BOQ ditemukan.") + '</td></tr>';
+    if (requestId !== state.astriBoqManualRequestId || !astriBoqReadCurrent(readContext)) return;
+    if (!(payload.items || []).length) {
+      showAstriBoqDualFeedback(boqType, "Upload BOQ Manual", payload.error || "Tidak ada item BOQ ditemukan.", "warning", true);
       return;
     }
     if ((payload.supplier_mapped || 0) === 0) {
       console.warn("ASTRI supplier map kosong", payload.supplier_error || "no error", payload);
     }
+    const items = await mergeAstriSupplierMap(payload.items || []);
+    if (requestId !== state.astriBoqManualRequestId || !astriBoqReadCurrent(readContext)) return;
     tbody.innerHTML = items.map((item, idx) => `
-      <tr class="border-b border-zinc-100">
+      <tr class="border-b border-zinc-100" data-boq-item-code="${escapeHtml(String(item.code || ""))}">
+        <td class="px-2 py-1 text-center"><span data-boq-status-idx="${idx}" role="img" aria-label="Belum dikirim" title="Belum dikirim">—</span></td>
         <td class="px-2 py-1 font-mono text-xs">${escapeHtml(item.code)}</td>
         <td class="px-2 py-1">${escapeHtml(item.description)}</td>
         <td class="px-2 py-1">${escapeHtml(item.supplier || "")}</td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-mat w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.material_qty || 0))}"></td>
         <td class="px-2 py-1 text-right"><input type="number" step="any" min="0" class="astri-boq-qty-svc w-20 text-right ${astriInput}" data-idx="${idx}" value="${escapeHtml(String(item.service_qty || 0))}"></td>
         <td class="px-2 py-1">${escapeHtml(item.unit || "")}</td>
-      </tr>`).join("");
+      </tr>`).join("") || '<tr><td colspan="7" class="p-3 text-zinc-500">Tidak ada item BOQ terisi.</td></tr>';
     state.astriBoqItems = items;
-    const headerEl = document.querySelector("#astriSubfeederContent .rounded-lg, #astriClusterContent .rounded-lg");
+    const content = document.getElementById(boqType === "subfeeder" ? "astriSubfeederContent" : "astriClusterContent");
+    const headerEl = content?.querySelector(".rounded-lg");
     if (headerEl) headerEl.innerHTML = `<strong>BOQ siap.</strong> File: ${escapeHtml(file.name)} &middot; ${items.length} item`;
     // Refresh auto PR description with new items
-    const boqType = state.astriBoqScope || (!document.getElementById("astriSubfeederModal")?.classList.contains("hidden") ? "subfeeder"
-      : "cluster");
     refreshAutoDescription(boqType);
+    progress = showAstriBoqDualFeedback(boqType, "Upload BOQ Manual selesai", `${items.length} item BOQ siap diperiksa.`, "success", true);
   } catch (error) {
-    tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-red-500">' + escapeHtml(error.message) + '</td></tr>';
+    if (requestId !== state.astriBoqManualRequestId || !astriBoqReadCurrent(readContext)) return;
+    progress = showAstriBoqDualFeedback(boqType, "Upload BOQ Manual gagal", error.message, "error", true);
   }
+}
+
+function updateAstriBoqRowProgress(tbody, payload) {
+  if (!tbody) return;
+  const result = payload?.result || {};
+  const outcomes = new Map();
+  for (const code of result.already_present_codes || []) {
+    outcomes.set(String(code), "success");
+  }
+  for (const item of [...(result.items || []), ...(result.updated_items || [])]) {
+    const code = String(item?.code || "");
+    if (!code) continue;
+    const outcome = item.ok ? "success" : "failure";
+    outcomes.set(code, outcomes.has(code) && outcomes.get(code) !== outcome ? "pending" : outcome);
+  }
+  const terminal = ["done", "partial", "unknown"].includes(payload?.state) || payload?.timed_out;
+  const icons = {
+    untouched: ["—", "text-zinc-400", "Item tidak dikirim ke ASTRI"],
+    pending: ["<svg class=\"inline-block h-4 w-4 animate-spin\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" stroke=\"currentColor\" stroke-width=\"3\" opacity=\".3\"></circle><path d=\"M21 12a9 9 0 0 0-9-9\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\"></path></svg>", "text-sky-600", "Menunggu diproses ASTRI"],
+    success: ["✓", "text-emerald-600 font-bold", "Item berhasil diproses ASTRI"],
+    failure: ["×", "text-red-600 font-bold", "Item gagal diproses ASTRI"],
+  };
+  for (const cell of tbody.querySelectorAll("[data-boq-status-idx]")) {
+    const code = String(cell.closest("tr")?.dataset.boqItemCode || "");
+    const status = outcomes.get(code) || (payload?.state === "blocked-before-mutation" ? "untouched" : "pending");
+    const [symbol, color, defaultLabel] = icons[status];
+    const label = status === "pending" && terminal ? "Status item belum terverifikasi; periksa ASTRI sebelum submit ulang" : defaultLabel;
+    cell.innerHTML = symbol;
+    cell.className = color;
+    cell.setAttribute("aria-label", label);
+    cell.title = status === "pending" && result.active_code === code && !terminal ? "Sedang dikirim ke ASTRI" : label;
+  }
+}
+
+function waitForAstriBoqPoll(delayMs) {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+async function startAstriBoqSubmissionRequest(url, body, onRetry = null) {
+  const serializedBody = JSON.stringify(body);
+  const send = () => fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: serializedBody,
+  }).then(parseJsonResponse);
+  const recoverExisting = (error) => {
+    if (!isAstriBoqExistingSubmissionError(error)) return null;
+    const payload = error?.payload || {};
+    return payload.submission_id ? payload : null;
+  };
+  try {
+    return await send();
+  } catch (firstError) {
+    const existing = recoverExisting(firstError);
+    if (existing) return existing;
+    if (firstError?.status) throw firstError;
+    onRetry?.();
+    try {
+      return await send();
+    } catch (secondError) {
+      const recovered = recoverExisting(secondError);
+      if (recovered) return recovered;
+      if (!secondError?.status) {
+        const recoveredByAttempt = await recoverAstriBoqSubmission(body?.submission_attempt_id);
+        if (recoveredByAttempt) return recoveredByAttempt;
+        secondError.astriOutcomeUnknown = true;
+      }
+      throw secondError;
+    }
+  }
+}
+
+async function recoverAstriBoqSubmission(attemptId, { maxAttempts = 8, intervalMs = 1500 } = {}) {
+  if (!attemptId) return null;
+  const url = `/api/astri/boq/submissions/recover?attempt_id=${encodeURIComponent(attemptId)}`;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { credentials: "include", cache: "no-store" });
+      if (response.ok) {
+        const payload = await response.json();
+        if (payload?.submission_id) return payload;
+      } else if (response.status !== 404) {
+        break;
+      }
+    } catch (_error) {
+      // Keep probing the idempotent recovery endpoint; never resubmit BOQ.
+    }
+    if (attempt + 1 < maxAttempts) await waitForAstriBoqPoll(intervalMs);
+  }
+  return null;
+}
+
+
+async function pollAstriBoqSubmission(
+  submissionId,
+  { onProgress = null, maxAttempts = 240, intervalMs = 3000 } = {},
+) {
+  if (!submissionId) throw new Error("ID proses Add BOQ tidak tersedia.");
+  let lastPayload = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const payload = await fetch(
+        `/api/astri/boq/submissions/${encodeURIComponent(submissionId)}`,
+        { credentials: "include", cache: "no-store" },
+      ).then(parseJsonResponse);
+      lastPayload = payload;
+      onProgress?.(payload);
+      const state = String(payload.state || "");
+      if (["done", "partial", "unknown", "blocked-before-mutation"].includes(state)) return payload;
+    } catch (_error) {
+      // A transient status-read failure cannot prove the upstream mutation failed.
+    }
+    if (attempt + 1 < maxAttempts) await waitForAstriBoqPoll(intervalMs);
+  }
+  return {
+    ...(lastPayload || {}),
+    submission_id: submissionId,
+    state: "running",
+    timed_out: true,
+    message: "Add BOQ masih diproses atau hasilnya belum terbaca. Jangan submit ulang.",
+  };
+}
+
+function astriBoqProgressText(payload) {
+  const processed = Number(payload?.result?.processed_count || 0);
+  if (processed > 0) return `${processed} item sudah diproses. Mohon tunggu...`;
+  return payload?.message || "Add BOQ masih diproses. Mohon tunggu...";
 }
 
 async function submitAstriBoq(items, type) {
   const isSubfeeder = type === "subfeeder";
   const isFeeder = type === "feeder";
-  const resultId = isSubfeeder ? "astriSubfeederResult" : "astriClusterResult";
-  const result = document.getElementById(resultId);
+  const activeBoqMatch = { ...(activeAstriScopeMatch(type) || {}) };
+  const submitJobId = state.jobId;
+  const readContext = astriBoqReadContext(type);
+  const renderedItems = state.astriBoqItems;
   const content = document.getElementById(isSubfeeder ? "astriSubfeederContent" : "astriClusterContent");
-  const prDescription = content?.querySelector("#astriBoqPrDescription")?.value || "";
-  const autoDesc = content?.querySelector("#astriBoqPrAutoDesc")?.textContent || "";
-  const attachmentLink = content?.querySelector("#astriBoqAttachmentLink")?.value || "";
-  const finalPrDescription = (prDescription || autoDesc || "") + (attachmentLink ? "\n\nLink Attachment :\n" + attachmentLink : "");
-  const matInputs = document.querySelectorAll(`#${isSubfeeder ? "astriSubfeederContent" : "astriClusterContent"} .astri-boq-qty-mat`);
-  const svcInputs = document.querySelectorAll(`#${isSubfeeder ? "astriSubfeederContent" : "astriClusterContent"} .astri-boq-qty-svc`);
-  const merged = items.map((item, idx) => ({
-    ...item,
-    material_qty: parseFloat(matInputs[idx]?.value) || 0,
-    service_qty: parseFloat(svcInputs[idx]?.value) || 0,
-  }));
-  if (!confirm("Submit Add BOQ ke ASTRI?")) return;
-  if (result) result.textContent = isSubfeeder ? "Submitting Add BOQ Subfeeder ke ASTRI..." : isFeeder ? "Submitting Add BOQ Feeder ke ASTRI..." : "Submitting Add BOQ Cluster ke ASTRI...";
+  const boqLockKey = astriSubmitLockKey(activeBoqMatch);
+  const activeSubmitButton = content?.querySelector("#astriBoqSubmitButton");
+  const submitLoading = setAstriSubmitLoading(
+    activeSubmitButton,
+    "Memeriksa status...",
+    boqLockKey,
+  );
+  if (!submitLoading) return;
+  document.getElementById("astriBoqResult")?.remove();
+  lockAstriBoqSiblingControls(boqLockKey, activeSubmitButton);
+  let progress = showAstriBoqDualProgress(type, "Add BOQ", "Memeriksa status WO ASTRI...", true);
+  let keepSubmitLocked = false;
+  let expectedWoStatus = "";
+  let boqTableBody = null;
+  let lastRowPayload = null;
   try {
-    let url, body;
-    if (state.jobId) {
-      url = isSubfeeder
-        ? `/api/astri/subfeeder/boq/submit/${encodeURIComponent(state.jobId)}`
-        : isFeeder
-        ? `/api/astri/feeder/boq/submit/${encodeURIComponent(state.jobId)}`
-        : `/api/astri/boq/submit/${encodeURIComponent(state.jobId)}`;
-      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged };
-    } else if (state.astriMatch?.matched) {
-      url = isSubfeeder ? "/api/astri/subfeeder/boq/submit" : isFeeder ? "/api/astri/feeder/boq/submit" : "/api/astri/boq/submit";
-      body = { pr_description: finalPrDescription, permit_rt_rw: content?.querySelector("#astriBoqPermitRtRw")?.value || "", attachment_link: attachmentLink, items: merged, match: state.astriMatch };
-    } else {
-      if (result) result.textContent = "Match ASTRI tidak ditemukan.";
+    const prDescription = content?.querySelector("#astriBoqPrDescription")?.value || "";
+    const autoDesc = content?.querySelector("#astriBoqPrAutoDesc")?.textContent || "";
+    const attachmentLink = content?.querySelector("#astriBoqAttachmentLink")?.value || "";
+    const finalPrDescription = (prDescription || autoDesc || "") + (attachmentLink ? "\n\nLink Attachment :\n" + attachmentLink : "");
+    const matInputs = content?.querySelectorAll(".astri-boq-qty-mat") || [];
+    const svcInputs = content?.querySelectorAll(".astri-boq-qty-svc") || [];
+    const merged = items.map((item, idx) => ({
+      ...item,
+      material_qty: parseFloat(matInputs[idx]?.value) || 0,
+      service_qty: parseFloat(svcInputs[idx]?.value) || 0,
+    })).filter((item) => !isAstriBoqPermitItem(item));
+    const renderedTable = content?.querySelector("#astriBoqTableBody");
+    const status = await refreshAstriWorkOrderStatus({ matchOverride: activeBoqMatch });
+    if (!astriBoqReadCurrent(readContext) || renderedItems !== state.astriBoqItems
+      || activeSubmitButton !== content?.querySelector("#astriBoqSubmitButton")
+      || renderedTable !== content?.querySelector("#astriBoqTableBody")) return;
+    if (status.successful) {
+      keepSubmitLocked = true;
+      submitLoading.update(`Status WO ASTRI sudah ${status.latest_status_label || "Successful"}`);
       return;
     }
-    const payload = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).then(parseJsonResponse);
-    const okCount = (payload.inserted || []).filter((item) => item.ok).length;
-    const skippedCount = (payload.inserted || []).filter((item) => item.skipped_no_price).length;
-    const overrideCount = (payload.inserted || []).filter((item) => item.ok && item.override_used).length;
-    const failCount = (payload.inserted || []).filter((item) => !item.ok && !item.skipped_no_price).length;
-    const total = (payload.inserted || []).length;
-    const parts = [`${okCount}/${total} OK`];
-    if (overrideCount) parts.push(`${overrideCount} via override-price`);
-    if (skippedCount) parts.push(`${skippedCount} skipped (no price)`);
-    if (failCount) parts.push(`${failCount} gagal`);
-    if (result) {
-      result.textContent = payload.ok && payload.close_ok
-        ? `Add BOQ done [${parts.join(", ")}], WO closed.`
-        : `Add BOQ belum lengkap [${parts.join(", ")}]. WO tidak di-close.`;
+    if (!confirm("Submit Add BOQ ke ASTRI?")) return;
+    boqTableBody = content?.querySelector("#astriBoqTableBody");
+    updateAstriBoqRowProgress(boqTableBody, { state: "queued" });
+    const scopeLabel = isSubfeeder ? "Subfeeder" : isFeeder ? "Feeder" : "Cluster";
+    submitLoading.update(`Mengirim Add BOQ ${scopeLabel} ke ASTRI...`);
+    progress?.remove?.();
+    progress = showAstriBoqDualProgress(type, "Add BOQ", `Mengirim Add BOQ ${scopeLabel} ke ASTRI...`, true);
+    let url, body;
+    if (submitJobId) {
+      url = isSubfeeder
+        ? `/api/astri/subfeeder/boq/submit/${encodeURIComponent(submitJobId)}`
+        : isFeeder
+        ? `/api/astri/feeder/boq/submit/${encodeURIComponent(submitJobId)}`
+        : `/api/astri/boq/submit/${encodeURIComponent(submitJobId)}`;
+      body = { pr_description: finalPrDescription, attachment_link: attachmentLink, items: merged, match: activeBoqMatch };
+    } else if (activeBoqMatch?.matched) {
+      url = isSubfeeder ? "/api/astri/subfeeder/boq/submit" : isFeeder ? "/api/astri/feeder/boq/submit" : "/api/astri/boq/submit";
+      body = { pr_description: finalPrDescription, attachment_link: attachmentLink, items: merged, match: activeBoqMatch };
+    } else {
+      showAstriBoqModalFeedback(type, "Add BOQ", "Match ASTRI tidak ditemukan.", "warning", true);
+      return;
     }
-    if (payload.ok) {
-      const mId = isSubfeeder ? "astriSubfeederModal" : "astriClusterModal";
-      setTimeout(() => document.getElementById(mId)?.classList.add("hidden"), 2000);
+    const submissionAttemptId = window.crypto?.randomUUID?.();
+    if (!submissionAttemptId) throw new Error("Browser tidak mendukung ID proses Add BOQ yang aman.");
+    body.submission_attempt_id = submissionAttemptId;
+    const started = await startAstriBoqSubmissionRequest(url, body, () => {
+      submitLoading.update("Menghubungkan ulang ke proses Add BOQ...");
+      progress?.remove?.();
+      progress = showAstriBoqDualProgress(
+        type,
+        "Add BOQ masih diproses",
+        "Koneksi sempat terputus. EVA sedang mengambil proses yang sama. Jangan submit ulang.",
+        true,
+      );
+    });
+    if (!started.submission_id) throw new Error("Server tidak mengembalikan ID proses Add BOQ.");
+    submitLoading.update("Add BOQ sedang diproses...");
+    progress?.remove?.();
+    progress = showAstriBoqDualProgress(
+      type,
+      "Add BOQ masih diproses",
+      "Request sudah diterima. Jangan submit ulang; tunggu hasil ASTRI.",
+      true,
+    );
+    const payload = await pollAstriBoqSubmission(started.submission_id, {
+      onProgress: (current) => {
+        lastRowPayload = current;
+        updateAstriBoqRowProgress(boqTableBody, current);
+        submitLoading.update("Add BOQ sedang diproses...");
+        progress?.remove?.();
+        progress = showAstriBoqDualProgress(type, "Add BOQ masih diproses", astriBoqProgressText(current), true);
+      },
+    });
+    updateAstriBoqRowProgress(boqTableBody, payload);
+    const stateName = String(payload.state || "");
+    const result = payload.result || {};
+    const skippedCodes = Array.from(new Set(
+      (Array.isArray(result.skipped_codes) ? result.skipped_codes : [])
+        .concat((Array.isArray(result.skipped_items) ? result.skipped_items : []).map((item) => item && item.code))
+        .map((code) => String(code || "").trim())
+        .filter(Boolean),
+    ));
+    const updatedItems = Array.isArray(result.updated_items) ? result.updated_items : [];
+    const vendorMismatches = Array.isArray(result.vendor_mismatches) ? result.vendor_mismatches : [];
+    const overwriteLines = updatedItems.map((item) => {
+      const before = item.before || {};
+      const after = item.after || {};
+      return `${item.code || "-"}: material ${before.quantity_material || 0} → ${after.quantity_material || 0}; service ${before.quantity_service || 0} → ${after.quantity_service || 0}`;
+    });
+    const overwriteNotice = overwriteLines.length
+      ? `\nQty overwrite (${overwriteLines.length}):\n${overwriteLines.join("\n")}`
+      : "";
+    const vendorNotice = vendorMismatches.length
+      ? `\nVendor tidak diubah (${vendorMismatches.length}): ${vendorMismatches.map((item) => `${item.code}: ${item.vendor_before || "-"} → ${item.vendor_target || "-"}`).join("; ")}`
+      : "";
+    const parts = [`${Number(result.ok_count || 0)}/${Number(result.processed_count || 0)} OK`];
+    if (Number(result.updated_count || 0)) parts.push(`${Number(result.updated_count)} qty di-update`);
+    if (Number(result.inserted_count || 0)) parts.push(`${Number(result.inserted_count)} item baru`);
+    if (Number(result.already_present_count || 0)) parts.push(`${Number(result.already_present_count)} sudah sama`);
+    if (Number(result.skipped_count || 0)) parts.push(`${Number(result.skipped_count)} skipped`);
+    if (Number(result.failed_count || 0)) parts.push(`${Number(result.failed_count)} gagal`);
+    const boqCompleted = stateName === "done" && payload.close_ok === true;
+    const uncertain = stateName === "partial" || stateName === "unknown" || payload.timed_out;
+    const statusBlocked = stateName === "blocked-before-mutation"
+      && String(payload.error_code || "").includes("WO_");
+    if (boqCompleted) {
+      expectedWoStatus = "Closed";
+      showAstriBoqDualFeedback(type, "Add BOQ sukses", `${payload.message || "WO sudah Closed."}\n${parts.join(", ")}.${overwriteNotice}${vendorNotice}`, "success", true);
+      showAstriBoqCardResult(type, activeBoqMatch, true, submitJobId);
+    } else if (uncertain) {
+      keepSubmitLocked = true;
+      const uncertainBase = payload.message || "Hasil belum dapat dipastikan. Jangan submit ulang; periksa ASTRI.";
+      const uncertainMessage = `${skippedCodes.length && !/pricelist/i.test(uncertainBase)
+        ? `${uncertainBase}\nPricelist not available: ${skippedCodes.join(", ")}`
+        : uncertainBase}${overwriteNotice}${vendorNotice}`;
+      showAstriBoqDualFeedback(type, "Hasil Add BOQ perlu dicek", uncertainMessage, "warning", true);
+    } else if (statusBlocked) {
+      showAstriBoqCardResult(type, activeBoqMatch, false, submitJobId);
+    } else {
+      showAstriBoqDualFeedback(type, "Add BOQ tidak dijalankan", payload.message || "Belum ada data yang dikirim ke ASTRI.", "warning", true);
+      showAstriBoqCardResult(type, activeBoqMatch, false, submitJobId);
     }
   } catch (error) {
-    if (result) result.textContent = error.message;
+    if (boqTableBody) updateAstriBoqRowProgress(boqTableBody, {
+      ...(lastRowPayload || {}), state: "unknown",
+    });
+    if (error?.astriOutcomeUnknown || isAstriBoqExistingSubmissionError(error)) {
+      keepSubmitLocked = true;
+      showAstriBoqDualFeedback(
+        type,
+        "Add BOQ masih diproses",
+        "Koneksi ke EVA terputus sebelum ID proses terbaca. Jangan submit ulang; refresh status WO/ASTRI terlebih dahulu.",
+        "warning",
+        true,
+      );
+    } else {
+      showAstriBoqCardResult(type, activeBoqMatch, false, submitJobId);
+      const handled = handleAstriMutationError(error, "Add BOQ gagal");
+      if (!handled) showAstriBoqDualFeedback(type, "Add BOQ gagal", error?.message || "Request gagal diproses.", "error", true);
+    }
+  } finally {
+    progress?.remove?.();
+    if (astriBoqReadCurrent(readContext, false)) await refreshAstriWorkOrderStatusAfterAction(activeBoqMatch, expectedWoStatus);
+    if (keepSubmitLocked) {
+      submitLoading.update("Cek status ASTRI sebelum retry");
+    } else {
+      submitLoading.restore();
+      applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+      const boqSubmitButton = astriBoqReadCurrent(readContext) ? content?.querySelector("#astriBoqSubmitButton") : null;
+      applyAstriModalSubmitWorkOrderStatus(
+        boqSubmitButton,
+        astriSubmitMatchesStatusIdentity(boqSubmitButton, state.astriWorkOrderStatus)
+          ? state.astriWorkOrderStatus
+          : null,
+        "addboq",
+      );
+    }
   }
 }
 
@@ -7160,6 +9062,10 @@ async function submitAstriBoq(items, type) {
     boot();
   }
   setTimeout(() => { try { renderValidationSummary(); } catch (_) {} }, 0);
+
+  // Main-workspace callbacks live outside this ASTRI IIFE.
+  window.clearAstriMatchContext = clearAstriMatchContext;
+  window.setCurrentJobId = setCurrentJobId;
 })();
 
 // Notification/global helper shim restored by agent.
@@ -7176,10 +9082,8 @@ async function submitAstriBoq(items, type) {
     return root;
   }
   function show(title, message, tone) {
-    if (window.showNotification) {
-      return window.showNotification({ title, message, severity: tone === "error" ? "error" : tone === "warning" ? "warning" : tone === "success" ? "success" : "info" });
-    }
-    return null;
+    if (tone !== "error" || !window.showNotification) return null;
+    return window.showNotification({ title, message, severity: "error" });
   }
   window.setStatus = window.setStatus || function (label, message, tone) {
     const statusBadge = document.getElementById("statusBadge");
