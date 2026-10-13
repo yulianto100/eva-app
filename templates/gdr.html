@@ -97,70 +97,100 @@
     @media (max-width: 820px) { .gx-grid { grid-template-columns: 1fr 1fr; } .gx-field.col2, .gx-field.col3, .gx-span-full { grid-column: 1 / -1; } }
     @media (max-width: 560px) { .gx-grid { grid-template-columns: 1fr; } .pr-cluster-fields { grid-template-columns: 1fr; } .pr-cluster-fields .remove-btn { width: 100%; } .astri-search-bar { grid-template-columns: 1fr; } .material-row { grid-template-columns: 1fr 4.5rem 2rem; } .material-row .muted { display: none; } }
   </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/gdr-scoped.css') }}?v=gdr-astri-popup-20260926-0927">
+  <script>
+    if (window.parent !== window) document.documentElement.classList.add('gdr-embedded');
+  </script>
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
 </head>
-<body>
+<body class="gdr-workspace">
   <main class="gx-page">
-    <header class="gx-header">
+    <header class="gx-header gdr-page-header">
       <div>
-        <h1>GDR Dashboard</h1>
-        <p>Buat GDR manual, isi material, kelola vendor, dan generate dokumen.</p>
+        <div class="gdr-eyebrow">DOCUMENT CONTROL / GDR</div>
+        <h1>Generate GDR</h1>
+        <p>Pilih Target ASTRI, cek Work Order Number, lalu Generate GDR.</p>
       </div>
-      <a href="/" class="gx-back" id="backToEvaLink">Kembali</a>
+      <a href="/" class="gx-back" id="backToEvaLink">Kembali ke EVA</a>
     </header>
 
-    <section class="gx-card">
-      <div class="gdr-tabs">
-        <button class="gdr-tab active" data-tab="create">Buat GDR</button>
-        <button class="gdr-tab" data-tab="vendors">Kelola Vendor</button>
-        <button class="gdr-tab" data-tab="history">Riwayat GDR</button>
+    <section class="gx-card gdr-workspace-card">
+      <div class="gdr-tabs" role="tablist" aria-label="GDR workspace">
+        <button class="gdr-tab active" id="gdrTabCreate" role="tab" aria-selected="true" aria-controls="tab-create" data-tab="create">Buat GDR</button>
+        <button class="gdr-tab" id="gdrTabVendors" role="tab" aria-selected="false" aria-controls="tab-vendors" data-tab="vendors" tabindex="-1">Kelola vendor</button>
+        <button class="gdr-tab" id="gdrTabHistory" role="tab" aria-selected="false" aria-controls="tab-history" data-tab="history" tabindex="-1">Riwayat</button>
       </div>
 
       <!-- TAB: Buat GDR -->
-      <div class="gdr-tab-content active" id="tab-create">
+      <div class="gdr-tab-content active" id="tab-create" role="tabpanel" aria-labelledby="gdrTabCreate">
+        <nav class="gdr-flow" aria-label="Alur membuat GDR">
+          <span class="gdr-flow-step is-current"><b>01</b> Target ASTRI</span>
+          <span class="gdr-flow-rule" aria-hidden="true"></span>
+          <span class="gdr-flow-step"><b>02</b> Work Order Number</span>
+          <span class="gdr-flow-rule" aria-hidden="true"></span>
+          <span class="gdr-flow-step"><b>03</b> Material</span>
+          <span class="gdr-flow-rule" aria-hidden="true"></span>
+          <span class="gdr-flow-step"><b>04</b> Generate</span>
+        </nav>
         <section class="gdr-section pr">
           <div class="gdr-section-head">
-            <h2 class="gdr-section-title">Informasi GDR</h2>
-            <span class="gdr-section-hint">PR + Cluster bisa lebih dari satu</span>
+            <div>
+              <span class="gdr-section-index">01 / 02</span>
+              <h2 class="gdr-section-title">Target &amp; Work Order</h2>
+            </div>
+            <span class="gdr-section-hint">Target Code, Target Name, Work Order Number, Assigned Vendor</span>
           </div>
           <div class="gx-grid">
-            <div class="gx-field col3"><label for="gdrVendor">Vendor</label><select id="gdrVendor" class="ui-input"><option value="">Pilih Vendor</option></select></div>
+            <div class="gx-field col2 gdr-primary-field"><label for="gdrVendor">Assigned Vendor</label><select id="gdrVendor" class="ui-input"><option value="">Select assigned vendor</option></select></div>
             <div id="prClusterList" class="pr-cluster-list"></div>
-            <button type="button" class="add-mat-btn gx-span-full" id="addPrClusterBtn">+ Tambah PR / Cluster</button>
-            <div class="gx-field"><label for="gdrNumber">No. GDR</label><input id="gdrNumber" class="ui-input" placeholder="Auto generate" readonly></div>
+            <button type="button" class="add-mat-btn gx-span-full" id="addPrClusterBtn">+ Add Target</button>
+            <div class="gx-field"><label for="gdrNumber">GDR Number</label><input id="gdrNumber" class="ui-input" placeholder="Auto generated" readonly></div>
             <div class="gx-field"><label for="gdrArea">Area</label><input id="gdrArea" class="ui-input" placeholder="BEKASI"></div>
-            <div class="gx-field"><label for="gdrDate">Tanggal</label><input id="gdrDate" class="ui-input" type="date"></div>
+            <div class="gx-field"><label for="gdrDate">Date</label><input id="gdrDate" class="ui-input" type="date"></div>
             <div class="gx-field"><label for="gdrPmo">PMO</label><input id="gdrPmo" class="ui-input" placeholder="NRO"></div>
-            <div class="gx-field"><label for="gdrRequestName">Request by - Name</label><input id="gdrRequestName" class="ui-input" placeholder="Nandi"></div>
-            <div class="gx-field"><label for="gdrRequestMobile">Request by - Mobile</label><input id="gdrRequestMobile" class="ui-input" placeholder="0857..."></div>
-            <div class="gx-field"><label for="gdrApproveName">Approve by - Name</label><input id="gdrApproveName" class="ui-input" placeholder="Albertus..."></div>
-            <div class="gx-field"><label for="gdrApproveMobile">Approve by - Mobile</label><input id="gdrApproveMobile" class="ui-input" placeholder="0818..."></div>
+            <div class="gx-field"><label for="gdrRequestName">Request By — Name</label><input id="gdrRequestName" class="ui-input" placeholder="Request By name"></div>
+            <div class="gx-field"><label for="gdrRequestMobile">Request By — Mobile</label><input id="gdrRequestMobile" class="ui-input" placeholder="Request By mobile"></div>
+            <div class="gx-field"><label for="gdrApproveName">Approve By — Name</label><input id="gdrApproveName" class="ui-input" placeholder="Approve By name"></div>
+            <div class="gx-field"><label for="gdrApproveMobile">Approve By — Mobile</label><input id="gdrApproveMobile" class="ui-input" placeholder="Approve By mobile"></div>
           </div>
         </section>
 
         <section class="gdr-section material">
           <div class="gdr-section-head">
-            <h2 class="gdr-section-title">Material</h2>
-            <button type="button" id="fetchAstriMaterialsBtn" class="secondary-button" style="font-size:.7rem;padding:.2rem .5rem;">Ambil dari ASTRI</button>
-          <span class="gdr-section-hint">Pilih item dan qty</span>
+            <div>
+              <span class="gdr-section-index">03</span>
+              <h2 class="gdr-section-title">Material</h2>
+            </div>
+            <div class="gdr-section-tools">
+              <span class="gdr-section-hint">Select material and quantity</span>
+              <button type="button" id="fetchAstriMaterialsBtn" class="secondary-button gdr-inline-action">Ambil dari ASTRI</button>
+            </div>
           </div>
           <div id="materialList"></div>
-          <button type="button" class="add-mat-btn" id="addMaterialBtn">+ Tambah Material</button>
+          <button type="button" class="add-mat-btn" id="addMaterialBtn">+ Tambah material</button>
         </section>
 
-        <div class="gx-actions">
-          <button type="button" class="btn-primary" id="generateGdrBtn">Generate GDR</button>
-          <button type="button" class="secondary-button" id="clearGdrBtn">Kosongkan</button>
-          <span id="gdrStatus"></span>
+        <div class="gx-actions gdr-submit-area">
+          <div class="gdr-submit-copy"><span class="gdr-section-index">04</span><strong>Dokumen siap?</strong><span>Generate setelah sumber dan material lengkap.</span></div>
+          <div class="gdr-submit-buttons">
+            <button type="button" class="btn-primary" id="generateGdrBtn">Generate GDR</button>
+            <button type="button" class="secondary-button" id="clearGdrBtn">Kosongkan</button>
+          </div>
+          <span id="gdrStatus" aria-live="polite"></span>
         </div>
       </div>
 
       <!-- TAB: Kelola Vendor -->
-      <div class="gdr-tab-content" id="tab-vendors">
+      <div class="gdr-tab-content" id="tab-vendors" role="tabpanel" aria-labelledby="gdrTabVendors">
+        <p class="muted">Vendor, alamat dan PIC di sini hanya untuk akun lo. Pengguna lain tidak bisa mengaksesnya; owner dapat mengelola lewat dashboard admin.</p>
         <div class="gx-grid">
           <div class="gx-field"><label for="vendorCode">Kode Vendor</label><input id="vendorCode" class="ui-input" placeholder="ITM, DBI, ALM..."></div>
           <div class="gx-field col2"><label for="vendorName">Nama Vendor + Area</label><input id="vendorName" class="ui-input" placeholder="ITM BEKASI"></div>
-          <div class="gx-field col3"><label for="vendorOrigin">Origin</label><input id="vendorOrigin" class="ui-input" placeholder="EMR"></div>
-          <div class="gx-field col3"><label for="vendorDest">Destination</label><input id="vendorDest" class="ui-input" placeholder="Alamat lengkap"></div>
+          <div class="gx-field col3"><label for="vendorOrigin">Alamat asal / Origin</label><input id="vendorOrigin" class="ui-input" placeholder="EMR"></div>
+          <div class="gx-field col3"><label for="vendorDest">Alamat tujuan / Destination</label><input id="vendorDest" class="ui-input" placeholder="Alamat lengkap"></div>
           <div class="gx-field col3"><label for="vendorPic">PIC</label><input id="vendorPic" class="ui-input" placeholder="Nama - telp - email"></div>
         </div>
         <div class="gx-actions">
@@ -177,8 +207,8 @@
       </div>
 
       <!-- TAB: Riwayat -->
-      <div class="gdr-tab-content" id="tab-history">
-        <p class="muted" style="margin-top:0;">Riwayat GDR yang sudah digenerate.</p>
+      <div class="gdr-tab-content" id="tab-history" role="tabpanel" aria-labelledby="gdrTabHistory">
+        <p class="muted" style="margin-top:0;">Riwayat GDR yang dibuat oleh akun lo. Pengguna lain tidak dapat melihat atau mengunduhnya.</p>
         <div class="gx-table-wrap">
           <table>
             <thead><tr><th>No. GDR</th><th>Vendor</th><th>Tanggal</th><th>PR</th><th>Cluster</th><th>Items</th><th>Aksi</th></tr></thead>
@@ -188,7 +218,7 @@
       </div>
     </section>
   </main>
-<script src="/static/js/toast.js?v=glass-mint-transparent-20260630b"></script>
+<script src="/static/js/toast.js?v=popup-neutral-20260819-211055"></script>
 <script>
 document.getElementById('backToEvaLink')?.addEventListener('click', (event) => {
   if (window.parent && window.parent !== window) {
@@ -197,18 +227,33 @@ document.getElementById('backToEvaLink')?.addEventListener('click', (event) => {
   }
 });
 
-// Tabs
-document.querySelectorAll('.gdr-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.gdr-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.gdr-tab-content').forEach(c => c.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+// Tabs: one selected tab and one visible, labelled panel.
+const gdrTabs = [...document.querySelectorAll('.gdr-tab')];
+function selectGdrTab(tab, moveFocus = false) {
+  gdrTabs.forEach(t => {
+    const selected = t === tab;
+    t.classList.toggle('active', selected);
+    t.setAttribute('aria-selected', String(selected));
+    t.tabIndex = selected ? 0 : -1;
+    document.getElementById(t.getAttribute('aria-controls')).classList.toggle('active', selected);
+  });
+  if (moveFocus) tab.focus();
+}
+gdrTabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => selectGdrTab(tab));
+  tab.addEventListener('keydown', event => {
+    const next = event.key === 'ArrowRight' ? (index + 1) % gdrTabs.length
+      : event.key === 'ArrowLeft' ? (index + gdrTabs.length - 1) % gdrTabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? gdrTabs.length - 1 : -1;
+    if (next === -1) return;
+    event.preventDefault();
+    selectGdrTab(gdrTabs[next], true);
   });
 });
 
 function escapeHtml(v){ return String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function api(url, opts={}){ const r=await fetch(url,{credentials:'include',...opts}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||r.statusText); return d; }
+function popupFeedback(title, message, severity='info'){ return window.evaPopupFeedback?.({title,message,severity}); }
 
 // Material definitions (same as bot)
 const MATERIALS = [
@@ -289,21 +334,29 @@ function renderPrClusters() {
   const list = document.getElementById('prClusterList');
   list.innerHTML = prClusterRows.map((row, idx) => `
     <div class="pr-cluster-row" data-pr-idx="${idx}">
-      <div class="astri-search-bar">
-        <div class="gx-field"><label>Cari di ASTRI</label><input id="astriSearch_${idx}" data-idx="${idx}" class="ui-input astri-search-input" placeholder="Ketik nama/kode cluster, subfeeder, feeder..."></div>
-        <div class="gx-field"><label>Tipe</label><select id="astriType_${idx}" data-idx="${idx}" class="ui-input astri-type-select">
-          <option value="auto">Auto</option>
-          <option value="cluster">Cluster</option>
-          <option value="subfeeder">Subfeeder</option>
-          <option value="feeder">Feeder</option>
-        </select></div>
-        <button type="button" class="btn-astri-search" data-idx="${idx}" data-search-astri="1">🔍 Cari</button>
+      <div class="gdr-source-row-head">
+        <div class="gdr-source-row-title"><span class="gdr-row-number">${String(idx + 1).padStart(2, '0')}</span><div><strong>Target</strong><span>Target Code / Target Name dari ASTRI, atau isi manual.</span></div></div>
+        ${prClusterRows.length > 1 ? `<button type="button" class="remove-btn gdr-row-remove" data-remove-pr-cluster="${idx}" aria-label="Remove target">Remove</button>` : ''}
       </div>
-      <div id="astriResults_${idx}" class="astri-results"></div>
+      <div class="astri-search-panel">
+        <div class="gdr-search-heading"><div><strong>Search Target di ASTRI</strong><span>Hasil pilihan mengisi PR Number, Target Name, dan Work Order Number.</span></div><span class="gdr-optional">OPTIONAL</span></div>
+        <div class="astri-search-bar">
+          <div class="gx-field"><label for="astriSearch_${idx}">Target Code / Target Name</label><input id="astriSearch_${idx}" data-idx="${idx}" class="ui-input astri-search-input" placeholder="Contoh: BKS005244 atau Target Name"></div>
+          <div class="gx-field"><label for="astriType_${idx}">Target Type</label><select id="astriType_${idx}" data-idx="${idx}" class="ui-input astri-type-select">
+            <option value="auto">Semua scope</option>
+            <option value="cluster">Cluster</option>
+            <option value="subfeeder">Subfeeder</option>
+            <option value="feeder">Feeder</option>
+          </select></div>
+          <button type="button" class="btn-astri-search" data-idx="${idx}" data-search-astri="1">Search ASTRI</button>
+        </div>
+        <div id="astriResults_${idx}" class="astri-results"></div>
+      </div>
       <div class="pr-cluster-fields">
-        <div class="gx-field"><label for="prNumber_${idx}">PR Number</label><input id="prNumber_${idx}" data-idx="${idx}" class="ui-input pr-number-input" placeholder="Auto dari ASTRI / manual" value="${escapeHtml(row.pr_number)}"></div>
-        <div class="gx-field"><label for="cluster_${idx}">Cluster / Roll Out</label><input id="cluster_${idx}" data-idx="${idx}" class="ui-input cluster-input" placeholder="Auto dari ASTRI / manual" value="${escapeHtml(row.cluster)}"></div>
-        ${prClusterRows.length > 1 ? `<button type="button" class="remove-btn" data-remove-pr-cluster="${idx}" aria-label="Hapus PR Cluster">×</button>` : '<span></span>'}
+        <div class="gx-field"><label for="prNumber_${idx}">PR Number</label><input id="prNumber_${idx}" data-idx="${idx}" class="ui-input pr-number-input" placeholder="Enter PR Number" value="${escapeHtml(row.pr_number)}"></div>
+        <div class="gx-field"><label for="cluster_${idx}">Target Name</label><input id="cluster_${idx}" data-idx="${idx}" class="ui-input cluster-input" placeholder="Cluster / Subfeeder / Feeder" value="${escapeHtml(row.cluster)}"></div>
+        <div class="gx-field"><label for="workOrder_${idx}">Work Order Number</label><input id="workOrder_${idx}" class="ui-input" placeholder="Auto from ASTRI" value="${escapeHtml(row.work_order_number || '')}" readonly></div>
+        <span class="gdr-field-note">PR Number + Target Name required</span>
       </div>
     </div>
   `).join('');
@@ -435,7 +488,10 @@ async function loadVendors() {
   try {
     const data = await api('/api/gdr/vendors');
     vendors = data.vendors || {};
-  } catch { vendors = {}; }
+  } catch (err) {
+    vendors = {};
+    document.getElementById('gdrStatus').textContent = 'Gagal memuat vendor: ' + err.message;
+  }
   renderVendorSelect();
   renderVendorTable();
 }
@@ -473,7 +529,7 @@ document.getElementById('vendorTableBody').addEventListener('click', async (e) =
     document.getElementById('vendorPic').value = (v.pic||'').replace(/^:\s*/,'');
   }
   if (del && confirm(`Hapus vendor ${del}?`)) {
-    await api(`/api/gdr/vendors/${del}`, { method: 'DELETE' });
+    await api(`/api/gdr/vendors/${encodeURIComponent(del)}`, { method: 'DELETE' });
     await 
 loadVendors();
   }
@@ -481,14 +537,14 @@ loadVendors();
 
 document.getElementById('saveVendorBtn').addEventListener('click', async () => {
   const code = document.getElementById('vendorCode').value.trim().toUpperCase();
-  if (!code) return alert('Kode vendor wajib diisi');
+  if (!code) return popupFeedback('Vendor GDR', 'Kode vendor wajib diisi', 'warning');
   const data = {
     vendor_name: ': ' + document.getElementById('vendorName').value.trim(),
     origin: ': ' + (document.getElementById('vendorOrigin').value.trim() || 'EMR'),
     destination: ': ' + document.getElementById('vendorDest').value.trim(),
     pic: ': ' + document.getElementById('vendorPic').value.trim(),
   };
-  await api(`/api/gdr/vendors/${code}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  await api(`/api/gdr/vendors/${encodeURIComponent(code)}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
   ['vendorCode','vendorName','vendorOrigin','vendorDest','vendorPic'].forEach(id => document.getElementById(id).value = '');
   await 
 loadVendors();
@@ -500,10 +556,14 @@ document.getElementById('clearVendorBtn').addEventListener('click', () => {
 // Generate GDR
 document.getElementById('generateGdrBtn').addEventListener('click', async () => {
   const vendor = document.getElementById('gdrVendor').value;
-  if (!vendor) return alert('Pilih vendor dulu');
+  if (!vendor) return popupFeedback('GDR', 'Pilih vendor dulu', 'warning');
   const items = materialRows.filter(m => m.name && m.qty > 0);
-  if (!items.length) return alert('Tambah minimal 1 material');
+  if (!items.length) return popupFeedback('GDR', 'Tambah minimal 1 material', 'warning');
   const status = document.getElementById('gdrStatus');
+  const button = document.getElementById('generateGdrBtn');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
   status.textContent = 'Generating...';
   try {
     const result = await api('/api/gdr/generate', {
@@ -523,9 +583,7 @@ document.getElementById('generateGdrBtn').addEventListener('click', async () => 
     });
     document.getElementById('gdrNumber').value = result.gdr_label || '';
     status.textContent = `GDR berhasil dibuat: ${result.gdr_label}`;
-    if (window.parent && window.parent.evaAssistantNotify) {
-      window.parent.evaAssistantNotify({ title: 'GDR Dibuat', message: result.gdr_label, tone: 'success' });
-    }
+    popupFeedback('GDR Dibuat', result.gdr_label, 'success');
     if (result.download_url) {
       const a = document.createElement('a');
       a.href = result.download_url;
@@ -537,6 +595,9 @@ document.getElementById('generateGdrBtn').addEventListener('click', async () => 
     loadHistory();
   } catch (err) {
     status.textContent = 'Error: ' + err.message;
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 });
 
@@ -572,23 +633,30 @@ async function loadHistory() {
       <td>${escapeHtml(r.cluster||'-')}</td>
       <td>${r.item_count||0}</td>
       <td>
-        ${r.file ? `<a href="/api/gdr/download/${escapeHtml(r.file)}" class="secondary-button" style="text-decoration:none;display:inline-block;margin-bottom:.2rem;">Download</a>` : ''}
-        <button class="remove-btn" data-del-gdr="${escapeHtml(r.number)}">Hapus</button>
+        ${r.file ? `<a href="/api/gdr/download/${escapeHtml(encodeURIComponent(r.file))}" class="secondary-button" style="text-decoration:none;display:inline-block;margin-bottom:.2rem;">Download</a>` : ''}
+        <button class="remove-btn" data-del-gdr="${escapeHtml(r.id)}">Hapus</button>
       </td>
     </tr>`).join('');
-  } catch {}
+  } catch (err) {
+    document.getElementById('historyTableBody').innerHTML = '<tr><td colspan="7"></td></tr>';
+    document.querySelector('#historyTableBody td').textContent = 'Gagal memuat riwayat: ' + err.message;
+  }
 }
 
 document.getElementById('historyTableBody').addEventListener('click', async (e) => {
-  const number = e.target.dataset.delGdr;
-  if (!number) return;
+  const entryId = e.target.dataset.delGdr;
+  if (!entryId) return;
   if (!confirm(`Hapus GDR ini? Data di spreadsheet juga akan dihapus.`)) return;
   e.target.disabled = true;
   e.target.textContent = '...';
   try {
-    await api(`/api/gdr/history/${number}`, { method: 'DELETE' });
+    await api(`/api/gdr/history/entry/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
     loadHistory();
-  } catch (err) { alert('Error: ' + err.message); }
+  } catch (err) {
+    popupFeedback('Riwayat GDR', err.message || 'Gagal menghapus GDR.', 'error');
+  } finally {
+    if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = 'Hapus'; }
+  }
 });
 
 // Init
@@ -648,7 +716,7 @@ document.getElementById('fetchAstriMaterialsBtn')
       .filter(row => row.work_order_number && row.cluster_code);
 
     if (!sources.length) {
-      alert('Isi minimal 1 Cluster/Subfeeder/Feeder dari ASTRI dulu.');
+      popupFeedback('Material ASTRI', 'Isi minimal 1 Cluster/Subfeeder/Feeder dari ASTRI dulu.', 'warning');
       return;
     }
 
@@ -682,11 +750,10 @@ document.getElementById('fetchAstriMaterialsBtn')
         statusEl.textContent = `Tidak ada material internal ditemukan dari ${sources.length} sumber ASTRI.`;
       }
     } catch (err) {
-      showPopup('Error ambil material ASTRI: ' + err.message, true); statusEl.textContent = '';
+      popupFeedback('Material ASTRI', err.message || 'Gagal mengambil material ASTRI.', 'error'); statusEl.textContent = '';
     }
   });
 
 </script>
 </body>
 </html>
-
