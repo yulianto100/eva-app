@@ -66,24 +66,17 @@ def _sheets_client():
     return gspread.authorize(creds)
 
 
-def load_vendors() -> dict:
-    if GDR_VENDORS_FILE.exists():
-        return json.loads(GDR_VENDORS_FILE.read_text(encoding="utf-8"))
-    return {}
+def private_store():
+    from gdr_store import GdrStore
+    return GdrStore(Config.BASE_DIR / "data" / "gdr_private.db")
 
 
-def save_vendors(data: dict) -> None:
-    GDR_VENDORS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+def load_vendors(owner_user_id: str) -> dict:
+    return private_store().vendors(owner_user_id)
 
 
-def load_history() -> list:
-    if GDR_HISTORY_FILE.exists():
-        return json.loads(GDR_HISTORY_FILE.read_text(encoding="utf-8"))
-    return []
-
-
-def save_history(data: list) -> None:
-    GDR_HISTORY_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+def load_history(owner_user_id: str) -> list:
+    return private_store().history(owner_user_id)
 
 
 def get_next_gdr_number() -> dict:
@@ -93,6 +86,8 @@ def get_next_gdr_number() -> dict:
     ws = sh.worksheet("Nomor GDR 2026")
     rows = ws.get_all_values()
 
+    reserved = private_store().reserved_labels()
+    now = datetime.now()
     next_no = None
     row_index = None
     for i, row in enumerate(rows[1:], start=2):  # skip header
@@ -101,7 +96,8 @@ def get_next_gdr_number() -> dict:
         except (ValueError, IndexError):
             continue
         used = (row[1] if len(row) > 1 else "").strip()
-        if no > 800 and not used:
+        label = f"{no}/EMR/NRO-GDR/{now.month}/{now.year}"
+        if no > 800 and not used and label not in reserved:
             next_no = no
             row_index = i
             break
@@ -109,23 +105,31 @@ def get_next_gdr_number() -> dict:
     if next_no is None:
         raise ValueError("No available GDR number found (No > 800 with empty col B)")
 
-    now = datetime.now()
     gdr_label = f"{next_no}/EMR/NRO-GDR/{now.month}/{now.year}"
     return {"number": next_no, "label": gdr_label, "row_index": row_index}
 
 
-def allocate_gdr_number(vendor: str, pr_numbers: list[str] | None = None, clusters: list[dict] | None = None, area: str = "", pmo: str = "") -> dict:
-    """Allocate next GDR number from spreadsheet and mark it as used."""
+def allocate_gdr_number(vendor: str, pr_numbers: list[str] | None = None, clusters: list[dict] | None = None, area: str = "", pmo: str = "", *, owner_user: dict, request_hash: str) -> dict:
+    """Reserve durably before Sheets; caller holds sheet_write_guard throughout generation."""
+    store = private_store()
     info = get_next_gdr_number()
-    mark_gdr_number(
-        number=info["number"],
-        gdr_label=info["label"],
-        vendor=vendor,
-        pr_numbers=pr_numbers or [],
-        clusters=clusters or [],
-        area=area,
-        pmo=pmo,
-    )
+    store.reserve_number(owner_user, info, request_hash)
+    try:
+        mark_gdr_number(
+            number=info["number"],
+            gdr_label=info["label"],
+            vendor=vendor,
+            pr_numbers=pr_numbers or [],
+            clusters=clusters or [],
+            area=area,
+            pmo=pmo,
+        )
+    except Exception as exc:
+        # A timeout has an unknown provider outcome; keep its reservation pending.
+        store.update_reservation(info["label"], "pending" if isinstance(exc, TimeoutError) else "failed",
+                                 failure_code="NUMBER_MARK_FAILED")
+        raise
+    store.update_reservation(info["label"], "number_marked")
     return info
 
 
@@ -157,7 +161,7 @@ def mark_gdr_number(number: int, gdr_label: str, vendor: str, pr_numbers: list[s
                     cluster_entries.append(cl)
             pr_list = "; ".join(cluster_entries) if cluster_entries else ", ".join(f"PR_{p}" for p in (pr_numbers or []))
             values = [number, date_str, gdr_label, vendor, pr_list, "PROGRESS", area or "", pmo or "", str(now.year)]
-            ws.update(f"A{i}:I{i}", [values], value_input_option="USER_ENTERED")
+            ws.update(f"A{i}:I{i}", [values], value_input_option="RAW")
             return
 
     raise ValueError(f"GDR number {number} not found in Nomor GDR 2026 sheet")
@@ -190,23 +194,17 @@ def write_materials_to_gdr_sheet(
         col_idx = MATERIAL_COL_MAP.get(mat_name)
         if col_idx is None or qty <= 0:
             continue
-        row_data[col_idx] = str(int(qty))  # fill material column in the same row
+        row_data[col_idx] = int(qty)  # fill material column in the same row
 
-    ws.append_row(row_data, value_input_option="USER_ENTERED")
+    ws.append_row(row_data, value_input_option="RAW")
 
 
-def _vendor_header_values(vendor_code: str) -> dict:
-    """Get header values (F7-F10) for a vendor."""
-    vendors = load_vendors()
-    entry = vendors.get(vendor_code.upper())
-    if not entry:
-        return {}
-    return {
-        "F7": entry.get("vendor_name", ""),
-        "F8": entry.get("origin", ""),
-        "F9": entry.get("destination", ""),
-        "F10": entry.get("pic", ""),
-    }
+def _vendor_header_values(vendor_code: str, vendor_data: dict) -> dict:
+    """Use only the captured creator-owned vendor, never the shared legacy JSON."""
+    from gdr_store import vendor_values
+    entry = vendor_values(vendor_data)
+    return {"F7": entry["vendor_name"], "F8": entry["origin"],
+            "F9": entry["destination"], "F10": entry["pic"]}
 
 
 def _find_template() -> Path | None:
@@ -236,6 +234,8 @@ def generate_gdr_excel(
     request_mobile: str = "",
     approve_name: str = "",
     approve_mobile: str = "",
+    *,
+    vendor_data: dict,
 ) -> Path:
     """Generate GDR Excel file from template using openpyxl. Returns path to generated file."""
     template = _find_template()
@@ -246,8 +246,14 @@ def generate_gdr_excel(
     out_dir = Config.OUTPUT_DIR / "gdr"
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_label = gdr_label.replace("/", "-")
-    out_file = out_dir / f"GDR {safe_label}, {vendor}.xlsx"
-    shutil.copy2(template, out_file)
+    import uuid
+    from gdr_store import vendor_code
+    vendor = vendor_code(vendor)
+    out_file = out_dir / f"GDR {safe_label}, {vendor}, {uuid.uuid4().hex}.xlsx"
+    fd = os.open(out_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as output, template.open("rb") as source:
+        os.fchmod(output.fileno(), 0o600)
+        shutil.copyfileobj(source, output)
 
     now = datetime.now()
     date_str = now.strftime("%d %B %Y")
@@ -316,7 +322,7 @@ def generate_gdr_excel(
         pr_summary = f"PR_{pr_number} - {cluster}" if pr_number and cluster else (f"PR_{pr_number}" if pr_number else "")
 
     # Get vendor header values
-    header = _vendor_header_values(vendor)
+    header = _vendor_header_values(vendor, vendor_data)
 
     # Open workbook with openpyxl
     wb = openpyxl.load_workbook(out_file)
@@ -376,78 +382,53 @@ def generate_gdr_excel(
         if mrow == xrow == data_start_row and xc > mc:
             data_row_col_merges.append((mc, xc))
 
-    # Insert extra rows immediately under the template material row. Existing
-    # rows below (including signature) shift down automatically.
+    # Locate values beside the template's actual Request/Approve labels.
+    # Never overwrite label cells or carry the template's sample identities.
+    signature_fields = {}
+    labels = {"name": "name", "mobile": "mobile", "date": "date", "dept": "dept"}
+    for kind, heading in (("request", "request by"), ("approve", "approve by")):
+        col = next((c for c in range(1, 8)
+                    if heading in str(_read_anchor(signature_row, c) or "").lower()), None)
+        if col is None:
+            raise ValueError("Bagian tanda tangan GDR tidak ditemukan: " + kind)
+        for row in range(signature_row + 1, ws.max_row + 1):
+            label = str(_read_anchor(row, col) or "").lower().strip(" :")
+            if label in labels:
+                signature_fields[(kind, labels[label])] = (row, col + 1)
+        if any((kind, field) not in signature_fields for field in labels):
+            raise ValueError("Field tanda tangan GDR tidak lengkap: " + kind)
+        for field in ("name", "mobile"):
+            row, value_col = signature_fields[(kind, field)]
+            ws.cell(row, value_col).value = None
+
+    # openpyxl moves cells, not merge ranges or row dimensions. Unmerge BEFORE
+    # insertion, then rebuild the shifted ranges so no orphan MergedCell remains.
     if extra_rows > 0:
         insert_at = data_start_row + 1
-        material_end_row = data_start_row + len(items) - 1
-
-        # Record merge ranges that start at insert_at or one row below (the
-        # template blank area A14:F15 and remark merge G15:G24). openpyxl's
-        # insert_rows will EXPAND these to cover the inserted rows, causing
-        # safe_set writes to redirect to the merge anchor. We must unmerge
-        # them after insertion. Signature block merges (row 16+) must stay.
-        blank_area_merges = set()
-        for mr in list(ws.merged_cells.ranges):
-            mc, mrow, xc, xrow = range_boundaries(str(mr))
-            # Merge starts at or below insert_at and is NOT the data row merge
-            is_data_row_merge = (mrow == xrow == data_start_row and (mc, xc) in data_row_col_merges)
-            if mrow >= insert_at and not is_data_row_merge:
-                blank_area_merges.add(str(mr))
-
+        merges = [range_boundaries(str(r)) for r in ws.merged_cells.ranges]
+        dimensions = {r: _copy(d) for r, d in ws.row_dimensions.items() if r >= insert_at}
+        for r in list(ws.merged_cells.ranges):
+            ws.unmerge_cells(str(r))
         ws.insert_rows(insert_at, extra_rows)
-
-        # Track column-G vertical merges from the template (e.g. G15:G24 remark
-        # merge) so we can restore them shifted down after insertion.
-        col_g_merges = []
-        for mr_str in list(blank_area_merges):
-            mc, mrow, xc, xrow = range_boundaries(mr_str)
-            if mc == xc == 7 and xrow > mrow and mrow >= data_start_row:
-                col_g_merges.append((mrow, xrow))
-
-        # After insert, unmerge ALL the blank-area merges (now expanded).
-        for mr_str in blank_area_merges:
-            try:
-                ws.unmerge_cells(mr_str)
-            except Exception:
-                for r in list(ws.merged_cells.ranges):
-                    try:
-                        mc, mrow, xc, xrow = range_boundaries(str(r))
-                        if mrow >= insert_at and mrow <= material_end_row:
-                            ws.unmerge_cells(str(r))
-                    except Exception:
-                        pass
-
-        # Restore column-G vertical merges shifted down by extra_rows.
-        for orig_start, orig_end in col_g_merges:
-            new_start = orig_start + extra_rows
-            new_end = orig_end + extra_rows
-            try:
-                ws.merge_cells(start_row=new_start, start_column=7,
-                               end_row=new_end, end_column=7)
-            except Exception:
-                pass
-
+        for r in sorted(dimensions, reverse=True):
+            del ws.row_dimensions[r]
+        for r, dimension in dimensions.items():
+            dimension.index = r + extra_rows
+            ws.row_dimensions[r + extra_rows] = dimension
         template_height = ws.row_dimensions[data_start_row].height
-        for i in range(extra_rows):
-            new_row = insert_at + i
-            ws.row_dimensions[new_row].height = template_height
+        for row in range(insert_at, insert_at + extra_rows):
+            ws.row_dimensions[row].height = template_height
             for col in range(1, 8):
-                src = ws.cell(row=data_start_row, column=col)
-                dst = ws.cell(row=new_row, column=col)
-                if src.has_style:
-                    dst._style = _copy(src._style)
-                dst.font = _copy(src.font)
-                dst.fill = _copy(src.fill)
-                dst.border = _copy(src.border)
-                dst.alignment = _copy(src.alignment)
-                dst.number_format = src.number_format
-                dst.protection = _copy(src.protection)
-            for (mc, xc) in data_row_col_merges:
-                try:
-                    ws.merge_cells(start_row=new_row, start_column=mc, end_row=new_row, end_column=xc)
-                except Exception:
-                    pass
+                ws.cell(row, col)._style = _copy(ws.cell(data_start_row, col)._style)
+        for mc, first, xc, last in merges:
+            if first >= insert_at:
+                first, last = first + extra_rows, last + extra_rows
+            elif last >= insert_at:
+                last += extra_rows
+            ws.merge_cells(start_row=first, start_column=mc, end_row=last, end_column=xc)
+        for row in range(insert_at, insert_at + extra_rows):
+            for mc, xc in data_row_col_merges:
+                ws.merge_cells(start_row=row, start_column=mc, end_row=row, end_column=xc)
 
     # Rebuild merge anchor map AFTER row insertion (ranges shifted).
     merge_anchor_map = {}
@@ -459,20 +440,11 @@ def generate_gdr_excel(
                 merge_anchor_map[f"{get_column_letter(c)}{r}"] = anchor
 
     def safe_set(cell_ref, value):
-        """Write to a cell, redirecting to the merge anchor if covered by a
-        merge. The merge itself stays intact."""
-        ref = merge_anchor_map.get(cell_ref, cell_ref)
-        try:
-            ws[ref] = value
-        except (AttributeError, TypeError):
-            from openpyxl.cell.cell import MergedCell
-            cell = ws[ref]
-            if isinstance(cell, MergedCell):
-                for mr in ws.merged_cells.ranges:
-                    if cell.coordinate in mr:
-                        mc, mrow, _a, _b = range_boundaries(str(mr))
-                        ws[f"{get_column_letter(mc)}{mrow}"] = value
-                        break
+        """Write literal text at the merge anchor; never interpret user formulas."""
+        cell = ws[merge_anchor_map.get(cell_ref, cell_ref)]
+        cell.value = value
+        if isinstance(value, str):
+            cell.data_type = "s"
 
     def safe_set_rc(row, col, value):
         safe_set(f"{get_column_letter(col)}{row}", value)
@@ -487,29 +459,18 @@ def generate_gdr_excel(
     safe_set("G9", f": {cluster}" if cluster else ": Bekasi")
     safe_set("G10", "")
 
-    # Vendor-specific headers (F7-F10)
-    if header.get("F7"):
-        safe_set("F7", header["F7"])
-    if header.get("F8"):
-        safe_set("F8", header["F8"])
-    if header.get("F9"):
-        safe_set("F9", header["F9"])
-    if header.get("F10"):
-        safe_set("F10", header["F10"])
+    # Every header comes from the creator-owned snapshot, including blanks.
+    for ref in ("F7", "F8", "F9", "F10"):
+        safe_set(ref, header[ref])
 
-    # Request/Approve fields from popup
-    safe_set("C29", date_str)  # Date Request = tanggal submit GDR
-    safe_set("E29", req_date)  # Date Approve = Required Date of Arrival (today + 3)
-    if request_name:
-        safe_set("C24", request_name)
-    safe_set("C30", "Roll Out")
-    if request_mobile:
-        safe_set("C31", str(request_mobile))
-    if approve_name:
-        safe_set("E24", approve_name)
-    safe_set("E30", "Roll Out")
-    if approve_mobile:
-        safe_set("E31", str(approve_mobile))
+    # Populate the shifted value cells, preserving the printed labels.
+    for kind, values in (("request", {"name": request_name or "", "mobile": str(request_mobile or ""),
+                                     "date": date_str, "dept": "Roll Out"}),
+                         ("approve", {"name": approve_name or "", "mobile": str(approve_mobile or ""),
+                                     "date": req_date, "dept": "Roll Out"})):
+        for field, value in values.items():
+            row, col = signature_fields[(kind, field)]
+            safe_set_rc(row + extra_rows, col, value)
 
     # Write material items
     for idx, item in enumerate(items):
@@ -575,38 +536,35 @@ def generate_gdr_excel(
         pass
 
     wb.save(out_file)
+    wb.close()
+    out_file.chmod(0o600)
     return out_file
 
 
 def delete_gdr_from_sheets(gdr_label: str) -> None:
-    """Delete all rows matching this GDR label from both spreadsheets."""
+    """Delete exact label only; caller holds sheet_write_guard and keeps a tombstone."""
+    number = int(gdr_label.split("/", 1)[0])
+    if number <= 0:
+        raise ValueError("Label GDR tidak valid.")
     gc = _sheets_client()
 
-    # 1. Clear from GDR material sheet (column Y = GDR label)
-    try:
-        sh = gc.open_by_key(GDR_SHEET_ID)
-        ws = sh.worksheet("GDR")
-        rows = ws.get_all_values()
-        rows_to_delete = []
-        for i, row in enumerate(rows[1:], start=2):  # skip header
-            if len(row) > 24 and row[24].strip() == gdr_label:
-                rows_to_delete.append(i)
-        # Delete from bottom to top to preserve indices
-        for row_idx in reversed(rows_to_delete):
-            ws.delete_rows(row_idx)
-    except Exception:
-        pass
+    # Delete bottom-up; provider failures must leave local history intact.
+    ws = gc.open_by_key(GDR_SHEET_ID).worksheet("GDR")
+    rows = ws.get_all_values()
+    for i in reversed(range(2, len(rows) + 1)):
+        if len(rows[i - 1]) > 24 and rows[i - 1][24].strip() == gdr_label:
+            current = ws.row_values(i)
+            if len(current) <= 24 or current[24].strip() != gdr_label:
+                raise ValueError("Baris material GDR berubah; perlu rekonsiliasi.")
+            ws.delete_rows(i)
 
-    # 2. Clear from Nomor GDR sheet (column C = GDR label)
-    try:
-        sh = gc.open_by_key(GDR_NUMBER_SHEET_ID)
-        ws = sh.worksheet("Nomor GDR 2026")
-        rows = ws.get_all_values()
-        for i, row in enumerate(rows[1:], start=2):
-            if len(row) > 2 and row[2].strip() == gdr_label:
-                # Clear columns B-I (keep A = number)
-                ws.update(f"B{i}:I{i}", [[""]*8], value_input_option="USER_ENTERED")
-                break
-    except Exception:
-        pass
+    ws = gc.open_by_key(GDR_NUMBER_SHEET_ID).worksheet("Nomor GDR 2026")
+    rows = ws.get_all_values()
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) > 2 and row[2].strip() == gdr_label:
+            current = ws.row_values(i)
+            if len(current) <= 2 or current[2].strip() != gdr_label or int(current[0]) != number:
+                raise ValueError("Baris nomor GDR berubah; perlu rekonsiliasi.")
+            ws.update(f"B{i}:I{i}", [[""] * 8], value_input_option="RAW")
+            break
 

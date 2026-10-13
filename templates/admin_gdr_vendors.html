@@ -1,146 +1,65 @@
 <!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>GDR Vendors - EVA Admin</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GDR — EVA Admin</title>
   <style>
-    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.ghost{background:rgba(255,255,255,.1);color:#fff}.wrap{padding:24px;display:grid;gap:16px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:auto}table{border-collapse:collapse;width:100%;min-width:1100px}th,td{border-bottom:1px solid #e2e8f0;padding:10px;text-align:left;font-size:13px}th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}input{border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;font-size:13px}form.inline{display:inline}.rowform{display:grid;grid-template-columns:repeat(5,1fr) auto;gap:8px}.save{background:#10b981;color:#020617}.danger{background:#fee2e2;color:#991b1b}.actions{display:flex;gap:8px}
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#183126;background:#f7faf8}*{box-sizing:border-box}body{margin:0}header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px max(16px,calc((100vw - 1440px)/2));background:#fff;border-bottom:1px solid #d9e5df}h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}p{margin:6px 0;color:#52675d;font-size:13px;line-height:1.5}.wrap{max-width:1440px;margin:auto;padding:20px 16px;display:grid;gap:16px}.card{min-width:0;padding:16px;border:1px solid #d9e5df;border-radius:10px;background:#fff}.toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:6px;min-width:0}label{font-size:12px;font-weight:600}input,select,textarea,button,.btn{font:inherit;font-size:13px;min-height:44px;border:1px solid #b9cec4;border-radius:7px;padding:10px 12px;background:#fff;color:#183126}textarea{min-height:80px;resize:vertical}button,.btn{cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}button.primary{background:#176d4e;color:#fff;border-color:#176d4e}button:disabled{opacity:.55;cursor:not-allowed}button.danger{color:#9d312c}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.span2{grid-column:span 2}.form-actions{display:flex;gap:8px;margin-top:12px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px;min-width:960px}th,td{padding:12px 10px;text-align:left;vertical-align:top;border-bottom:1px solid #e0eae4}th{color:#52675d;font-weight:600;background:#f7faf8}td{max-width:320px;overflow-wrap:anywhere;white-space:pre-wrap}td small{display:block;color:#52675d;margin-top:4px}td.actions{min-width:140px;white-space:normal}td.actions button{min-height:44px;margin:0 4px 4px 0}summary{cursor:pointer;min-height:44px;padding:10px 0;font-size:13px;font-weight:600}.status{font-size:13px;line-height:1.5;color:#52675d}.error{color:#9d312c}input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #176d4e;outline-offset:2px}.toolbar .field{flex:1 1 220px}.hidden{display:none!important}@media(max-width:640px){header{padding:16px}.wrap{padding:12px}.card{padding:12px}.form-grid{grid-template-columns:1fr}.span2{grid-column:auto}h1{font-size:20px}header .btn{flex-shrink:0}}
   </style>
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>GDR Vendor Manager</h1>
-      <p class="sub">Kelola vendor untuk GDR.</p>
-    </div>
-    <a class="btn ghost" href="/admin">Dashboard</a>
-  </header>
+  <header><div><h1>GDR</h1><p>Vendor, alamat dan riwayat seluruh pengguna. Data pribadi tetap terpisah per akun.</p></div><a class="btn" href="/admin">Dashboard</a></header>
   <main class="wrap">
     <section class="card">
-      <form class="rowform" id="newForm" onsubmit="saveVendor(event)">
-        <input name="code" placeholder="Code" required>
-        <input name="vendor_name" placeholder="Nama Vendor" required>
-        <input name="origin" placeholder="Origin" value=": EMR">
-        <input name="destination" placeholder="Destination">
-        <input name="pic" placeholder="PIC">
-        <button type="submit" class="btn save">Tambah Baru</button>
-      </form>
+      <div class="toolbar"><div class="field"><label for="ownerFilter">Pengguna</label><select id="ownerFilter"><option value="">Semua pengguna</option></select></div><div class="field"><label for="query">Cari vendor, alamat, PIC atau nomor GDR</label><input id="query" type="search" autocomplete="off"></div><button id="refresh" type="button">Muat ulang</button></div>
+      <p id="status" class="status" role="status" aria-live="polite">Memuat data GDR...</p>
     </section>
     <section class="card">
-      <table id="vendorTable">
-        <thead><tr><th>Code</th><th>Nama Vendor</th><th>Origin</th><th>Destination</th><th>PIC</th><th>Actions</th></tr></thead>
-        <tbody>
-        {% for code, vendor in vendors.items()|sort %}
-          <tr id="row-{{ code }}">
-            <td>{{ code }}</td>
-            <td>{{ vendor.vendor_name }}</td>
-            <td>{{ vendor.origin }}</td>
-            <td>{{ vendor.destination }}</td>
-            <td>{{ vendor.pic }}</td>
-            <td class="actions">
-              <button class="btn" onclick="editRow('{{ code }}')">Edit</button>
-              <button class="btn danger" onclick="deleteVendor('{{ code }}')">Delete</button>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      <h2>Vendor &amp; alamat</h2>
+      <div class="scroll"><table id="vendorTable"><thead><tr><th>Pemilik</th><th>Kode</th><th>Nama vendor</th><th>Alamat asal / Origin</th><th>Alamat tujuan / Destination</th><th>PIC</th><th>Aksi</th></tr></thead><tbody id="vendors"></tbody></table></div>
+      <details id="vendorEditor"><summary>Tambah / edit vendor pengguna</summary><form id="vendorForm"><div class="form-grid">
+        <div class="field"><label for="vendorOwner">Pemilik</label><select id="vendorOwner" required></select></div>
+        <div class="field"><label for="vendorCode">Kode vendor</label><input id="vendorCode" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"></div>
+        <div class="field"><label for="vendorName">Nama vendor + area</label><input id="vendorName" required maxlength="256"></div>
+        <div class="field"><label for="vendorOrigin">Alamat asal / Origin</label><textarea id="vendorOrigin" maxlength="1024">: EMR</textarea></div>
+        <div class="field span2"><label for="vendorDestination">Alamat tujuan / Destination</label><textarea id="vendorDestination" maxlength="2048"></textarea></div>
+        <div class="field span2"><label for="vendorPic">PIC — nama, telepon, email</label><textarea id="vendorPic" maxlength="1024"></textarea></div>
+      </div><div class="form-actions"><button class="primary" type="submit" id="save">Simpan vendor</button><button type="button" id="cancel">Kosongkan</button></div></form></details>
     </section>
+    <section class="card"><h2>Riwayat penggunaan GDR</h2><p>Setiap dokumen ditampilkan bersama akun pembuatnya.</p><div class="scroll"><table id="historyTable"><thead><tr><th>Pembuat</th><th>No. GDR</th><th>Tanggal</th><th>Vendor</th><th>PR / Target</th><th>Items</th><th>Alamat / PIC saat dibuat</th><th>Dokumen</th></tr></thead><tbody id="history"></tbody></table></div></section>
+    <section class="card" id="operationsCard" hidden><h2>Penulisan GDR belum selesai</h2><p>Nomor tetap dicadangkan. Periksa hasil spreadsheet sebelum mencoba ulang.</p><div class="scroll"><table><thead><tr><th>Pembuat</th><th>No. GDR</th><th>Status</th><th>Proses</th></tr></thead><tbody id="operations"></tbody></table></div></section>
   </main>
 <script>
-  async function api(endpoint, data) {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Server error" }));
-      throw new Error(err.error || "Unknown error");
-    }
-    return res.json();
-  }
-
-  async function saveVendor(event) {
-    event.preventDefault();
-    const form = event.target;
-    const data = {
-      code: form.querySelector('[name="code"]').value,
-      vendor_name: form.querySelector('[name="vendor_name"]').value,
-      origin: form.querySelector('[name="origin"]').value,
-      destination: form.querySelector('[name="destination"]').value,
-      pic: form.querySelector('[name="pic"]').value,
-    };
-    try {
-      await api("/admin/gdr-vendors/save", data);
-      location.reload();
-    } catch (e) {
-      alert(`Gagal menyimpan: ${e.message}`);
-    }
-  }
-
-  async function deleteVendor(code) {
-    if (!confirm(`Hapus vendor ${code}?`)) return;
-    try {
-      await api("/admin/gdr-vendors/delete", { code });
-      location.reload();
-    } catch (e) {
-      alert(`Gagal menghapus: ${e.message}`);
-    }
-  }
-
-  function editRow(code) {
-    const row = document.getElementById(`row-${code}`);
-    const cells = row.querySelectorAll("td");
-    const values = Array.from(cells).slice(0, 5).map(c => c.textContent.trim());
-    
-    row.innerHTML = `
-      <td><input name="code" value="${values[0]}" disabled></td>
-      <td><input name="vendor_name" value="${values[1]}"></td>
-      <td><input name="origin" value="${values[2]}"></td>
-      <td><input name="destination" value="${values[3]}"></td>
-      <td><input name="pic" value="${values[4]}"></td>
-      <td class="actions">
-        <button class="btn save" onclick="saveEdit('${code}')">Save</button>
-        <button class="btn" onclick="cancelEdit('${code}')">Cancel</button>
-      </td>
-    `;
-    row.dataset.original = JSON.stringify(values);
-  }
-
-  async function saveEdit(originalCode) {
-    const row = document.getElementById(`row-${originalCode}`);
-    const data = {
-      code: originalCode, // Code is not editable
-      vendor_name: row.querySelector('[name="vendor_name"]').value,
-      origin: row.querySelector('[name="origin"]').value,
-      destination: row.querySelector('[name="destination"]').value,
-      pic: row.querySelector('[name="pic"]').value,
-    };
-    try {
-      await api("/admin/gdr-vendors/save", data);
-      location.reload();
-    } catch (e) {
-      alert(`Gagal menyimpan: ${e.message}`);
-    }
-  }
-
-  function cancelEdit(code) {
-    const row = document.getElementById(`row-${code}`);
-    const values = JSON.parse(row.dataset.original);
-    row.innerHTML = `
-      <td>${values[0]}</td>
-      <td>${values[1]}</td>
-      <td>${values[2]}</td>
-      <td>${values[3]}</td>
-      <td>${values[4]}</td>
-      <td class="actions">
-        <button class="btn" onclick="editRow('${values[0]}')">Edit</button>
-        <button class="btn danger" onclick="deleteVendor('${values[0]}')">Delete</button>
-      </td>
-    `;
-  }
+let data={users:[],vendors:[],history:[]},editing=null;
+const byId=id=>document.getElementById(id);
+function report(message,error=false){const s=byId('status');s.textContent=message;s.classList.toggle('error',error);s.setAttribute('role',error?'alert':'status');}
+async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request gagal');return d;}
+function cell(row,text){const c=document.createElement('td');c.textContent=String(text??'');row.append(c);return c;}
+function ownerCell(row,name,email){const c=cell(row,name||'Pengguna');if(email){const s=document.createElement('small');s.textContent=email;c.append(s);}return c;}
+function empty(body,cols,text){const row=document.createElement('tr');const c=cell(row,text);c.colSpan=cols;body.replaceChildren(row);}
+function match(record){const owner=byId('ownerFilter').value;const q=byId('query').value.trim().toLowerCase();return (!owner||record.owner_user_id===owner)&&(!q||JSON.stringify(record).toLowerCase().includes(q));}
+function action(c,label,callback,danger=false){const b=document.createElement('button');b.type='button';b.textContent=label;if(danger)b.className='danger';b.addEventListener('click',callback);c.append(b);}
+function render(){
+  const vendors=byId('vendors');vendors.replaceChildren();const selected=data.vendors.filter(match);
+  for(const v of selected){const row=document.createElement('tr');row.dataset.owner=v.owner_user_id;row.dataset.code=v.code;ownerCell(row,v.owner_name,v.owner_email);for(const k of ['code','vendor_name','origin','destination','pic'])cell(row,v[k]);const c=cell(row,'');c.className='actions';action(c,'Edit',()=>edit(v));action(c,'Hapus',()=>remove(v),true);vendors.append(row);}
+  if(!selected.length)empty(vendors,7,'Tidak ada vendor untuk filter ini.');
+  const history=byId('history');history.replaceChildren();const records=data.history.filter(match);
+  for(const h of records){const row=document.createElement('tr');ownerCell(row,h.owner_name,h.owner_email);for(const value of [h.gdr_label,h.date,h.vendor,[h.pr_number,h.cluster].filter(Boolean).join('\n'),h.item_count||0])cell(row,value);const details=h.vendor_details;cell(row,details?[details.origin,details.destination,details.pic].filter(Boolean).join('\n'):'Tidak tersimpan di riwayat lama');const c=cell(row,'');if(h.file && h.file_available === true){const a=document.createElement('a');a.className='btn';a.textContent='Download';a.href='/api/dashboard/gdr/history/'+encodeURIComponent(h.id)+'/download';c.append(a);}else c.textContent='File sudah kedaluwarsa / tidak tersedia';history.append(row);}
+  if(!records.length)empty(history,8,'Tidak ada riwayat untuk filter ini.');
+  const operations=(data.operations||[]).filter(o=>!['done','deleted'].includes(o.state)).filter(match);
+  const tbody=byId('operations');tbody.replaceChildren();byId('operationsCard').hidden=!operations.length;
+  for(const o of operations){const row=document.createElement('tr');ownerCell(row,o.owner_name,o.owner_email);cell(row,o.gdr_label);cell(row,o.state);cell(row,o.failure_code||'Menunggu konfirmasi');tbody.append(row);}
+  report(selected.length+' vendor · '+records.length+' riwayat');
+}
+function loadUsers(){const selected=byId('ownerFilter').value;byId('ownerFilter').replaceChildren(new Option('Semua pengguna',''));byId('vendorOwner').replaceChildren(new Option('Pilih pemilik',''));for(const u of data.users){const text=u.name+' — '+u.email;byId('ownerFilter').add(new Option(text,u.id));if(u.active===1)byId('vendorOwner').add(new Option(text,u.id));}byId('ownerFilter').value=selected;}
+async function load(){byId('refresh').disabled=true;try{data=await api('/api/dashboard/gdr');loadUsers();render();}catch(e){report('Gagal memuat GDR: '+e.message,true);}finally{byId('refresh').disabled=false;}}
+function reset(){editing=null;byId('vendorForm').reset();byId('vendorOwner').disabled=false;byId('vendorCode').disabled=false;}
+function edit(v){reset();editing={user:v.owner_user_id,code:v.code};byId('vendorEditor').open=true;byId('vendorOwner').value=v.owner_user_id;byId('vendorOwner').disabled=true;byId('vendorCode').value=v.code;byId('vendorCode').disabled=true;for(const [id,k] of [['vendorName','vendor_name'],['vendorOrigin','origin'],['vendorDestination','destination'],['vendorPic','pic']])byId(id).value=v[k]||'';byId('vendorEditor').scrollIntoView({block:'nearest'});byId('vendorName').focus();}
+async function remove(v){if(!confirm('Hapus vendor '+v.code+' milik '+v.owner_name+'?'))return;try{await api('/api/dashboard/gdr/vendors/'+encodeURIComponent(v.owner_user_id)+'/'+encodeURIComponent(v.code),{method:'DELETE'});await load();}catch(e){report('Gagal menghapus: '+e.message,true);}}
+byId('vendorForm').addEventListener('submit',async event=>{event.preventDefault();const uid=editing?.user||byId('vendorOwner').value;const code=editing?.code||byId('vendorCode').value.trim().toUpperCase();const value={vendor_name:byId('vendorName').value,origin:byId('vendorOrigin').value,destination:byId('vendorDestination').value,pic:byId('vendorPic').value};byId('save').disabled=true;try{await api('/api/dashboard/gdr/vendors/'+encodeURIComponent(uid)+'/'+encodeURIComponent(code),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});reset();await load();}catch(e){report('Gagal menyimpan: '+e.message,true);}finally{byId('save').disabled=false;}});
+byId('ownerFilter').addEventListener('change',render);byId('query').addEventListener('input',render);byId('refresh').addEventListener('click',load);byId('cancel').addEventListener('click',reset);load();
 </script>
 </body>
 </html>
