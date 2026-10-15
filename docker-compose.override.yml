@@ -1,0 +1,23 @@
+# EVA overrides (managed). Mounts the host-patched app.py over the baked image
+# copy so code fixes go live without an image rebuild. Host /opt/eva/app.py is
+# the build source (identical sha to the baked copy), so this stays consistent
+# with future rebuilds. Reversible: delete this file + `docker compose up -d`.
+services:
+  web:
+    volumes:
+      - ./app.py:/app/app.py:ro
+      - ./eva_billing.py:/app/eva_billing.py:ro
+      - ./eva_auth_policy.json:/app/eva_auth_policy.json:ro
+      - ./eva_auth_assets.json:/app/eva_auth_assets.json:ro
+  worker:
+    volumes:
+      - ./app.py:/app/app.py:ro
+      - ./eva_billing.py:/app/eva_billing.py:ro
+      - ./eva_auth_policy.json:/app/eva_auth_policy.json:ro
+      - ./eva_auth_assets.json:/app/eva_auth_assets.json:ro
+  worker2:
+    volumes:
+      - ./app.py:/app/app.py:ro
+      - ./eva_billing.py:/app/eva_billing.py:ro
+      - ./eva_auth_policy.json:/app/eva_auth_policy.json:ro
+      - ./eva_auth_assets.json:/app/eva_auth_assets.json:ro
