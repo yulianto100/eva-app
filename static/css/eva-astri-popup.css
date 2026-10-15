@@ -1,0 +1,345 @@
+/* EVA by DYENA · ASTRI and dialog preview. No workflow or endpoint changes. */
+body > .app-shell #astriIntegrationPanel {
+  background: #fff !important;
+  border: 1px solid #c9dcd1 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px #173b2509 !important;
+  backdrop-filter: none !important;
+}
+body > .app-shell #astriIntegrationPanel > div:first-child {
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0eae4;
+}
+body > .app-shell #astriIntegrationPanel > div:first-child h3 {
+  color: #183126 !important;
+  font-size: 1rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -.02em;
+}
+body > .app-shell #astriStatusText {
+  color: #52675d !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+@media (min-width: 768px) {
+  body > .app-shell #astriStatusText {
+    margin: 0 0 0 auto;
+    text-align: right;
+  }
+}
+body > .app-shell #astriLoginForm {
+  padding: 12px;
+  border: 1px solid #d9e6dc;
+  border-radius: 8px;
+  background: #f7faf8;
+}
+body > .app-shell #astriIntegrationPanel > .grid:not(#astriLoginForm) {
+  padding-top: 14px;
+}
+body > .app-shell #astriIntegrationPanel :is(input.ui-input,select.ui-input) {
+  min-width: 0;
+  min-height: 44px !important;
+  border-color: #b9cec4 !important;
+  background: #fff !important;
+  color: #183126 !important;
+}
+body > .app-shell #astriIntegrationPanel[data-astri-mode] #astriTargetTypeSelect {
+  border-color: #b9cec4 !important;
+  color: #183126 !important;
+  box-shadow: none !important;
+}
+body > .app-shell #astriIntegrationPanel :is(input.ui-input,select.ui-input):focus-visible,
+body > .app-shell #astriIntegrationPanel :is(button,summary,a):focus-visible {
+  outline: 2px solid #176d4e !important;
+  outline-offset: 2px !important;
+}
+body > .app-shell #astriIntegrationPanel :is(#astriLoginButton,#astriClusterSearchButton) {
+  min-height: 44px !important;
+  border: 1px solid #176d4e !important;
+  border-radius: 7px !important;
+  background: #176d4e !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+body > .app-shell #astriIntegrationPanel :is(#astriLoginButton,#astriClusterSearchButton):hover:not(:disabled) {
+  background: #10573e !important;
+}
+body > .app-shell #astriIntegrationPanel #astriClearButton:not(.hidden) {
+  min-height: 44px !important;
+  border-color: #c9dcd1 !important;
+  background: #fff !important;
+  color: #315345 !important;
+}
+body > .app-shell #astriIntegrationPanel #astriMatchBox {
+  border-color: #c9dcd1 !important;
+  background: #f7faf8 !important;
+}
+body > .app-shell #astriIntegrationPanel #astriActionHint {
+  color: #50655a !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+body > .app-shell #astriIntegrationPanel[data-astri-mode] #astriActionButtons > :is(button,a):not(:disabled) {
+  border-color: #b9cec4 !important;
+  border-radius: 7px !important;
+  background: #f7faf8 !important;
+  color: #234a39 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+body > .app-shell #astriIntegrationPanel[data-astri-mode] #astriActionButtons > :is(button,a):hover:not(:disabled) {
+  border-color: #176d4e !important;
+  background: #edf7f1 !important;
+}
+body > .app-shell #astriIntegrationPanel #astriActionButtons > :is(button,a) {
+  min-height: 44px !important;
+  overflow-wrap: anywhere;
+}
+body > .app-shell #astriIntegrationPanel #astriActionButtons > :is(button,a):disabled {
+  background: #f3f6f4 !important;
+  border-color: #d9e5df !important;
+  color: #425d50 !important;
+  box-shadow: none !important;
+  opacity: .75;
+}
+body > .app-shell #astriIntegrationPanel #astriActionButtons > :is(button,a)[data-astri-submit-loading="1"] {
+  cursor: wait !important;
+}
+/* Keep ASTRI progress and results next to their action, not in a global toast. */
+body > .app-shell #astriInlineFeedback:not(.hidden) {
+  padding: 12px 14px !important;
+  border: 1px solid #c9dcd1 !important;
+  border-radius: 8px !important;
+  background: #f7faf8 !important;
+  color: #183126 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  box-shadow: none !important;
+}
+body > .app-shell #astriInlineFeedback[data-tone="error"] { border-color: #e9aaa5 !important; background: #fff3f0 !important; color: #8f3027 !important; }
+body > .app-shell #astriInlineFeedback[data-tone="warning"] { border-color: #e9d4a5 !important; background: #fcf8ed !important; color: #805013 !important; }
+body > .app-shell #astriInlineFeedback[data-tone="success"] { border-color: #a9d5b8 !important; background: #eff8f1 !important; color: #176d4e !important; }
+/* Lock the page behind custom dialogs without changing their close logic. */
+html:has(> body > :is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal,#eva-location-popup):not(.hidden), > body > #evaFilenameWarningModal) {
+  overflow: hidden !important;
+}
+/* All three scope-specific BOQ shells share one readable modal language. */
+:is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal):not(.hidden) {
+  display: flex !important;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)) !important;
+  background: #e5f0e9b8 !important;
+  backdrop-filter: blur(4px);
+}
+:is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal) > div {
+  display: flex;
+  flex-direction: column;
+  width: min(100%,72rem);
+  max-height: calc(100dvh - 24px);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #b9cec4;
+  border-radius: 12px !important;
+  background: #fff;
+  box-shadow: 0 12px 44px #173b2529 !important;
+}
+:is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal) > div > div:first-child {
+  flex: 0 0 auto;
+  max-height: min(35dvh,220px);
+  overflow-y: auto;
+  margin-bottom: 0 !important;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #d9e5df;
+}
+:is(#astriScheduleClose,#astriClusterModalClose,#astriSubfeederModalClose) {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  z-index: 1;
+}
+:is(#astriClusterBoqFeedback,#astriSubfeederBoqFeedback) { overflow-wrap: anywhere; white-space: pre-wrap; }
+:is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal) > div h3 {
+  color: #183126 !important;
+  font-size: 1rem !important;
+  line-height: 1.3;
+}
+:is(#astriScheduleContent,#astriClusterContent,#astriSubfeederContent) {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto !important;
+  margin-top: 12px;
+  border-color: #d9e5df !important;
+  border-radius: 8px !important;
+  color: #183126 !important;
+}
+:is(#astriScheduleClose,#astriClusterModalClose,#astriSubfeederModalClose) {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #b9cec4 !important;
+  border-radius: 7px !important;
+  background: #fff !important;
+  color: #176d4e !important;
+  box-shadow: none !important;
+}
+:is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal) :is(button,input,select,textarea):focus-visible,
+#eva-location-popup :is(button,input,select):focus-visible {
+  outline: 2px solid #176d4e !important;
+  outline-offset: 2px;
+}
+:is(#astriClusterBoqFeedback,#astriSubfeederBoqFeedback):not(.hidden) {
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+/* Preserve the approved light-green location selector; constrain it on short phones. */
+#eva-location-popup:not(.hidden) {
+  padding: max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)) !important;
+  background: #e6f5ee8f !important;
+  backdrop-filter: blur(4px) !important;
+}
+#eva-location-popup > div {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  border-radius: 12px !important;
+  border-color: #b9cec4 !important;
+  background: #eff8f3 !important;
+  box-shadow: 0 12px 44px #173b2529 !important;
+}
+#eva-location-popup :is(select,button) { min-height: 44px; }
+#eva-location-popup :is([data-location-close],[data-location-cancel],select) { background: #fff !important; color: #183126 !important; }
+#eva-location-popup [data-location-submit] { background: #176d4e !important; color: #fff !important; }
+/* The filename decision stays a decision; do not replace it with a toast. */
+body > div.fixed.inset-0:has([data-action="continue"]) {
+  padding: max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)) !important;
+  background: #e5f0e9b8 !important;
+  backdrop-filter: blur(4px);
+}
+body > div.fixed.inset-0:has([data-action="continue"]) > div {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  border: 1px solid #b9cec4 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 44px #173b2529 !important;
+}
+body > div.fixed.inset-0:has([data-action="continue"]) > div > div:first-child {
+  background: #f7faf8 !important;
+  border-bottom-color: #d9e5df !important;
+}
+body > div.fixed.inset-0:has([data-action="continue"]) :is(button):focus-visible {
+  outline: 2px solid #176d4e !important;
+  outline-offset: 2px;
+}
+body > div.fixed.inset-0:has([data-action="continue"]) [data-action] { min-height: 44px; }
+body > div.fixed.inset-0:has([data-action="continue"]) [data-action="continue"] {
+  background: #176d4e !important;
+  color: #fff !important;
+}
+/* Existing help/iframe header, close button and focus ownership remain unchanged. */
+:is(#fdtCodingModal,#kmzCoordsModal,#helpModal):not(.hidden) { background: #dbeae1ae !important; backdrop-filter: blur(4px); }
+:is(#fdtCodingModal,#kmzCoordsModal,#helpModal) > .modal-card { border-color: #b9cec4 !important; box-shadow: 0 12px 44px #173b2529 !important; }
+:is(#fdtCodingModal,#kmzCoordsModal,#helpModal) .modal-close:focus-visible { outline: 2px solid #176d4e !important; outline-offset: 2px; }
+#helpModal [data-close-modal] { min-width: 46px !important; min-height: 46px !important; flex: 0 0 46px !important; }
+/* Keep non-GDR feedback neutral, legible and dismissible. */
+body > #notificationRoot.notification-stack { max-height: 100dvh; overflow-y: auto; justify-content: safe center; }
+body > #notificationRoot .notification {
+  max-width: calc(100vw - 24px);
+  border: 1px solid #b9cec4;
+  border-radius: 10px;
+  box-shadow: 0 12px 44px #173b2529;
+  background: #fff;
+  color: #183126;
+}
+body > #notificationRoot .notification span { color: #425d50; overflow-wrap: anywhere; }
+body > #notificationRoot .notification[data-eva-gdr-notice="1"] {
+  background: #083127 !important;
+  color: #3ecf8e !important;
+  border-color: #287b5e !important;
+}
+body > #notificationRoot .notification[data-eva-gdr-notice="1"] span,
+body > #notificationRoot .notification[data-eva-gdr-notice="1"] strong { color: #3ecf8e !important; }
+body > #notificationRoot .notification[data-eva-gdr-notice="1"] .notification-close { color: #a6f2c8 !important; }
+body > #notificationRoot .notification-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  color: #234a39 !important;
+}
+body > #notificationRoot .notification-close:focus-visible { outline: 2px solid #176d4e !important; outline-offset: 2px; }
+body > #eva-toast:not([hidden]) { width: min(460px,calc(100vw - 24px)); border-radius: 10px; box-shadow: 0 12px 44px #173b2529; }
+body > #eva-toast:not([hidden]) #eva-toast-close { min-height: 44px; }
+@media (max-width: 640px) {
+  body > #notificationRoot .notification { width: min(100%,460px); padding: 12px; }
+}
+@media (max-width: 640px) {
+  body > .app-shell #astriIntegrationPanel #astriLoginForm { padding: 10px; }
+  :is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal) > div { padding: 12px !important; border-radius: 9px !important; }
+  :is(#astriScheduleContent,#astriClusterContent,#astriSubfeederContent) { padding: 10px !important; }
+  #eva-location-popup > div { padding: 14px !important; }
+}
+/* Clouds: 24px in four minutes, then back; page canvas only. */
+@property --eva-cloud-offset { syntax: '<length>'; inherits: false; initial-value: 0px; }
+body > .app-shell {
+  background-color: #f7faf8 !important;
+  background-image: linear-gradient(rgba(247,253,249,.32),rgba(247,253,249,.32)),url("/static/assets/eva-clouds-neat.webp?v=clouds-static-20260926-v1") !important;
+  background-size: cover,cover !important;
+  background-position: center top,calc(50% + var(--eva-cloud-offset)) top !important;
+  background-attachment: fixed,fixed !important;
+  animation: eva-clouds-drift 240s ease-in-out infinite alternate;
+}
+@keyframes eva-clouds-drift { from { --eva-cloud-offset: -12px; } to { --eva-cloud-offset: 12px; } }
+@media (prefers-reduced-motion: reduce) {
+  body > .app-shell { animation: none; --eva-cloud-offset: 0px; }
+  :is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal,#eva-location-popup) *,
+  :is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal,#eva-location-popup) *::before,
+  :is(#astriScheduleModal,#astriClusterModal,#astriSubfeederModal,#eva-location-popup) *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* Add BOQ: compact native permit, aligned PR metadata; all scopes. */
+:is(#astriClusterContent,#astriSubfeederContent) .astri-boq-metadata {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 12px;
+}
+.astri-boq-metadata > div { min-width: 0; }
+.astri-boq-metadata .astri-boq-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-bottom: 6px;
+}
+.astri-boq-metadata .astri-boq-permit { width: min(100%,240px); }
+.astri-boq-metadata #astriBoqPermitRtRw {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f7faf8;
+  border-color: #c9dcd1;
+  color: #183126;
+  font-variant-numeric: tabular-nums;
+}
+.astri-boq-metadata #astriBoqPrAutoDesc {
+  min-height: 96px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  background: #f7faf8;
+  border-color: #c9dcd1;
+  color: #183126;
+}
+.astri-boq-metadata #astriCopyPrDesc { min-height: 44px; }
+.astri-boq-metadata #astriBoqAttachmentLink { min-height: 44px; }
+.astri-boq-metadata .astri-boq-wide { grid-column: 1 / -1; }
+@media (min-width: 768px) {
+  :is(#astriClusterContent,#astriSubfeederContent) .astri-boq-metadata {
+    grid-template-columns: minmax(0,1fr) minmax(160px,240px);
+  }
+}
