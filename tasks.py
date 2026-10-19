@@ -6,6 +6,7 @@ from pathlib import Path
 
 from celery import Celery
 from celery.exceptions import Retry
+from kombu import Queue
 
 from config import Config
 
@@ -35,6 +36,13 @@ celery_app.conf.update(
     timezone="Asia/Jakarta",
     enable_utc=True,
     worker_prefetch_multiplier=1,
+    worker_disable_prefetch=True,
+    task_default_queue="celery",
+    task_queues=(
+        Queue("premium", exchange="premium", routing_key="premium"),
+        Queue("celery", exchange="celery", routing_key="celery"),
+    ),
+    broker_transport_options={"queue_order_strategy": "job_queue:PremiumFirstCycle"},
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     result_expires=Config.JOB_STORE_TTL_SECONDS,
@@ -67,10 +75,11 @@ def run_conversion_task(self, job_id: str) -> str:
         retry_count = int(getattr(self.request, "retries", 0)) + 1
         try:
             from alerts import alert_job_failed
+            from converter import FatAreaGeometryError
             from jobs import get_job, mark_job_dead_letter, record_job_retry
             from metrics import record_job_failed, record_job_retried
 
-            if retry_count <= max_retries:
+            if not isinstance(exc, FatAreaGeometryError) and retry_count <= max_retries:
                 delay = _retry_delay_seconds(int(getattr(self.request, "retries", 0)))
                 record_job_retry(job_id, str(exc), retry_count, max_retries, delay)
                 job = get_job(job_id) or {}
@@ -99,3 +108,18 @@ def run_conversion_task(self, job_id: str) -> str:
             LOGGER.exception("Gagal menyimpan status retry/error untuk job %s", job_id)
         raise
     return job_id
+
+
+@celery_app.task(
+    name="eva.run_astri_boq_submission",
+    bind=True,
+    max_retries=0,
+    acks_late=False,
+    reject_on_worker_lost=False,
+)
+def run_astri_boq_submission_task(self, submission_id: str) -> str:
+    """Run exactly once; ambiguous ASTRI mutations are never auto-retried."""
+    from app import run_astri_boq_submission
+
+    run_astri_boq_submission(submission_id)
+    return submission_id

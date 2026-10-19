@@ -1,0 +1,87 @@
+/* Account chrome only; preserve existing EVA layout and typography. */
+.eva-account-menu{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%}
+.eva-account-name{font-size:12px;color:#46675a;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-account-action{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:44px!important;padding:0 10px!important;border-radius:8px!important;border:1px solid #d6e8de!important;background:#ffffffb8!important;color:#176445!important;font-size:12px!important;font-weight:600!important;text-decoration:none!important;box-shadow:none!important}
+.eva-account-action:hover{background:#e9f7ee!important}.eva-account-action:focus-visible{outline:3px solid #087f5b!important;outline-offset:3px!important}
+.eva-account-menu [role=status]{font-size:11px;color:#7e342b}
+@media(max-width:640px){.eva-account-menu{gap:5px}.eva-account-name{max-width:100px;font-size:11px}.eva-account-action{padding:0 8px!important}}
+
+/* Personal account page; keep all workbench styles scoped and unchanged. */
+.account-history{margin-top:24px}
+.account-history-private{font-size:11px;color:var(--account-green);background:#eef8f2;border:1px solid #dcece2;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.account-history-tabs{display:flex;gap:8px}.account-history-tabs [aria-pressed="true"]{background:#e8f5ee;border-color:#087f5b;color:#087f5b}
+.account-history-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}.account-history-filters label{display:flex;flex-direction:column;gap:5px;font-size:12px;min-width:0;flex:1 1 130px}.account-history-filters label:first-child{flex:2 1 220px}.account-history-filters input,.account-history-filters select{font:inherit;min-height:44px;width:100%;min-width:0;padding:8px 10px;border:1px solid var(--account-line);border-radius:8px;background:#fff;color:var(--account-ink)}
+.account-history [hidden]{display:none!important}.account-history-filters :is(input,select):focus-visible{outline:3px solid #087f5b;outline-offset:3px}
+.account-history-scroll{max-width:100%;overflow-x:auto;border:1px solid var(--account-line);border-radius:8px;margin-top:14px}.account-history-scroll:focus-visible{outline:3px solid #087f5b;outline-offset:3px}
+.account-history table{border-collapse:collapse;width:100%;min-width:880px;table-layout:fixed}.account-history th,.account-history td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #e7eee9;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.account-history th{font-size:10px;font-weight:650;color:var(--account-muted);background:#f8fbf9}.account-history td strong,.account-history td span{display:block}.account-history td span{font-size:11px;color:var(--account-muted)}
+.account-history-pages{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center;margin-top:16px}.account-history-pages>div{display:flex;gap:8px}.account-history-pages .account-note{margin:0}
+@media(max-width:700px){.account-history-filters label:first-child{flex-basis:100%}.account-history-private{white-space:normal}.account-history .account-section-heading{align-items:flex-start}.account-history-pages>div{width:100%}.account-history-pages button{flex:1}}
+
+.eva-account-profile-link{gap:8px!important;max-width:160px}
+.eva-account-avatar{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;border-radius:50%;background:#e8f5ee;color:#176445;font-size:13px;font-weight:700}
+.eva-account-profile-link .eva-account-name{color:inherit;max-width:108px}
+body > .app-shell .app-header :is(.icon-button,.supported-files-trigger){width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;flex-shrink:0}
+@media(max-width:1100px){body > .app-shell .app-header > div{flex-direction:column!important;align-items:stretch!important}body > .app-shell .header-right{width:100%!important;flex-wrap:wrap!important;justify-content:flex-start!important}body > .app-shell .header-actions{flex-wrap:wrap;flex:1 1 240px;min-width:0;max-width:100%}}
+
+.eva-account-page{--account-ink:#18382e;--account-muted:#5a7065;--account-line:#dae6df;--account-green:#087f5b;margin:0;background:#f4f8f6;color:var(--account-ink);font:14px/1.6 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.eva-account-page *{box-sizing:border-box}
+.eva-account-page a,.eva-account-page button{touch-action:manipulation}
+.eva-account-page a{color:var(--account-green);text-decoration:none}
+.eva-account-page button{font:inherit;cursor:pointer}
+.eva-account-page :is(a,button):focus-visible{outline:3px solid #087f5b;outline-offset:4px}
+.eva-account-page button:disabled{opacity:.65;cursor:wait}
+.account-shell{width:min(1040px,calc(100% - 48px));margin-inline:auto}
+.account-topbar{background:#fff;border-bottom:1px solid var(--account-line)}
+.account-topbar-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:80px}
+.account-brand{display:inline-flex;align-items:baseline;gap:8px;min-height:44px;padding-block:7px;color:var(--account-ink)!important}
+.account-brand strong{font-size:28px;line-height:1.2;letter-spacing:-1px;font-weight:800}
+.account-brand span{color:var(--account-green);font-size:12px;font-weight:600}
+.account-back{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-weight:600;font-size:13px}
+.account-back svg{width:18px;height:18px}
+.account-heading{padding-block:38px 26px}
+.account-heading h1{font-size:30px;line-height:1.25;letter-spacing:-.7px;margin:5px 0 8px;font-weight:750}
+.account-heading>p:last-child{margin:0;color:var(--account-muted)}
+.account-eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:700;color:var(--account-muted);margin:0}
+.account-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:20px;align-items:start}
+.account-card{background:#fff;border:1px solid var(--account-line);border-radius:12px;padding:26px;min-width:0;box-shadow:0 2px 6px #18382e03}
+.account-person{display:flex;align-items:center;gap:14px;padding-block:0 24px}
+.account-person>div{min-width:0}
+.account-avatar{display:grid;place-items:center;background:#e8f5ee;color:var(--account-green);border:1px solid #d3e8dd;border-radius:50%;width:54px;height:54px;flex:0 0 54px;font-size:24px;font-weight:650}
+.account-person h2{font-size:19px;line-height:1.35;margin:0;font-weight:700;overflow-wrap:anywhere}
+.account-email{margin:4px 0 0;color:var(--account-muted);font-size:13px;overflow-wrap:anywhere}
+.account-facts{margin:0}
+.account-facts>div{display:flex;justify-content:space-between;gap:20px;border-top:1px solid #eef3ef;padding-block:15px;align-items:flex-start}
+.account-facts dt{color:var(--account-muted);font-size:12px;flex:0 0 auto}
+.account-facts dd{margin:0;font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere;min-width:0}
+.account-google{font-weight:750;color:var(--account-muted);margin-right:5px}
+.account-note{color:var(--account-muted);font-size:12px;line-height:1.7;margin:16px 0 0}
+.account-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:20px}
+.account-section-heading h2{font-size:20px;letter-spacing:-.3px;margin:4px 0 0;font-weight:700}
+.account-integration-mark{display:grid;place-items:center;background:#f3f8f5;color:var(--account-green);border:1px solid #e1eee6;border-radius:9px;width:40px;height:40px;flex:0 0 40px}
+.account-integration-mark svg{width:20px;height:20px}
+.account-connection-status{background:#f5faf7;border:1px solid #e1eee6;border-radius:8px;padding:14px 16px;margin:4px 0 18px}
+.account-status-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--account-muted)}
+.account-status-badge::before{content:"";width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:currentColor}
+.account-status-badge[data-connected="true"]{color:var(--account-green)}
+#account-astri-status{margin:6px 0 0;color:var(--account-muted);font-size:12px;line-height:1.6}
+.account-connection-actions{display:flex;flex-wrap:wrap;gap:8px}
+.account-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--account-line);border-radius:8px;font-size:12px!important;font-weight:650;line-height:1.4;text-align:center;background:white;box-shadow:none}
+.eva-account-page .account-primary{background:var(--account-green);color:white;border-color:var(--account-green)}
+.eva-account-page .account-primary:hover{background:#086849;border-color:#086849}
+.account-secondary{color:var(--account-ink)!important;background:white}
+.account-secondary:hover{background:#f3f8f5;border-color:#bfd5c7}
+.account-credential-note{margin-top:24px;padding-top:20px;border-top:1px solid #eef3ef}
+.account-credential-note h3{font-size:13px;margin:0 0 6px;font-weight:650}
+.account-credential-note p{font-size:12px;color:var(--account-muted);margin:0;line-height:1.7}
+.account-admin{margin-top:22px}
+.account-session{display:flex;justify-content:space-between;align-items:center;gap:24px;border-top:1px solid var(--account-line);margin-top:28px;padding-block:24px}
+.account-session>div{min-width:0}
+.account-session h2{font-size:14px;font-weight:650;margin:0 0 6px}
+.account-session p{font-size:12px;color:var(--account-muted);margin:0;max-width:520px;line-height:1.7}
+.account-session #eva-account-feedback:not(:empty){color:#8c3934;margin-top:8px}
+.account-session .account-button{flex-shrink:0}
+.account-footer{font-size:11px;color:#63766d;padding:4px 0 28px}
+.account-sr,.account-skip:not(:focus){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.account-skip:focus{position:fixed;top:8px;left:8px;z-index:100;background:white;padding:12px;border:1px solid var(--account-line)}
+@media(max-width:700px){.account-shell{width:calc(100% - 32px)}.account-topbar-inner{min-height:72px}.account-grid{grid-template-columns:minmax(0,1fr);gap:16px}.account-heading{padding-block:26px 22px}.account-heading h1{font-size:26px}.account-card{padding:20px}.account-session{align-items:flex-start;flex-direction:column;gap:16px;margin-top:24px;padding-block:22px}.account-session .account-button{width:100%}.account-back{font-size:12px}.account-person{padding-bottom:20px}.account-facts>div{gap:12px}}
+@media(max-width:360px){.account-shell{width:calc(100% - 24px)}.account-card{padding:16px}.account-back{gap:4px}.account-brand strong{font-size:25px}.account-brand span{font-size:11px}.account-connection-actions{flex-direction:column}.account-facts>div{flex-direction:column;gap:6px}.account-facts dd{text-align:left}.account-person{gap:10px}.account-person h2{font-size:18px}.account-email{font-size:12px}}
