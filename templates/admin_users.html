@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pengguna EVA — DYENA</title>
+<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">
+<script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+<style>
+:root{--ink:#163227;--muted:#587365;--line:#dce9e1;--green:#087f5b;--green-dark:#066347;--standar:#099268;--premium:#7048e8;--free:#6c757d}*{box-sizing:border-box}body{margin:0;background:#f4faf6;color:var(--ink);font:14px/1.6 system-ui,sans-serif}button,input,select{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}a{color:var(--green);text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--green);outline-offset:3px}.shell{width:min(1180px,calc(100% - 40px));margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:24px 0}header nav{display:flex;gap:10px;align-items:center}h1{font-size:29px;letter-spacing:-.8px;margin:0}p{margin:6px 0;color:var(--muted)}.button{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 12px;border:1px solid #cbded0;background:#fff;color:var(--green);border-radius:8px;text-decoration:none;font-weight:600;font-size:13px}.button:hover{background:#eaf7ef}.button:disabled{opacity:.6;cursor:default}.button.primary{background:var(--green);color:#fff;border-color:var(--green)}.button.primary:hover{background:var(--green-dark)}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0}.metric{padding:18px;background:#fff;border:1px solid var(--line);border-radius:12px}.metric strong{display:block;font-size:30px}.metric span{font-size:13px;color:var(--muted)}.toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:20px 0 12px}.toolbar label{flex:1}.toolbar input{width:100%;max-width:440px;min-height:44px;border:1px solid var(--line);border-radius:9px;padding:0 12px;background:#fff}.table-scroll{overflow:auto;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;min-width:860px}th,td{text-align:left;padding:12px 14px;border-bottom:1px solid #edf3ee}th{font-size:12px;color:var(--muted);font-weight:600;background:#f9fcfa}td strong,td small{display:block}td small{font-size:12px;color:var(--muted)}.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px}.badge-free{background:#f1f3f5;color:var(--free)}.badge-standar{background:#e6fcf5;color:var(--standar);border:1px solid #c3fae8}.badge-owner{background:#e7f5ff;color:#1971c2;border:1px solid #d0ebff}.status{min-height:28px;margin-top:12px;font-size:13px;color:var(--muted)}footer{padding:24px 0;color:var(--muted);font-size:12px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.actions-cell{display:flex;gap:6px;align-items:center}
+/* Modal dialog */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(19,32,28,.48);backdrop-filter:blur(2px);z-index:99;align-items:center;justify-content:center;padding:16px}
+.modal-backdrop.open{display:flex}
+.modal-card{background:#fff;border-radius:16px;width:min(440px,100%);padding:24px;border:1px solid var(--line);box-shadow:0 18px 42px rgba(0,0,0,.12)}
+.modal-card h2{margin:0 0 4px;font-size:20px;letter-spacing:-.4px}
+.modal-card p.subtitle{margin:0 0 16px;color:var(--muted);font-size:13px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-weight:600;font-size:12px;color:var(--ink);margin-bottom:5px}
+.form-group select,.form-group input{width:100%;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff;font-size:13px}
+.quick-buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.quick-btn{background:#f4faf6;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px;font-weight:600;color:var(--muted);text-align:center}
+.quick-btn:hover{background:#eaf7ef;color:var(--green);border-color:#cbded0}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+@media(max-width:600px){.shell{width:calc(100% - 28px)}header{align-items:flex-start}header nav{flex-direction:column;gap:5px}h1{font-size:25px}.metrics{gap:7px}.metric{padding:12px}.metric strong{font-size:25px}.metric span{font-size:11px}.toolbar{align-items:stretch}.toolbar input{font-size:12px}.quick-buttons{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><div class="shell">
+<header><div><h1>Pengguna EVA</h1><p>Daftar akun, manajemen paket, dan aktivitas login.</p></div><nav><a class="button" href="/admin">Dashboard</a><button class="button" type="button" id="eva-logout">Keluar</button></nav></header>
+<main><div class="metrics" aria-label="Ringkasan pengguna"><div class="metric"><strong id="users-total">—</strong><span>Akun terdaftar</span></div><div class="metric"><strong id="users-today">—</strong><span>Aktif hari ini</span></div><div class="metric"><strong id="users-online">—</strong><span>Online sekitar 5 menit terakhir</span></div></div>
+<div class="toolbar"><label><span class="sr">Cari nama atau email</span><input id="users-search" type="search" placeholder="Cari nama atau email" autocomplete="off"></label><button type="button" class="button" id="users-refresh">Muat ulang</button></div>
+<div class="table-scroll" role="region" aria-label="Daftar pengguna" tabindex="0"><table><thead><tr><th>Pengguna</th><th>Akses</th><th>Paket</th><th>Masa Aktif</th><th>Terakhir login</th><th>Status akun</th><th>Tindakan</th></tr></thead><tbody id="eva-users"><tr><td colspan="7">Memuat pengguna…</td></tr></tbody></table></div>
+<p class="status" id="users-feedback" role="status"></p><p class="status" id="eva-account-feedback" role="status"></p>
+</main><footer>EVA by DYENA · Online dihitung dari aktivitas terakhir, bukan status Google.</footer></div>
+
+<!-- Modal Edit Paket -->
+<div class="modal-backdrop" id="plan-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-card">
+    <h2 id="modal-title">Ubah Paket Pengguna</h2>
+    <p class="subtitle" id="modal-user-desc">Pilih paket dan tentukan masa aktif.</p>
+    <form id="plan-form">
+      <input type="hidden" id="edit-user-id">
+      <div class="form-group">
+        <label for="edit-plan-select">Pilihan Paket</label>
+        <select id="edit-plan-select">
+          <option value="free">Free (Tanpa Paket)</option>
+          <option value="standar">Standar (Rp 29rb/bln)</option>
+          <option value="premium">Premium (Rp 69rb/bln)</option>
+        </select>
+      </div>
+      <div class="form-group" id="plan-until-group">
+        <label for="edit-plan-until">Aktif Sampai (Tanggal & Waktu)</label>
+        <input type="datetime-local" id="edit-plan-until">
+        <div class="quick-buttons">
+          <button type="button" class="quick-btn" data-days="3">+3 Hari</button>
+          <button type="button" class="quick-btn" data-days="30">+30 Hari</button>
+          <button type="button" class="quick-btn" data-days="90">+3 Bulan</button>
+          <button type="button" class="quick-btn" data-days="365">+1 Tahun</button>
+        </div>
+      </div>
+      <p class="status" id="modal-feedback" style="min-height:20px;margin:8px 0;font-size:12px;color:#c92a2a;"></p>
+      <div class="modal-actions">
+        <button type="button" class="button" id="modal-cancel">Batal</button>
+        <button type="submit" class="button primary" id="modal-save">Simpan Perubahan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/eva-users.js') }}?v=admin-plan-v2" defer></script></body></html>
