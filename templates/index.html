@@ -6,19 +6,34 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>EVA - Engineering Vector Automation</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="{{ url_for('static', filename='assets/favicon.ico') }}" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='assets/eva-icon-32.png') }}">
-  <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='assets/eva-icon-64.png') }}">
-  <link rel="apple-touch-icon" sizes="192x192" href="{{ url_for('static', filename='assets/eva-icon-192.png') }}">
-  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
-  <meta name="theme-color" content="#5DBB9A">
+  <title>EVA by DYENA</title>
+  <!-- Open Graph / social share preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://eva.dyena.id/">
+  <meta property="og:title" content="EVA by DYENA">
+  <meta property="og:description" content="Workspace desain jaringan: KMZ, CAD, BOQ, HPDB, ASTRI, STELLA, dan GDR.">
+  <meta property="og:image" content="https://eva.dyena.id/static/assets/eva-share-20260915.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="EVA by DYENA">
+  <meta property="og:site_name" content="EVA">
+  <meta property="og:locale" content="id_ID">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="EVA by DYENA">
+  <meta name="twitter:description" content="Workspace desain jaringan: KMZ, CAD, BOQ, HPDB, ASTRI, STELLA, dan GDR.">
+  <meta name="twitter:image" content="https://eva.dyena.id/static/assets/eva-share-20260915.png">
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-icon.svg?v=20260923-green">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/eva-icon-32.png?v=20260923-green">
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/assets/eva-icon-64.png?v=20260923-green">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/assets/eva-icon-192.png?v=20260923-green">
+  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}?v=20260923-green">
+  <meta name="theme-color" content="#F4F8F6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=agent-css-road-20260709-1340">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=gdr-modal-20260915-v4">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/supabase-overlay.css') }}?v=eva-20260610-overlay">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-assistant.css') }}?v=eva-20260605-folder-alias">
   <script>
@@ -54,6 +69,159 @@
       boqFeederTemplateNameByNetwork: {{ boq_feeder_template_name_by_network|tojson }}
     };
   </script>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+  <link rel="stylesheet" href="/static/css/eva-index-workbench.css?v=result-font-20260924-v1">
+  <link rel="stylesheet" href="/static/css/stella.css?v=support-five-across-20260925-v1">
+  <link rel="stylesheet" href="/static/css/document-abd.css?v=abd-convert-20260917-v2">
+  <link rel="stylesheet" href="/static/css/donate.css?v=donate-20260911-v3">
+  <link rel="stylesheet" href="/static/css/donate-order.css?v=donate-order-20260911-v1">
+  <link rel="stylesheet" href="/static/css/donate-inner.css?v=donate-inner-20260911-v1">
+  <link rel="stylesheet" href="/static/css/donate-cta.css?v=donate-cta-20260911-v2">
+  <link rel="stylesheet" href="/static/css/donate-qris-bloom.css?v=bloom-20260919-wind3">
+  <style>
+    #fdtCodingModal .fdt-modal-header {
+      min-height: 4.25rem;
+      padding: .7rem 1rem;
+      border: 0;
+      border-bottom: 1px solid #dcebe5;
+      border-radius: var(--r-lg) var(--r-lg) 0 0;
+      background: #f4fbf8;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+    }
+    #fdtCodingModal .fdt-modal-heading {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: .75rem;
+    }
+    #fdtCodingModal .fdt-modal-icon {
+      display: inline-flex;
+      width: 2.4rem;
+      height: 2.4rem;
+      flex: 0 0 2.4rem;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #c8e4d9;
+      border-radius: .72rem;
+      background: #fff;
+      color: #14805d;
+    }
+    #fdtCodingModal .fdt-modal-icon svg {
+      width: 1.2rem;
+      height: 1.2rem;
+    }
+    #fdtCodingModal .fdt-modal-copy {
+      min-width: 0;
+    }
+    #fdtCodingModal .fdt-modal-header h2 {
+      margin: 0;
+      color: #17372f;
+      font-size: clamp(1.08rem, 1.45vw, 1.35rem);
+      font-weight: 750;
+      line-height: 1.2;
+      letter-spacing: -.02em;
+    }
+    #fdtCodingModal .fdt-modal-header p {
+      margin: .15rem 0 0;
+      color: #5d756d;
+      font-size: .76rem;
+      line-height: 1.35;
+    }
+    #fdtCodingModal .fdt-coding-modal-close {
+      width: 2.5rem;
+      height: 2.5rem;
+      flex: 0 0 2.5rem;
+      border: 1px solid #c8e4d9;
+      border-radius: .72rem;
+      background: #fff;
+      color: #286c58;
+      font-size: 1.35rem;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(22, 101, 78, .08);
+    }
+    #fdtCodingModal .fdt-coding-modal-close:hover {
+      border-color: #9fd2bf;
+      background: #e9f7f1;
+      color: #0f694b;
+    }
+    #fdtCodingModal .fdt-coding-modal-close:focus-visible {
+      outline: 2px solid #3fb78d;
+      outline-offset: 2px;
+    }
+    @media (max-width: 640px) {
+      #fdtCodingModal .fdt-modal-header {
+        min-height: 3.75rem;
+        padding: .55rem .7rem;
+      }
+      #fdtCodingModal .fdt-modal-heading { gap: .55rem; }
+      #fdtCodingModal .fdt-modal-icon {
+        width: 2.15rem;
+        height: 2.15rem;
+        flex-basis: 2.15rem;
+      }
+      #fdtCodingModal .fdt-modal-header h2 { font-size: 1rem; }
+      #fdtCodingModal .fdt-modal-header p { display: none; }
+      #fdtCodingModal .fdt-coding-modal-close {
+        width: 2.35rem;
+        height: 2.35rem;
+        flex-basis: 2.35rem;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-tailwind.css?v=tailwind-3.4.17-20260923-v1">
+  <link rel="stylesheet" href="/static/css/eva-type-scale.css?v=type-90-20260924-v1">
+  <link rel="stylesheet" href="/static/css/eva-card-density.css?v=result-inline-20260924-v1">
+  <link rel="stylesheet" href="/static/css/eva-workbench-upgrade.css?v=disabled-output-20260930-v2">
+  <link rel="stylesheet" href="/static/css/eva-astri-popup.css?v=astri-pr-value-20261015-v1">
+  <style id="eva-conversion-failure-style">
+/* Failure-only popup; other popups and Validation unchanged. */
+#conversionFailureDialog {
+  box-sizing: border-box; width: min(600px, calc(100vw - 24px)); max-height: calc(100dvh - 32px);
+  padding: 0; border: 1px solid #d8e4dd; border-radius: 18px; background: #fff; color: #273d34;
+  box-shadow: 0 20px 70px #16392b26; font-family: inherit; font-size: 14px; line-height: 1.55;
+}
+#conversionFailureDialog[open] { display: flex; flex-direction: column; }
+#conversionFailureDialog::backdrop { background: #dcece4b8; backdrop-filter: blur(3px); }
+#conversionFailureDialog > header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 12px 16px; background: #f2f8f5; border-bottom: 1px solid #e2ece6; }
+#conversionFailureDialog h2 { margin: 0; color: #183d2f; font-size: 18px; font-weight: 700; }
+#conversionFailureDialog h3 { margin: 0 0 8px; font-size: 14px; color: #183d2f; font-weight: 700; }
+#conversionFailureDialog button { min-height: 44px !important; min-width: 44px; white-space: normal; font-size: 13px !important; border-radius: 10px !important; }
+#conversionFailureDialog .conversion-failure-close { width: 44px; height: 44px; flex-shrink: 0; padding: 0 !important; background: transparent !important; border: 0 !important; color: #4d6258 !important; box-shadow: none !important; font-size: 26px !important; }
+#conversionFailureDialog button:focus-visible { outline: 2px solid #13754f !important; outline-offset: 3px; }
+#conversionFailureDialog .conversion-failure-body { min-height: 0; padding: 16px; overflow-y: auto; overflow-wrap: anywhere; }
+#conversionFailureDialog p { margin: 0 0 10px; }
+#conversionFailureDialog .conversion-failure-file { color: #5c6f65; font-size: 12px; }
+#conversionFailureDialog .conversion-failure-where { padding: 12px; margin-bottom: 12px; border: 1px solid #e2ece6; border-radius: 12px; }
+#conversionFailureDialog .conversion-failure-standard { padding: 12px; border: 1px solid #dceae1; border-radius: 12px; background: #f4faf6; }
+#conversionFailureDialog .conversion-failure-source { font-size: 12px; color: #4e6659; }
+#conversionFailureDialog pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12.5px; color: #273d34; }
+#conversionFailureDialog .conversion-failure-note { color: #5c6f65; font-size: 12px; }
+#conversionFailureDialog footer { display: flex; flex-wrap: wrap; align-items: center; flex-shrink: 0; gap: 8px; padding: 12px 16px; border-top: 1px solid #e2ece6; }
+#conversionFailureDialog footer .conversion-failure-note { width: 100%; margin: 0; }
+#conversionFailureDialog footer .conversion-failure-note:empty { display: none; }
+#conversionFailureButton { min-height: 44px; white-space: normal; }
+#conversionFailureButton[hidden], #retryButton[hidden] { display: none !important; }
+@media (max-width: 480px) {
+  #conversionFailureDialog footer > button { flex: 1 1 120px; }
+}
+</style>
+  <style>
+    #abdCadModal { width: min(920px, calc(100vw - 24px)); height: min(780px, calc(100dvh - 24px)); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid #dce7e1; border-radius: 14px; background: #f4f8f6; color: #12352d; overflow: hidden; box-shadow: 0 18px 60px #12352d26; }
+    #abdCadModal[open] { display: flex; flex-direction: column; }
+    #abdCadModal::backdrop { background: #dcebe18c; backdrop-filter: blur(3px); }
+    #abdCadModal .abd-cad-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 16px; background: #f8fcfa; border-bottom: 1px solid #cce6da; }
+    #abdCadModal #abdCadTitle { margin: 0; font: 700 18px/1.4 Inter, system-ui, sans-serif; color: #12352d; }
+    #abdCadModal #abdCadClose { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; padding: 0; border: 1px solid #cce6da; border-radius: 10px; background: white; color: #17684b; font: 26px/1 system-ui, sans-serif; cursor: pointer; }
+    #abdCadModal #abdCadClose:hover { background: #e7f5ee; }
+    #abdCadModal #abdCadClose:focus-visible { outline: 3px solid #2bbf87; outline-offset: 2px; }
+    #abdCadFrame { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: #f4f8f6; }
+    @media (max-width: 520px) { #abdCadModal { height: calc(100dvh - 24px); } }
+  </style>
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=account-page-20261014-v1"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-account.css') }}?v=account-page-20261014-v1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-drm-notifications.css') }}?v=drm-successful-20261015-v1">
 </head>
 <body class="min-h-screen text-zinc-100 antialiased">
   <section id="notificationRoot" class="notification-stack" aria-label="Notifikasi aplikasi"></section>
@@ -61,40 +229,45 @@
     <header class="app-header">
       <div class="mx-auto flex max-w-[1500px] flex-col gap-3 px-4 py-3.5 md:flex-row md:items-center md:justify-between lg:px-6">
         <div class="brand-lockup flex min-w-0 items-center gap-3">
-          <div class="brand-mark flex h-14 w-14 items-center justify-center">
-            <img class="brand-logo" src="{{ url_for('static', filename='assets/eva-icon-128.png') }}" alt="" width="56" height="56" decoding="async">
-          </div>
           <div class="min-w-0">
             <div class="brand-title-row">
-              <h1 class="brand-heading text-sm font-extrabold tracking-tight text-white sm:text-lg">Engineering Vector Automation</h1>
+              <h1 class="brand-heading text-sm font-extrabold tracking-tight text-white sm:text-lg"><span class="brand-eva">EVA</span><span class="brand-by">by DYENA</span></h1>
             </div>
-            <p class="brand-description mt-0.5 text-xs text-zinc-400 sm:text-sm">Upload, validasi, preview mapping, lalu ekspor CAD, BOQ, ASTRI, dan HPDB.</p>
+            <p class="brand-description mt-0.5 text-xs text-zinc-400 sm:text-sm">Desain jaringan · KMZ, CAD, BOQ, HPDB, ASTRI, STELLA &amp; GDR.</p>
           </div>
         </div>
         <div class="header-right">
-          <details class="supported-files-menu">
-            <summary class="supported-files-trigger" data-tooltip="Format file yang didukung" data-tooltip-side="bottom" aria-label="Format file yang didukung">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M5 4.5h9l5 5v10H5v-15Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                <path d="M14 4.5V10h5M8 14h8M8 17h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <button id="donateButton" type="button" class="donate-button" aria-haspopup="dialog" aria-controls="donateDialog" aria-label="Donasi untuk pengembangan EVA">
+            <span class="donate-button__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 8.5c0 5.5-8 10-8 10s-8-4.5-8-10a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 8.5Z"/>
               </svg>
-              <span class="supported-files-label">Format file</span>
-              <span class="supported-files-desc">KML/KMZ untuk pole, kabel, boundary, FAT, desain, dan KMZ standar. ROAD otomatis dari server OSM.</span>
-            </summary>
-            <div class="supported-files-popover" role="list" aria-label="Format file yang didukung">
-              <span role="listitem">.kml</span>
-              <span role="listitem">.kmz</span>
-              <span role="listitem">Max {{ max_upload_mb }}MB/file</span>
-            </div>
-          </details>
+            </span>
+            <span class="donate-button__copy">
+              <span class="donate-button__label">Donasi</span>
+            </span>
+          </button>
           <div class="header-actions">
+            <div class="eva-account-menu">
+              <button class="eva-account-action" type="button" id="evaDrmButton" aria-haspopup="dialog" aria-expanded="false" aria-controls="evaDrmDialog" aria-label="Buka notifikasi">
+                <svg class="eva-drm-bell" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span id="evaDrmCount" class="eva-drm-unread-count" aria-hidden="true" hidden>0</span>
+              </button>
+              <span id="evaDrmAnnounce" class="screen-reader" role="status" aria-live="polite"></span>
+              {% if eva_account.role == 'owner' %}<a class="eva-account-action" href="/auth/admin/start" target="_blank" rel="noopener">Admin</a>{% endif %}
+              <a class="eva-account-action eva-account-profile-link" id="eva-account-link" href="{{ url_for('eva_account_page') }}" aria-label="Buka akun saya: {{ eva_account.name }}">
+                <span class="eva-account-avatar" aria-hidden="true">{{ (eva_account.name or eva_account.email)[:1]|upper }}</span>
+                <span class="eva-account-name">{{ eva_account.name or 'Akun saya' }}</span>
+              </a>
+              <span id="eva-account-feedback" class="screen-reader" role="status"></span>
+            </div>
             <button id="header-help" type="button" class="icon-button" data-tour-target="header-help" data-tooltip="Bantuan & shortcut (?)" data-tooltip-side="bottom" aria-label="Bantuan" onclick="window.openHelp()">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
                 <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
-            <a href="https://eva-mrdesign.my.id/docs/" target="_blank" rel="noopener" class="icon-button" data-tooltip="Dokumentasi" data-tooltip-side="bottom" aria-label="Dokumentasi" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
+            <a href="/docs" target="_blank" rel="noopener" class="icon-button" data-tooltip="Dokumentasi" data-tooltip-side="bottom" aria-label="Dokumentasi" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M4 19.5v-15A1.5 1.5 0 0 1 5.5 3H19l-1.5 1.5L19 6H5.5A1.5 1.5 0 0 0 4 7.5v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M9 10h6M9 14h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -113,7 +286,9 @@
     </header>
 
     <section class="mx-auto max-w-[1500px] px-4 pt-5 lg:px-6">
-      <nav id="workflowStepper" class="workflow-stepper" aria-label="Workflow conversion"></nav>
+      <nav aria-label="Workflow konversi">
+        <ol id="workflowStepper" class="workflow-stepper"></ol>
+      </nav>
     </section>
 
     <section class="app-layout mx-auto grid max-w-[1500px] gap-5 px-4 py-5 lg:px-6">
@@ -151,7 +326,7 @@
                     </span>
                     <span class="drop-zone-texts">
                       <span class="drop-zone-copy">Tarik file KML/KMZ ke sini atau klik untuk memilih.</span>
-                      <span class="drop-zone-helper">Format didukung: .kml dan .kmz. Data ROAD tidak perlu diunggah manual.</span>
+                      <span class="drop-zone-helper">Format didukung: .kml dan .kmz.</span>
                     </span>
                   </span>
                   <span class="drop-zone-add-btn">Tambah file</span>
@@ -172,6 +347,8 @@
                 Coba lagi
               </button>
             </div>
+
+            <a id="convertShortcut" class="convert-shortcut" href="#generate-button">Ke tombol proses <span aria-hidden="true">↓</span></a>
 
             <section id="kmlFolderPanel" class="hidden folder-panel flow-section-card" aria-hidden="true" inert style="display:none;">
               <span id="kmlFolderText" hidden></span>
@@ -194,30 +371,19 @@
                 </div>
               </div>
               <div class="mt-4">
-                <span class="mb-2 flex items-center gap-1.5 text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Cakupan
-                  <span class="tip-icon" tabindex="0" data-tooltip="Cluster = Distribution (FDT ke HP). Feeder/Subfeeder = Backbone (OLT ke FDT)." aria-label="Cluster vs Feeder vs Subfeeder">i</span>
-                </span>
+                <span class="mb-2 block text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Cakupan</span>
                 <div id="scopeTypeSelector" class="grid gap-2 sm:grid-cols-2">
                   <label class="network-type-option">
                     <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Cluster" checked>
-                    <span>
-                      <strong>Cluster</strong>
-                      <small>Distribution</small>
-                    </span>
+                    <span><strong>Cluster</strong></span>
                   </label>
                   <label class="network-type-option">
                     <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Feeder">
-                    <span>
-                      <strong>Feeder</strong>
-                      <small>Backbone</small>
-                    </span>
+                    <span><strong>Feeder</strong></span>
                   </label>
                   <label class="network-type-option">
                     <input class="scope-type-input sr-only" type="radio" name="scope_type" value="Subfeeder">
-                    <span>
-                      <strong>Subfeeder</strong>
-                      <small>Backbone</small>
-                    </span>
+                    <span><strong>Subfeeder</strong></span>
                   </label>
                 </div>
                 <p id="scopeTypeHint" class="mt-2 text-xs font-medium text-zinc-500">Mode Cluster aktif.</p>
@@ -253,19 +419,19 @@
                   </label>
                   <label class="output-mode-option">
                     <input class="output-mode-input sr-only" type="checkbox" value="boq">
-                    <span>BOQ (Excel) <span class="tip-icon" tabindex="0" data-tooltip="BOQ: Bill of Quantity, daftar material dan jumlahnya per cluster." aria-label="Apa itu BOQ">i</span></span>
+                    <span>BOQ (Excel)</span>
                   </label>
                   <label class="output-mode-option">
                     <input class="output-mode-input sr-only" type="checkbox" value="astri">
-                    <span>ASTRI (Excel) <span class="tip-icon" tabindex="0" data-tooltip="ASTRI: workbook standar berisi HPDB dan BOQ NRO Cluster untuk submission." aria-label="Apa itu ASTRI">i</span></span>
+                    <span>ASTRI (Excel)</span>
                   </label>
                   <label class="output-mode-option">
                     <input class="output-mode-input sr-only" type="checkbox" value="kmz">
-                    <span>KMZ Standar <span class="tip-icon" tabindex="0" data-tooltip="Membuat KMZ/KML standar dari file KML/KMZ upload utama, memakai coding FDT spreadsheet server." aria-label="Apa itu KMZ Standar">i</span></span>
+                    <span>KMZ Standar</span>
                   </label>
                   <label class="output-mode-option">
                     <input class="output-mode-input sr-only" type="checkbox" value="hpdb">
-                    <span>HPDB (Excel) <span class="tip-icon" tabindex="0" data-tooltip="HPDB: Homepass Database, master data homepass per cluster dan FAT." aria-label="Apa itu HPDB">i</span></span>
+                    <span>HPDB (Excel)</span>
                   </label>
                 </div>
                 <p id="outputModeHint" class="mt-2 text-xs font-medium text-zinc-500">Pilih format output yang ingin dibuat.</p>
@@ -281,7 +447,7 @@
               </label>
             </section>
 
-            <div id="generate-button" class="sticky-action-bar" data-tour-target="generate-button">
+            <div id="generate-button" tabindex="-1" class="sticky-action-bar" data-tour-target="generate-button">
               <button id="convertButton" type="submit" class="primary-button w-full" disabled aria-disabled="true">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -299,23 +465,22 @@
         <section id="astriIntegrationPanel" class="mt-4 overflow-hidden rounded-[22px] border border-sky-200/70 bg-white/55 p-4 shadow-[0_18px_60px_rgba(14,165,233,0.14)] backdrop-blur-2xl ring-1 ring-white/70">
           <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h3 class="text-sm font-black uppercase tracking-[0.18em] text-sky-800">ASTRI Upload</h3>
-              <p id="astriStatusText" class="mt-1 text-xs text-zinc-500">Belum login ASTRI.</p>
+              <h3 class="text-base font-bold text-sky-900">DRM APD</h3>
             </div>
-            <button id="astriClearButton" type="button" class="rounded-xl border border-sky-200/70 bg-white/55 px-3 py-2 text-xs font-bold text-sky-800">Logout</button>
+            <p id="astriStatusText" class="mt-1 text-xs text-zinc-500" role="status" aria-live="polite">Menghubungkan ASTRI...</p>
           </div>
-          <div id="astriLoginForm" class="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-            <input id="astriUsernameInput" type="text" class="ui-input" placeholder="Username ASTRI" autocomplete="username">
-            <input id="astriPasswordInput" type="password" class="ui-input" placeholder="Password ASTRI" autocomplete="current-password">
+          <div id="astriLoginForm" hidden class="hidden mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <input id="astriUsernameInput" type="text" class="ui-input" placeholder="Username ASTRI" autocomplete="username" aria-label="Username ASTRI">
+            <input id="astriPasswordInput" type="password" class="ui-input" placeholder="Password ASTRI" autocomplete="current-password" aria-label="Password ASTRI">
             <button id="astriLoginButton" type="button" class="secondary-button">Login ASTRI</button>
           </div>
           <div class="mt-3 grid gap-2 md:grid-cols-[140px_140px_1fr_auto]">
-            <select id="astriTargetTypeSelect" class="ui-input">
+            <select id="astriTargetTypeSelect" class="ui-input" aria-label="Scope ASTRI">
               <option value="cluster">Cluster</option>
               <option value="subfeeder">Subfeeder</option>
               <option value="feeder">Feeder</option>
             </select>
-            <select id="astriStatusFilter" class="ui-input">
+            <select id="astriStatusFilter" class="ui-input" aria-label="Status ASTRI">
               <option value="">Semua status</option>
               <option value="Approved 2">Approved 2</option>
               <option value="Approved 3">Approved 3</option>
@@ -329,50 +494,105 @@
               <option value="Successful">Successful</option>
               <option value="Unsuccessful">Unsuccessful</option>
             </select>
-            <input id="astriClusterSearchInput" type="text" class="ui-input" placeholder="Search nama/kode cluster/subfeeder/feeder ASTRI">
+            <input id="astriClusterSearchInput" type="text" class="ui-input" placeholder="Nama/kode target ASTRI" aria-label="Cari target ASTRI">
             <button id="astriClusterSearchButton" type="button" class="secondary-button">Search</button>
           </div>
-          <select id="astriClusterSelect" class="mt-2 hidden w-full ui-input"></select>
+          <select id="astriClusterSelect" class="mt-2 hidden w-full ui-input" aria-label="Pilih hasil pencarian ASTRI"></select>
           <div id="astriMatchBox" class="mt-3 hidden rounded-2xl border border-sky-200/70 bg-white/45 p-3 text-sm text-zinc-700 shadow-inner backdrop-blur-xl"></div>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <button id="astriMatchButton" type="button" class="secondary-button">Cari Match ASTRI <span class="tip-icon" tabindex="0" data-tooltip="Cari data cluster/subfeeder/feeder di ASTRI berdasarkan pilihan search di atas." aria-label="Info Cari Match ASTRI">i</span></button>
-            <button id="astriApdConvertButton" type="button" class="rounded-xl border border-indigo-200/70 bg-indigo-50/55 px-3 py-2 text-xs font-bold text-indigo-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(99,102,241,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50/75 active:translate-y-0">Convert dari APD ASTRI <span class="tip-icon" tabindex="0" data-tooltip="Ambil dokumen APD dari ASTRI, convert lewat EVA, lalu siapkan output standar." aria-label="Info Convert APD ASTRI">i</span></button>
-            <button id="astriUploadButton" type="button" class="secondary-button">Upload Document <span class="tip-icon" tabindex="0" data-tooltip="Upload output dokumen EVA ke dokumen ASTRI yang sedang dimatch." aria-label="Info Upload Document">i</span></button>
-            <button id="astriVerifyButton" type="button" class="secondary-button">Verify <span class="tip-icon" tabindex="0" data-tooltip="Verify dokumen ASTRI setelah upload selesai dan data sudah sesuai." aria-label="Info Verify">i</span></button>
-            <button id="astriUnverifyButton" type="button" class="secondary-button">Unverify <span class="tip-icon" tabindex="0" data-tooltip="Batalkan status verify dokumen jika masih perlu revisi." aria-label="Info Unverify">i</span></button>
-            <button id="astriDownloadLatestButton" type="button" class="secondary-button">Download Document <span class="tip-icon" tabindex="0" data-tooltip="Download dokumen ASTRI terbaru untuk cluster/subfeeder/feeder terpilih." aria-label="Info Download Document">i</span></button>
-            <button id="astriScheduleButton" type="button" class="secondary-button">Approve Schedule <span class="tip-icon" tabindex="0" data-tooltip="Approve jadwal ASTRI agar status lanjut dan Create/Add BOQ aktif." aria-label="Info Approve Schedule">i</span></button>
-            <button id="astriAddBoqButton" type="button" class="secondary-button">Add BOQ <span class="tip-icon" tabindex="0" data-tooltip="Submit BOQ ke ASTRI. Supplier mengikuti form ASTRI per item: Indotunas/Internal/dll." aria-label="Info Add BOQ">i</span></button>
+          <p id="astriActionHint" class="astri-action-hint mt-3" role="status" aria-live="polite">Memeriksa koneksi ASTRI...</p>
+          <details id="astriActionsDetails" class="astri-actions-details mt-3">
+            <summary>Aksi ASTRI <span>Convert · Dokumen · Schedule · BOQ</span></summary>
+          <div id="astriActionButtons" class="mt-3 flex flex-wrap gap-2">
+            <button id="astriMatchButton" type="button" class="secondary-button">Cari Match ASTRI</button>
+            <button id="astriApdConvertButton" type="button" class="rounded-xl border border-indigo-200/70 bg-indigo-50/55 px-3 py-2 text-xs font-bold text-indigo-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_8px_24px_rgba(99,102,241,0.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50/75 active:translate-y-0">Convert dari APD ASTRI</button>
+            <button id="astriUploadButton" type="button" class="secondary-button">Upload Document</button>
+            <button id="astriVerifyButton" type="button" class="secondary-button" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Verify</button>
+            <button id="astriUnverifyButton" type="button" class="secondary-button" disabled aria-disabled="true" title="Cari match ASTRI dulu.">Unverify</button>
+            <button id="astriDownloadLatestButton" type="button" class="secondary-button">Download Document</button>
+            <button id="astriScheduleButton" type="button" class="secondary-button">Approve Schedule</button>
+            <button id="astriAddBoqButton" type="button" class="secondary-button">Add BOQ</button>
             <a id="astriOpenLink" class="secondary-button hidden" target="_blank" rel="noopener">Buka ASTRI</a>
           </div>
-          <p id="astriUploadResult" class="mt-3 text-xs text-zinc-500"></p>
+          </details>
+          <div id="astriInlineFeedback" class="inline-feedback mt-3 hidden" aria-live="polite">
+            <strong data-inline-title></strong>
+            <span data-inline-message></span>
+          </div>
+        </section>
+        <section id="stellaIntegrationPanel" class="stella-state-host">
+          <dialog id="stellaWorkspace" aria-labelledby="stellaWorkspaceTitle">
+            <div class="stella-dialog-header">
+              <div>
+                <h2 id="stellaWorkspaceTitle">STELLA</h2>
+                <p id="stellaStatusText" class="stella-status-detail" role="status">Memeriksa koneksi server...</p>
+              </div>
+              <div class="stella-header-actions">
+                <button id="stellaCloseButton" type="button" class="stella-secondary" aria-label="Tutup ruang kerja Stella">Tutup</button>
+              </div>
+            </div>
+            <div class="stella-toolbar">
+              <div class="stella-field stella-area">
+                <label for="stellaAreaSelect">Area</label>
+                <select id="stellaAreaSelect" disabled><option value="">Pilih area...</option></select>
+              </div>
+              <div class="stella-field stella-query">
+                <label for="stellaClusterSearchInput">Nama atau kode cluster</label>
+                <input id="stellaClusterSearchInput" type="search" placeholder="Ketik minimal 2 karakter..." maxlength="160" autocomplete="off" aria-describedby="stellaClusterHint" disabled>
+              </div>
+              <button id="stellaLoadClustersButton" type="button" class="stella-secondary" disabled>Cari</button>
+            </div>
+            <div class="stella-list-toolbar">
+              <div class="stella-view-switch" role="group" aria-label="Tampilkan cluster">
+                <button id="stellaResultsViewButton" type="button" class="stella-view-button" aria-pressed="true">Hasil</button>
+                <button id="stellaSelectedViewButton" type="button" class="stella-view-button" aria-pressed="false">Dipilih (0)</button>
+              </div>
+              <button id="stellaClearButton" type="button" class="stella-text-button" disabled>Kosongkan pilihan</button>
+            </div>
+            <p id="stellaClusterHint" class="stella-hint" aria-live="polite">Pilih area, lalu cari cluster. Pilihan tersimpan saat berganti pencarian.</p>
+            <div class="stella-table-scroll" tabindex="0" role="region" aria-label="Daftar cluster" aria-busy="false">
+              <table class="stella-table">
+                <caption class="stella-sr-only">Hasil pencarian cluster dan pilihan untuk ekspor</caption>
+                <thead><tr><th scope="col" class="stella-check-cell"><span class="stella-sr-only">Pilih</span></th><th scope="col">Nama cluster</th><th scope="col" class="stella-code-cell">Kode cluster</th></tr></thead>
+                <tbody id="stellaClusterList"><tr><td colspan="3" class="stella-empty">Hasil pencarian akan muncul di sini.</td></tr></tbody>
+              </table>
+            </div>
+            <footer class="stella-dialog-footer">
+              <div class="stella-footer-info">
+                <strong id="stellaSelectedCount" aria-live="polite">0 cluster dipilih</strong>
+                <div id="stellaInlineFeedback" class="stella-feedback hidden" role="status" aria-live="polite" aria-atomic="true"><strong data-stella-feedback-title></strong><span data-stella-feedback-message></span></div>
+              </div>
+              <div class="stella-export-actions">
+                <a id="stellaDownloadLink" class="stella-download-link hidden" href="#">Unduh hasil terakhir</a>
+                <button id="stellaDownloadButton" type="button" class="stella-primary" disabled>Unduh Excel</button>
+              </div>
+            </footer>
+          </dialog>
         </section>
         <section id="resultDashboard" class="app-panel p-4 sm:p-5">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="result-dashboard-heading mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Ruang Hasil</h2>
               <p id="statusText" class="mt-1 text-sm text-zinc-400">Unggah file KML/KMZ, pilih format output, lalu klik Mulai Proses.</p>
+              <div id="inlineFeedback" class="inline-feedback mt-3 hidden" aria-live="polite">
+                <strong data-inline-title></strong>
+                <span data-inline-message></span>
+              </div>
             </div>
             <div class="result-status-actions">
               <button id="cancelJobButton" type="button" class="secondary-button cancel-job-button hidden">Batalkan</button>
-              <span id="dashboardStatusPill" class="status-pill" data-tone="idle">Belum ada file</span>
+              <span id="dashboardStatusPill" class="status-pill" data-tone="idle">Menunggu hasil</span>
             </div>
           </div>
 
           <div id="result-download" data-tour-target="result-download">
           <div id="downloadPanel" class="result-card hidden">
-            <button id="downloadPanelDismiss" type="button" class="result-card-dismiss" aria-label="Tutup banner hasil">&times;</button>
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div class="min-w-0 flex-1">
-                <p id="downloadResultTitle" class="text-base font-bold text-white">Konversi selesai</p>
-                <p id="downloadResultText" class="mt-1 text-sm leading-6 text-zinc-300">Output siap diunduh.</p>
-                <label id="outputFileLabel" for="outputFileName" class="mt-3 block text-xs font-semibold text-amber-100">Nama file output</label>
-                <div class="output-file-row mt-2">
-                  <input id="outputFileName" type="text" class="ui-input" placeholder="nama-file.dxf">
-                  <button id="resetOutputNameButton" type="button" class="secondary-button">Reset hasil</button>
-                  <button id="convertAnotherButton" type="button" class="secondary-button">Konversi file lain</button>
-                </div>
+            <div class="result-download-row">
+              <div class="result-file-name">
+                <label id="outputFileLabel" for="outputFileName" class="sr-only">Nama file output</label>
+                <textarea id="outputFileName" class="ui-input" rows="2" placeholder="nama-file.zip" aria-describedby="outputNameHint" spellcheck="false" autocomplete="off"></textarea>
+                <span id="outputNameHint" class="sr-only">Nama file dapat langsung diubah. Enter atau keluar dari kolom untuk menyimpan; Escape untuk batal.</span>
               </div>
+              <div class="result-download-actions">
                 <a id="downloadButton" href="#" class="download-primary hidden">
                   <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M12 4v10m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -380,13 +600,14 @@
                   </svg>
                   Unduh ZIP
                 </a>
-
+                <button id="resetOutputNameButton" type="button" class="secondary-button">Reset hasil</button>
+                <button id="convertAnotherButton" type="button" class="secondary-button">Konversi file lain</button>
+              </div>
             </div>
-            <p id="saveHint" class="mt-3 text-xs leading-5 text-zinc-500">Browser akan membuka pilihan lokasi penyimpanan jika didukung. Kalau tidak, file masuk lewat download browser.</p>
           </div>
           </div>
 
-          <div class="mb-4">
+          <div class="result-progress mb-4">
             <div class="progress-heading-row mb-2">
               <span class="text-[0.66rem] font-bold uppercase tracking-[0.04em] text-zinc-500">Progress</span>
               <div id="stageProgress" class="stage-progress" aria-label="Conversion stages"></div>
@@ -495,28 +716,53 @@
 
             <div class="hidden" aria-hidden="true"></div>
           </div>
+
+          <section id="consolePanel" class="console-panel-embedded result-process-log hidden" aria-labelledby="consoleTitle">
+            <div class="console-header-row">
+              <div class="console-header-main">
+                <div class="console-title-row">
+                  <h3 id="consoleTitle">Log Proses</h3>
+                  <span id="consoleLiveIndicator" class="console-live hidden">LIVE</span>
+                  <span id="consoleWarningsBadge" class="console-meta-badge" data-tone="warning">0 peringatan</span>
+                  <span id="consoleErrorsBadge" class="console-meta-badge" data-tone="error">0 error</span>
+                  <span id="consoleDurationBadge" class="console-meta-badge" data-tone="info" data-log-detail-action hidden>Durasi --</span>
+                </div>
+              </div>
+              <div class="console-actions">
+                <button id="clearLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Bersihkan</button>
+                <button id="copyLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Salin</button>
+                <button id="downloadLogButton" type="button" class="console-action-button" data-log-detail-action hidden>Unduh</button>
+                <button id="consoleToggle" type="button" class="console-action-button" aria-controls="consoleLogShell" aria-expanded="false">Lihat log</button>
+              </div>
+            </div>
+            <div id="consoleLogShell" class="console-log-shell" aria-live="polite" hidden>
+              <div id="consoleLogBody" class="console-log-body"></div>
+            </div>
+          </section>
         </section>
 
-        <section id="previewWorkspacePanel" class="app-panel p-4">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <section id="validationResultPanel" class="validation-result-card hidden" aria-live="polite">
+          <div class="validation-result-header">
             <div>
-              <h2 class="text-lg font-semibold text-white">Preview</h2>
-              <p class="mt-1 text-sm text-zinc-400">Map, BOQ, tabel HPDB, peringatan, dan statistik layer.</p>
+              <h2>Validasi Hasil KMZ</h2>
+              <p>Hasil pemeriksaan folder, icon/style, duplikat, dan atribut setelah konversi.</p>
             </div>
-            <div id="resultWorkspaceScopeBadges" class="result-workspace-header-badges hidden" aria-live="polite">
-              <span id="resultNetworkTypeBadge" class="result-workspace-header-badge">AE</span>
-              <span id="resultScopeTypeBadge" class="result-workspace-header-badge">Cluster</span>
+            <div class="validation-result-actions">
+              <span id="validationResultBadge" class="validation-result-badge" data-tone="idle">Menunggu</span>
+              <button id="validationResultToggle" type="button" class="console-action-button validation-result-toggle" aria-controls="downloadValidationSummary" aria-expanded="false">Lihat detail</button>
             </div>
           </div>
+          <div id="downloadValidationSummary" class="validation-result-content" hidden></div>
+        </section>
 
-          <div id="previewTabs" class="preview-tabs" role="tablist" aria-label="Result workspace tabs">
-            <button type="button" class="preview-tab active" data-preview-tab="summary" role="tab" aria-selected="true">Ringkasan</button>
-            <button type="button" class="preview-tab" data-preview-tab="warnings" role="tab" aria-selected="false">Peringatan</button>
-            <button type="button" class="preview-tab" data-preview-tab="log" role="tab" aria-selected="false">Log</button>
+        <section id="previewWorkspacePanel">
+          <div id="resultWorkspaceScopeBadges" class="result-workspace-header-badges hidden" aria-live="polite">
+            <span id="resultNetworkTypeBadge" class="result-workspace-header-badge">AE</span>
+            <span id="resultScopeTypeBadge" class="result-workspace-header-badge">Cluster</span>
           </div>
 
-          <div class="mt-4">
-            <section id="tab-summary" class="preview-tab-panel" data-preview-panel="summary" role="tabpanel">
+          <div>
+            <section id="tab-summary" class="preview-tab-panel hidden" data-preview-panel="summary" role="tabpanel">
               <div id="resultWorkspaceSummary" class="result-workspace-summary"></div>
             </section>
 
@@ -750,32 +996,6 @@
               <div id="warningList" class="warning-list mt-3"></div>
             </section>
 
-            <section id="tab-log" class="preview-tab-panel hidden" data-preview-panel="log" role="tabpanel">
-              <section id="consolePanel" class="console-panel-embedded">
-                <div class="console-header-row mb-3">
-                  <div class="console-header-main">
-                    <div class="console-title-row">
-                      <h2 class="text-sm font-semibold text-white">Log Proses</h2>
-                      <span id="consoleLiveIndicator" class="console-live hidden">LIVE</span>
-                      <span id="consoleWarningsBadge" class="console-meta-badge" data-tone="warning">0 peringatan</span>
-                      <span id="consoleErrorsBadge" class="console-meta-badge" data-tone="error">0 error</span>
-                      <span id="consoleDurationBadge" class="console-meta-badge" data-tone="info">Durasi --</span>
-                    </div>
-                  </div>
-                  <div class="console-actions">
-                      <button id="clearLogButton" type="button" class="console-action-button" title="Bersihkan log">Bersihkan</button>
-                      <button id="copyLogButton" type="button" class="console-action-button" title="Salin log">Salin</button>
-                      <button id="downloadLogButton" type="button" class="console-action-button" title="Unduh log proses">Unduh</button>
-                      <button id="consoleToggle" type="button" class="console-action-button" aria-expanded="true" title="Ciutkan / buka log">Ciutkan</button>
-
-                  </div>
-                </div>
-                <div id="consoleLogShell" class="console-log-shell" aria-live="polite">
-                  <div id="consoleLogBody" class="console-log-body"></div>
-                </div>
-              </section>
-            </section>
-
             <section id="tab-stats" class="preview-tab-panel hidden" data-preview-panel="stats" role="tabpanel">
               <div class="mb-4 flex items-center justify-between">
                 <div>
@@ -802,24 +1022,6 @@
     </section>
   </main>
 
-  <footer class="app-footer">
-    <div class="app-footer-inner">
-      <div>
-        <strong style="color:var(--text-secondary);font-weight:700">EVA</strong>
-        <span> Engineering Vector Automation</span>
-        <span style="color:var(--text-faint)"> | v{{ app_version }} | Dibuat oleh Dwi Yulianto</span>
-      </div>
-      <div class="footer-links">
-        <button id="footerHelpButton" type="button">Bantuan</button>
-        <span class="sep">|</span>
-        <button id="footerShortcutsButton" type="button">Shortcut</button>
-      </div>
-    </div>
-  </footer>
-
-  <!-- Toast container -->
-  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
-
   <!-- Drag-anywhere shield -->
   <div id="dragShield" class="drag-shield" aria-hidden="true">
     <div class="drag-shield-card">
@@ -837,38 +1039,39 @@
   <!-- FDT Coding modal -->
   <div id="fdtCodingModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="fdtCodingModalTitle">
     <div class="modal-card modal-card-fdt" role="document">
-      <div class="modal-header">
-        <div>
-          <p>Database</p>
-          <h2 id="fdtCodingModalTitle">Database Coding FDT</h2>
+      <div class="modal-header fdt-modal-header">
+        <div class="fdt-modal-heading">
+          <span class="fdt-modal-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <ellipse cx="12" cy="5" rx="7" ry="3" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5 5v5c0 1.66 3.13 3 7 3s7-1.34 7-3V5M5 10v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <div class="fdt-modal-copy">
+            <h2 id="fdtCodingModalTitle">Database Coding FDT</h2>
+            <p>Kelola coding, OLT, dan unit jaringan dalam satu ruang kerja.</p>
+          </div>
         </div>
-        <button type="button" class="modal-close fdt-coding-modal-close" data-close-modal aria-label="Tutup">&times;</button>
+        <button type="button" class="modal-close fdt-coding-modal-close" data-close-modal aria-label="Tutup Database Coding FDT">&times;</button>
       </div>
       <iframe id="fdtCodingFrame" class="fdt-coding-frame" title="Coding FDT Database" data-src="{{ url_for('fdt_coding_admin_page') }}"></iframe>
     </div>
   </div>
 
-  <!-- Coreman modal -->
-  <div id="coremanModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-label="ManCore Dashboard">
-    <div class="modal-card modal-card-fdt modal-card-coreman" role="document">
-      <button type="button" class="modal-close coreman-modal-close" data-close-modal aria-label="Tutup">&times;</button>
-      <iframe id="coremanFrame" class="fdt-coding-frame" title="ManCore Dashboard" data-src="{{ url_for('coreman_dashboard_page') }}"></iframe>
-    </div>
-  </div>
-
-  <!-- RFS modal -->
-  <div id="rfsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-label="RFS Dashboard">
-    <div class="modal-card modal-card-fdt modal-card-coreman" role="document">
-      <button type="button" class="modal-close coreman-modal-close" data-close-modal aria-label="Tutup">&times;</button>
-      <iframe id="rfsFrame" class="fdt-coding-frame" title="RFS Dashboard" data-src="{{ url_for('rfs_dashboard_page') }}"></iframe>
-    </div>
-  </div>
-
   <!-- GDR modal -->
-  <div id="gdrModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-label="GDR Dashboard">
-    <div class="modal-card modal-card-fdt modal-card-coreman" role="document">
-      <button type="button" class="modal-close coreman-modal-close" data-close-modal aria-label="Tutup">&times;</button>
-      <iframe id="gdrFrame" class="fdt-coding-frame" title="GDR Dashboard" data-src="{{ url_for('gdr_dashboard_page') }}"></iframe>
+  <div id="gdrModal" class="modal-backdrop gdr-modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="gdrModalTitle">
+    <div class="modal-card modal-card-gdr" role="document">
+      <header class="gdr-modal-header">
+        <div class="gdr-modal-heading">
+          <h2 id="gdrModalTitle">Generate GDR</h2>
+        </div>
+        <button type="button" class="modal-close gdr-modal-close" data-close-modal aria-label="Tutup Generate GDR" title="Tutup">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
+      <iframe id="gdrFrame" class="fdt-coding-frame gdr-modal-frame" title="GDR Dashboard" data-src="{{ url_for('gdr_dashboard_page') }}"></iframe>
     </div>
   </div>
 
@@ -879,6 +1082,15 @@
       <iframe id="kmzCoordsFrame" class="fdt-coding-frame" title="KMZ ke Excel Koordinat" data-src="{{ url_for('kmz_coords_page') }}"></iframe>
     </div>
   </div>
+
+  <!-- ABD CAD stays in EVA; the iframe preserves its form and download flow. -->
+  <dialog id="abdCadModal" aria-labelledby="abdCadTitle">
+    <div class="abd-cad-header">
+      <h2 id="abdCadTitle">ABD CAD</h2>
+      <button id="abdCadClose" type="button" aria-label="Tutup ABD CAD" title="Tutup" autofocus>&times;</button>
+    </div>
+    <iframe id="abdCadFrame" title="Form ABD CAD" data-src="/abd-cad?embedded=1"></iframe>
+  </dialog>
 
   <!-- Help modal -->
   <div id="helpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="helpModalTitle">
@@ -978,13 +1190,66 @@
     </aside>
   </div>
 
+  <div id="donateDialog" class="donate-dialog hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="donateDialogTitle">
+    <div class="donate-backdrop" data-close-donate></div>
+    <section class="donate-panel" role="document">
+      <header class="donate-panel__header">
+        <div class="donate-panel__title">
+          <span class="donate-eyebrow">Dukung EVA</span>
+          <h2 id="donateDialogTitle">Bantu pengembangan EVA</h2>
+          <p>Scan QRIS atau transfer langsung.</p>
+        </div>
+        <button type="button" class="donate-close" data-close-donate aria-label="Tutup donasi">×</button>
+      </header>
+      <div class="donate-panel__body">
+        <figure class="donate-qris">
+          <div class="donate-qris__stage">
+            <img src="/static/assets/donate-qris-leaf.png?v=qris-leaf-20260919-v1" alt="QRIS DYENA, CGK untuk donasi" decoding="async">
+          </div>
+          <figcaption>QRIS · DYENA, CGK</figcaption>
+        </figure>
+        <section class="donate-bank" aria-labelledby="donateBankTitle">
+          <div class="donate-bank__heading">
+            <span class="donate-eyebrow">Transfer langsung</span>
+            <h3 id="donateBankTitle">SeaBank</h3>
+          </div>
+          <div class="donate-account-row">
+            <div><span>Nomor rekening</span><strong id="donateAccountNumber">901994786486</strong></div>
+            <button type="button" class="donate-copy" data-copy-account>Salin</button>
+          </div>
+          <p>a.n. Dwi Yulianto</p>
+          <span id="donateCopyStatus" class="donate-copy-status" role="status" aria-live="polite"></span>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <section id="evaDrmDialog" popover="auto" role="dialog" aria-labelledby="evaDrmTitle">
+    <header class="eva-drm-header">
+      <h2 id="evaDrmTitle">Notifikasi</h2>
+      <button id="evaDrmClose" type="button" aria-label="Tutup notifikasi" title="Tutup">×</button>
+    </header>
+    <div class="eva-drm-body">
+      <p id="evaDrmStatus" role="status" aria-live="polite"></p>
+      <p id="evaDrmHistoryStatus" role="status" aria-live="polite"></p>
+      <ol id="evaDrmList" aria-label="Riwayat DRM"></ol>
+      <button id="evaDrmMore" type="button" hidden>Muat lainnya</button>
+    </div>
+  </section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="{{ url_for('static', filename='js/utils.js') }}?v=eva-20260605-folder-alias" defer></script>
-  <script src="{{ url_for('static', filename='js/toast.js') }}?v=glass-mint-transparent-20260630b"></script>
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=fix-20260729-upload-order-clean" defer></script>
+  <script src="{{ url_for('static', filename='js/toast.js') }}?v=popup-neutral-20260819-211055"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=astri-pr-value-20261015" defer></script>
+  <script src="/static/js/eva-astri-dialogs.js?v=astri-popup-20260926-v2" defer></script>
+  <script src="/static/js/eva-support-modal-keys.js?v=astri-popup-20260926-v2" defer></script>
+  <script src="{{ url_for('static', filename='js/stella.js') }}?v=stella-auto-refresh-20261017" defer></script>
+  <script src="{{ url_for('static', filename='js/document-abd.js') }}?v=rfs-document-20261011-v1" defer></script>
+  <script src="{{ url_for('static', filename='js/donate.js') }}?v=donate-20260911-v1" defer></script>
+  <script src="{{ url_for('static', filename='js/donate-qris-bloom.js') }}?v=bloom-20260926-left-random-v2" defer></script>
   <script src="{{ url_for('static', filename='js/eva-assistant.js') }}?v=eva-20260605-folder-alias" defer></script>
-  <script type="module" src="{{ url_for('static', filename='js/notifications.js') }}?v=notif-fix-20260709-1029"></script>
+  <script type="module" src="{{ url_for('static', filename='js/notifications.js') }}?v=popup-neutral-20260819-211055"></script>
+  <script src="{{ url_for('static', filename='js/eva-drm-notifications.js') }}?v=drm-successful-20261015-v1" defer></script>
 </body>
 </html>
