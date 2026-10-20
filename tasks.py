@@ -6,6 +6,7 @@ from pathlib import Path
 
 from celery import Celery
 from celery.exceptions import Retry
+from kombu import Queue
 
 from config import Config
 
@@ -35,6 +36,13 @@ celery_app.conf.update(
     timezone="Asia/Jakarta",
     enable_utc=True,
     worker_prefetch_multiplier=1,
+    worker_disable_prefetch=True,
+    task_default_queue="celery",
+    task_queues=(
+        Queue("premium", exchange="premium", routing_key="premium"),
+        Queue("celery", exchange="celery", routing_key="celery"),
+    ),
+    broker_transport_options={"queue_order_strategy": "job_queue:PremiumFirstCycle"},
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     result_expires=Config.JOB_STORE_TTL_SECONDS,
@@ -46,6 +54,17 @@ def _retry_delay_seconds(retries_done: int) -> int:
     delay = min(base_delay * (2 ** max(0, retries_done)), 300)
     jitter = random.uniform(0, max(1, delay * 0.2))
     return int(round(delay + jitter))
+
+
+def _remember_conversion(job):
+    """Journal failures without depending on successful app initialization."""
+    if job:
+        try:
+            from eva_auth import AuthStore
+            AuthStore(PROJECT_ROOT / 'data/users.db').record_conversion(
+                job, (Config.OUTPUT_DIR, Config.BOQ_OUTPUT_DIR, Config.HPDB_OUTPUT_DIR))
+        except Exception as exc:
+            LOGGER.warning("history_snapshot_failed job_id=%s error_type=%s", job.get('job_id'), type(exc).__name__)
 
 
 @celery_app.task(
@@ -67,13 +86,15 @@ def run_conversion_task(self, job_id: str) -> str:
         retry_count = int(getattr(self.request, "retries", 0)) + 1
         try:
             from alerts import alert_job_failed
+            from converter import FatAreaGeometryError
             from jobs import get_job, mark_job_dead_letter, record_job_retry
             from metrics import record_job_failed, record_job_retried
 
-            if retry_count <= max_retries:
+            if not isinstance(exc, FatAreaGeometryError) and retry_count <= max_retries:
                 delay = _retry_delay_seconds(int(getattr(self.request, "retries", 0)))
                 record_job_retry(job_id, str(exc), retry_count, max_retries, delay)
                 job = get_job(job_id) or {}
+                _remember_conversion(job)
                 record_job_retried(str(job.get("output_mode") or "unknown"))
                 LOGGER.warning(
                     "Job %s gagal (attempt %s/%s), akan retry dalam %ss",
@@ -85,8 +106,9 @@ def run_conversion_task(self, job_id: str) -> str:
                 raise self.retry(exc=exc, countdown=delay)
 
             LOGGER.exception("Celery worker gagal permanen untuk job %s", job_id)
-            job = get_job(job_id) or {}
             mark_job_dead_letter(job_id, str(exc), duration)
+            job = get_job(job_id) or {}
+            _remember_conversion(job)
             record_job_failed(
                 job_id,
                 str(job.get("output_mode") or "unknown"),
@@ -99,3 +121,18 @@ def run_conversion_task(self, job_id: str) -> str:
             LOGGER.exception("Gagal menyimpan status retry/error untuk job %s", job_id)
         raise
     return job_id
+
+
+@celery_app.task(
+    name="eva.run_astri_boq_submission",
+    bind=True,
+    max_retries=0,
+    acks_late=False,
+    reject_on_worker_lost=False,
+)
+def run_astri_boq_submission_task(self, submission_id: str) -> str:
+    """Run exactly once; ambiguous ASTRI mutations are never auto-retried."""
+    from app import run_astri_boq_submission
+
+    run_astri_boq_submission(submission_id)
+    return submission_id
