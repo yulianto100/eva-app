@@ -1,8 +1,11 @@
 from __future__ import annotations
+import hashlib
 import json
+import math
 import os
 import re
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -16,6 +19,10 @@ BASE_DIR = Path(__file__).resolve().parent
 _MEMORY_PATH = BASE_DIR / "data" / "eva_ai_memory.json"
 _SKILLS_PATH = BASE_DIR / "data" / "eva_ai_skills.json"
 _REFERENCE_PATH = BASE_DIR / "data" / "eva_kmz_reference.json"
+_AI_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_AI_CACHE_LOCK = threading.Lock()
+_AI_CIRCUIT_OPEN_UNTIL = 0.0
+_AI_FALLBACK_CIRCUIT_OPEN_UNTIL = 0.0
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -170,20 +177,100 @@ def ai_confidence_min() -> float:
 
 
 def ai_timeout() -> int:
-    return _env_int("EVA_AI_TIMEOUT", 20)
+    return _env_int("EVA_AI_TIMEOUT", 60)
+
+
+def ai_cache_ttl_seconds() -> int:
+    return max(0, _env_int("EVA_AI_CACHE_TTL_SECONDS", 3600))
+
+
+def ai_cache_max_entries() -> int:
+    return max(1, _env_int("EVA_AI_CACHE_MAX_ENTRIES", 256))
+
+
+def ai_circuit_breaker_seconds() -> int:
+    return max(0, _env_int("EVA_AI_CIRCUIT_BREAKER_SECONDS", 300))
+
+
+def ai_reasoning_effort() -> str:
+    value = os.getenv("EVA_AI_REASONING_EFFORT", "low").strip().lower()
+    return value if value in {"none", "minimal", "low", "medium", "high", "xhigh", "max"} else "low"
+
+
+def _ai_cache_key(url: str, model: str, messages: list[dict[str, Any]], max_tokens: int, reasoning_effort: str) -> str:
+    raw = json.dumps(
+        {
+            "url": url,
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "reasoning_effort": reasoning_effort,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _ai_cache_get(key: str) -> dict[str, Any] | None:
+    ttl = ai_cache_ttl_seconds()
+    if ttl <= 0:
+        return None
+    now = time.monotonic()
+    with _AI_CACHE_LOCK:
+        cached = _AI_CACHE.get(key)
+        if cached is None:
+            return None
+        saved_at, value = cached
+        if now - saved_at > ttl:
+            _AI_CACHE.pop(key, None)
+            return None
+        return dict(value)
+
+
+def _ai_cache_put(key: str, value: dict[str, Any]) -> None:
+    if ai_cache_ttl_seconds() <= 0:
+        return
+    now = time.monotonic()
+    with _AI_CACHE_LOCK:
+        _AI_CACHE[key] = (now, dict(value))
+        excess = len(_AI_CACHE) - ai_cache_max_entries()
+        if excess > 0:
+            oldest = sorted(_AI_CACHE, key=lambda item: _AI_CACHE[item][0])[:excess]
+            for item in oldest:
+                _AI_CACHE.pop(item, None)
 
 
 # ── generic LLM call ────────────────────────────────────────
 
-def _post_json(messages: list[dict[str, Any]], *, max_tokens: int = 220, timeout: int | None = None) -> dict[str, Any] | None:
-    api_key, base_url, model = _provider_config()
+def _post_json(messages: list[dict[str, Any]], *, max_tokens: int = 220, timeout: int | None = None,
+               provider: tuple[str, str, str] | None = None, retry_response_format: bool = True,
+               allow_redirects: bool = True) -> dict[str, Any] | None:
+    global _AI_CIRCUIT_OPEN_UNTIL, _AI_FALLBACK_CIRCUIT_OPEN_UNTIL
+    api_key, base_url, model = provider or _provider_config()
+    use_fallback_circuit = provider is not None
     if not api_key or not base_url:
+        return None
+    url = _provider_url(base_url)
+    reasoning_effort = ai_reasoning_effort()
+    cache_key = _ai_cache_key(url, model, messages, max_tokens, reasoning_effort)
+    cached = _ai_cache_get(cache_key)
+    if cached is not None:
+        LOGGER.info("AI hint cache hit")
+        return cached
+    now = time.monotonic()
+    with _AI_CACHE_LOCK:
+        circuit_open_until = _AI_FALLBACK_CIRCUIT_OPEN_UNTIL if use_fallback_circuit else _AI_CIRCUIT_OPEN_UNTIL
+    if now < circuit_open_until:
+        LOGGER.debug("AI call skipped: timeout circuit open for %.1fs", circuit_open_until - now)
         return None
     payload = {
         "model": model,
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": max_tokens,
+        "reasoning_effort": reasoning_effort,
         "stream": False,
         "response_format": {"type": "json_object"},
     }
@@ -193,12 +280,13 @@ def _post_json(messages: list[dict[str, Any]], *, max_tokens: int = 220, timeout
     }
     timeout = timeout or ai_timeout()
     try:
-        url = _provider_url(base_url)
         t0 = time.monotonic()
-        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        if resp.status_code in {400, 415, 422}:
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout, allow_redirects=allow_redirects)
+        if retry_response_format and resp.status_code in {400, 415, 422}:
             payload.pop("response_format", None)
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout, allow_redirects=allow_redirects)
+        if not allow_redirects and 300 <= resp.status_code < 400:
+            return None
         resp.raise_for_status()
         data = resp.json()
         content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
@@ -209,8 +297,25 @@ def _post_json(messages: list[dict[str, Any]], *, max_tokens: int = 220, timeout
         match = re.search(r"\{.*\}", content, re.S)
         text = match.group(0) if match else content
         parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            return None
+        with _AI_CACHE_LOCK:
+            if use_fallback_circuit:
+                _AI_FALLBACK_CIRCUIT_OPEN_UNTIL = 0.0
+            else:
+                _AI_CIRCUIT_OPEN_UNTIL = 0.0
+        _ai_cache_put(cache_key, parsed)
         LOGGER.info("AI respond in %.2fs", elapsed)
-        return parsed if isinstance(parsed, dict) else None
+        return parsed
+    except requests.Timeout as exc:
+        breaker_seconds = ai_circuit_breaker_seconds()
+        with _AI_CACHE_LOCK:
+            if use_fallback_circuit:
+                _AI_FALLBACK_CIRCUIT_OPEN_UNTIL = time.monotonic() + breaker_seconds
+            else:
+                _AI_CIRCUIT_OPEN_UNTIL = time.monotonic() + breaker_seconds
+        LOGGER.warning("AI call timed out after %ss; circuit open %ss: %s", timeout, breaker_seconds, exc)
+        return None
     except Exception as exc:
         LOGGER.warning("AI call failed: %s", exc)
         return None
@@ -315,7 +420,7 @@ def suggest_dxf_parcel_orientation(
     result = _post_json(
         [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(payload)}],
         max_tokens=120,
-        timeout=min(ai_timeout(), 12),
+        timeout=min(ai_timeout(), 45),
     )
     if not result:
         return None
@@ -329,37 +434,378 @@ def suggest_dxf_parcel_orientation(
     return {"angle_degrees": angle, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
 
 
-def suggest_dxf_visual_parcel_layout(*, preview_svg: str, fat_angle: float, road_angle: float | None, point_count: int) -> dict[str, Any] | None:
-    """Vision-only parcel hint. SVG shows FAT=cyan, ROAD=red, HP=yellow.
+def suggest_dxf_visual_parcel_layout(
+    *,
+    preview_png: bytes,
+    fat_angle: float,
+    road_angle: float | None,
+    point_count: int,
+    axis_only: bool = False,
+    timeout: float | None = None,
+    deadline_s: float | None = None,
+) -> dict[str, Any] | None:
+    """Vision-only parcel hint. PNG shows FAT=cyan, ROAD=red, HP=yellow.
     It returns hints only; converter owns all coordinates and topology."""
-    if not ai_visual_parcel_enabled() or not preview_svg or point_count < 2:
+    if not ai_visual_parcel_enabled() or not preview_png or point_count < 2:
         return None
     import base64
-    image = 'data:image/svg+xml;base64,' + base64.b64encode(preview_svg.encode('utf-8')).decode('ascii')
+    image = 'data:image/png;base64,' + base64.b64encode(preview_png).decode('ascii')
     system = (
         'You visually review EVA telecom HP COVER parcel layout. Return ONLY JSON: '
-        '{"angle_degrees":number,"width_scale":number,"depth_scale":number,"road_side":1,"confidence":number,"reason":string}. '
-        'Image legend: cyan=FAT boundary, red=ROAD exclusion, yellow=fixed HP source points. '
-        'Choose ONE clean shared grid angle. Do not output coordinates or polygons. '
-        'HP points must never move; parcels must stay inside cyan and outside red, not overlap.'
+        '{"angle_degrees":number,"width_scale":number,"depth_scale":number,'
+        '"along_shift_m":number,"normal_shift_m":number,"confidence":number,"reason":string}. '
+        'Image legend: cyan=local boundary, red=ROAD exclusion, yellow=fixed HP source points, green=legal deterministic cells. '
+        'Choose ONE clean shared grid angle. Optional shifts translate the entire local strip, never individual HP. '
+        'Do not output coordinates or polygons. Keep angle within 15 degrees of supplied ROAD/FAT reference; '
+        'width/depth scales must be 1.0..1.3; each source must stay within 12m of its final cell; '
+        'cells must stay outside red and never overlap.'
     )
+    if axis_only:
+        system = (
+            'Choose one shared axis for this local HP parcel block. Return ONLY JSON: '
+            '{"angle_degrees":number,"confidence":number,"reason":string}. '
+            'Image: cyan=local extent, red=ROAD exclusion, yellow=immutable source points, '
+            'green=initial candidate cells (may overlap each other), purple=ROAD-blocked sources. '
+            'Recommend a clean common row axis within 15 degrees of the supplied ROAD reference. '
+            'Confidence refers only to the axis recommendation, not geometry feasibility or whether '
+            'all parcels already fit. Source relocation, parcel sizes and all ROAD/overlap checks '
+            'are handled by the deterministic solver. Do not return shifts, coordinates or polygons. '
+            'If the picture does not support a reliable axis, give a genuinely low confidence. '
+            'Keep reason under 20 words.'
+        )
     content = [
-        {'type': 'text', 'text': json.dumps({'fat_angle_degrees': round(float(fat_angle), 2), 'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None, 'hp_cover_count': int(point_count)})},
+        {'type': 'text', 'text': json.dumps({
+            'fat_angle_degrees': round(float(fat_angle), 2),
+            'road_angle_degrees': round(float(road_angle), 2) if road_angle is not None else None,
+            'hp_cover_count': int(point_count),
+            'constraints': 'allowed parcel ladder only: 6x12m, 5x10m, 4x10m, 4x8m; ROAD positive-area overlap forbidden',
+        })},
         {'type': 'image_url', 'image_url': {'url': image}},
     ]
-    result = _post_json([{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], max_tokens=160, timeout=min(ai_timeout(), 20))
-    if not result:
+    messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': content}]
+
+    def accepted(result):
+        if axis_only:
+            if not isinstance(result, dict):
+                return None
+            confidence, angle = result.get('confidence'), result.get('angle_degrees')
+            if isinstance(confidence, bool) or isinstance(angle, bool):
+                return None
+            try:
+                confidence, angle = float(confidence), float(angle)
+            except (TypeError, ValueError):
+                return None
+            reference = road_angle if road_angle is not None else fat_angle
+            if (not math.isfinite(confidence) or not math.isfinite(angle)
+                    or not max(.8, ai_confidence_min()) <= confidence <= 1.
+                    or not -90. <= angle <= 90.
+                    or abs(((angle - reference + 90.) % 180.) - 90.) > 15.):
+                return None
+            return {'angle_degrees': angle, 'confidence': confidence,
+                    'width_scale': 1., 'depth_scale': 1., 'along_shift_m': 0.,
+                    'normal_shift_m': 0., 'road_side': 1,
+                    'reason': str(result.get('reason') or '').strip()}
+        try:
+            confidence = float(result.get('confidence', 0))
+            angle = float(result.get('angle_degrees'))
+            width = max(1.0, min(1.30, float(result.get('width_scale', 1.0))))
+            depth = max(1.0, min(1.30, float(result.get('depth_scale', 1.0))))
+            along = float(result.get('along_shift_m', 0.0) or 0.0)
+            normal = float(result.get('normal_shift_m', 0.0) or 0.0)
+            road_side = 1 if float(result.get('road_side', 1) or 1) >= 0 else -1
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not all(math.isfinite(value) for value in (confidence, angle, width, depth, along, normal)):
+            return None
+        if confidence < ai_confidence_min() or not -90 <= angle <= 90:
+            return None
+        shift = math.hypot(along, normal)
+        if shift > 12.0:
+            along *= 12.0 / shift
+            normal *= 12.0 / shift
+        return {
+            'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth,
+            'along_shift_m': along, 'normal_shift_m': normal, 'road_side': road_side,
+            'confidence': confidence, 'reason': str(result.get('reason') or '').strip(),
+        }
+
+    t_remaining = None
+    if deadline_s is not None:
+        t_remaining = max(0.0, deadline_s - time.monotonic())
+        if t_remaining <= 0.5:
+            return None
+
+    eff_timeout = min(ai_timeout(), 60)
+    if timeout is not None:
+        eff_timeout = min(eff_timeout, float(timeout))
+    if t_remaining is not None:
+        eff_timeout = min(eff_timeout, t_remaining)
+
+    result = _post_json(messages, max_tokens=180, timeout=eff_timeout, retry_response_format=not axis_only, allow_redirects=not axis_only)
+    if result is None:
+        return None
+    hint = accepted(result)
+    if hint is not None:
+        return hint
+    model = os.getenv('EVA_AI_FALLBACK_MODEL', '').strip()
+    base_url = os.getenv('EVA_AI_FALLBACK_BASE_URL', '').strip()
+    api_key = os.getenv('EVA_AI_API_KEY', '').strip() or os.getenv('OPENAI_API_KEY', '').strip()
+    if not (model and base_url and api_key):
+        return None
+
+    if deadline_s is not None:
+        t_remaining = max(0.0, deadline_s - time.monotonic())
+        if t_remaining <= 0.5:
+            return None
+
+    sec_timeout = min(ai_timeout(), 30)
+    if timeout is not None:
+        sec_timeout = min(sec_timeout, float(timeout))
+    if deadline_s is not None:
+        sec_timeout = min(sec_timeout, t_remaining)
+
+    LOGGER.info('AI visual hint rejected; retrying once with %s', model)
+    secondary = _post_json(messages, max_tokens=180, timeout=sec_timeout,
+                           provider=(api_key, base_url, model), retry_response_format=not axis_only, allow_redirects=not axis_only)
+    hint = accepted(secondary) if secondary is not None else None
+    if hint is not None:
+        LOGGER.info('AI visual fallback accepted: model=%s confidence=%.2f', model, hint['confidence'])
+    return hint
+
+
+def _escalate_hp_recovery(*, messages, summary, threshold, deadline_s, timeout, budget):
+    """Ask the reviewer model when the primary is unsure.
+
+    Same prompt, same JSON contract, same validation: only the model changes.
+    Returns None when no reviewer is configured, when the budget is spent, or
+    when the reviewer is no more confident than the primary.
+    """
+    model = os.getenv("EVA_AI_FALLBACK_MODEL", "").strip()
+    if not model:
+        model = os.getenv("EVA_AI_ESCALATION_MODEL", "").strip()
+    if not model:
+        local_env = _read_env_file(Path(__file__).resolve().parent / ".env")
+        model = (local_env.get("EVA_AI_FALLBACK_MODEL", "").strip()
+                 or local_env.get("EVA_AI_ESCALATION_MODEL", "").strip())
+    if not model:
+        return None
+    api_key, base_url, primary = _provider_config()
+    if not api_key or not base_url or model == primary:
+        return None
+    remaining = float(budget)
+    if timeout is not None:
+        remaining = min(remaining, float(timeout))
+    if deadline_s is not None:
+        remaining = min(remaining, max(0.0, deadline_s - time.monotonic()))
+    if remaining <= 0.5:
+        return None
+    LOGGER.info("HP recovery hint not authoritative; escalating to reviewer model")
+    result = _post_json(messages, max_tokens=100, timeout=remaining,
+                        provider=(api_key, base_url, model),
+                        retry_response_format=False, allow_redirects=False)
+    if not isinstance(result, dict) or set(result) != {
+            "axis_delta_degrees", "along_phase", "normal_phase", "confidence"}:
         return None
     try:
-        confidence=float(result.get('confidence', 0)); angle=float(result.get('angle_degrees'))
-        width=max(0.70, min(1.30, float(result.get('width_scale', 1.0))))
-        depth=max(0.70, min(1.30, float(result.get('depth_scale', 1.0))))
-        side=1 if float(result.get('road_side', 1)) >= 0 else -1
+        delta = float(result["axis_delta_degrees"])
+        along = result["along_phase"]
+        normal = result["normal_phase"]
+        confidence = float(result["confidence"])
     except (TypeError, ValueError):
         return None
-    if confidence < ai_confidence_min() or not -90 <= angle <= 90:
+    if (any(isinstance(v, bool) for v in (delta, along, normal, confidence))
+            or type(along) is not int or type(normal) is not int):
         return None
-    return {'angle_degrees': angle, 'width_scale': width, 'depth_scale': depth, 'road_side': side, 'confidence': confidence, 'reason': str(result.get('reason') or '')}
+    if (not math.isfinite(delta) or not math.isfinite(confidence)
+            or delta not in summary["allowed_axis_deltas"]
+            or along not in (0, 1, 2) or normal not in (0, 1, 2)
+            or not .5 <= confidence <= 1.0):
+        return None
+    if confidence < max(.8, threshold):
+        return None
+    LOGGER.info("HP recovery escalation accepted: model=%s confidence=%.2f", model, confidence)
+    return {"axis_delta_degrees": delta, "along_phase": along, "normal_phase": normal,
+            "confidence": confidence, "authoritative": True, "escalated": True}
+
+
+def suggest_dxf_hp_recovery(
+    *, preview_png: bytes, reference_angle: float, point_count: int,
+    placed_count: int, failure_kind: str, timeout: float = 10.0,
+) -> dict[str, Any] | None:
+    """Review failed converter cells; return one bounded shared-axis/phase hint."""
+    if not ai_visual_parcel_enabled() or not preview_png or point_count < 1:
+        return None
+    try:
+        reference, budget = float(reference_angle), min(float(timeout), float(ai_timeout()), 10.0)
+        if not math.isfinite(reference) or not math.isfinite(budget) or budget <= .5:
+            return None
+        import base64
+        summary = {"schema": "hp-local-recovery-v1", "reference_angle": round(reference, 2),
+                   "hp_cover_count": int(point_count), "converter_cell_count": int(placed_count),
+                   "failure_kind": str(failure_kind)[:64],
+                   "allowed_axis_deltas": [-15, -10, -5, 0, 5, 10, 15], "allowed_phases": [0, 1, 2]}
+        result = _post_json(messages := [
+            {"role": "system", "content":
+             "Recheck a failed EVA HP COVER placement from the deterministic converter. "
+             "Image: cyan=local extent, red=ROAD exclusion, yellow=immutable source points, "
+             "green=converter-created cells (may conflict), orange=failed sources. "
+             "Recommend a shared local re-layout axis and lattice origin, not individual moves. "
+             "For strip_generation_budget, retain one straight shared-front row and full dividers; "
+             "only the axis is consumed, so return zero phases. Dense recovery uses the lattice phases. "
+             "Return ONLY JSON with axis_delta_degrees, along_phase, normal_phase, confidence. "
+             "Choose axis_delta_degrees only from allowed_axis_deltas and integer phases only from allowed_phases. "
+             "A phase is one third of the converter's fixed width/depth, not an absolute coordinate. "
+             "Keep one intact cell plus label per source, minimum4x8m, center/label within8m, "
+             "same ROAD side, no ROAD/parcel overlap, original class and FAT ownership. "
+             "Converter owns all coordinates and rejects geometrically invalid advice. "
+             "Confidence concerns the axis/phase recommendation; never claim geometry verification. "
+             "A confident axis replaces the trial axis; a weak one only reorders trials. "
+             "Never return coordinates, polygons, new IDs, deletion or constraint overrides."},
+            {"role": "user", "content": [
+                {"type": "text", "text": json.dumps(summary, sort_keys=True)},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(preview_png).decode("ascii")}},
+            ]},
+        ], max_tokens=100, timeout=budget, retry_response_format=False, allow_redirects=False)
+        keys = {"axis_delta_degrees", "along_phase", "normal_phase", "confidence"}
+        if not isinstance(result, dict) or set(result) != keys:
+            return None
+        delta, along, normal, confidence = (result[k] for k in ("axis_delta_degrees", "along_phase", "normal_phase", "confidence"))
+        if (any(isinstance(value, bool) for value in (delta, along, normal, confidence))
+                or type(along) is not int or type(normal) is not int
+                or not isinstance(delta, (int, float)) or not isinstance(confidence, (int, float))):
+            return None
+        threshold = ai_confidence_min()
+        if (not math.isfinite(delta) or not math.isfinite(confidence) or not math.isfinite(threshold)
+                or delta not in summary["allowed_axis_deltas"] or along not in (0, 1, 2) or normal not in (0, 1, 2)
+                or not .5 <= confidence <= 1.0):
+            return None
+        # Confidence only decides how strongly the hint is used. Every geometry
+        # guard stays deterministic, so a weak hint may reorder trials but never
+        # replace the solver domain or bypass validation.
+        accepted_hint = {"axis_delta_degrees": float(delta), "along_phase": along,
+                         "normal_phase": normal, "confidence": float(confidence),
+                         "authoritative": confidence >= max(.8, threshold)}
+        if accepted_hint["authoritative"]:
+            return accepted_hint
+        # The primary model answered but is not sure. Escalate to the reviewer
+        # model rather than handing a doubtful axis to the converter; keep the
+        # primary answer only if the reviewer is unavailable or also unsure.
+        escalated = _escalate_hp_recovery(
+            messages=messages, summary=summary, threshold=threshold,
+            deadline_s=None, timeout=timeout, budget=budget,
+        )
+        return escalated or accepted_hint
+    except Exception:
+        LOGGER.info("HP recovery advice unavailable; deterministic guards retained")
+        return None
+
+
+# ── post-render parcel QA ────────────────────────────────────
+
+PARCEL_QA_RULES = (
+    "EVA DXF HP COVER tidiness contract. A tidy block satisfies ALL of: "
+    "(1) one intact rectangular cell per source HP, never merged and never missing; "
+    "(2) neighbours in the same row share one full divider line, no wedge gap and no "
+    "double line between adjacent cells; "
+    "(3) every cell in one run shares one axis, so rows read as parallel bands; "
+    "(4) no cell overlaps another cell and no cell crosses the red ROAD area; "
+    "(5) each cell carries exactly one label, inside its own cell; "
+    "(6) cells keep a consistent frontage along the run instead of alternating wide/narrow; "
+    "(7) no orphan sliver, stray cell or floating cell detached from its run. "
+    "Judge the block as a whole, not one house at a time."
+)
+
+
+def _parcel_qa_context() -> dict:
+    """Reuse the existing skills/memory store so operator rules reach the QA prompt."""
+    try:
+        context = _ai_context()
+    except Exception:
+        return {}
+    skills = [row.get("rule") for row in context.get("skills", [])
+              if isinstance(row, dict) and "dxf" in [str(t).lower() for t in row.get("tags", [])]]
+    decisions = [row.get("content") for row in context.get("memory_decisions", [])
+                 if isinstance(row, dict) and "dxf" in [str(t).lower() for t in row.get("tags", [])]]
+    return {"skills": [s for s in skills if s][:8], "decisions": [d for d in decisions if d][:8]}
+
+
+def review_dxf_parcel_block(
+    *, preview_png: bytes, block_id: int, cell_count: int, reference_angle: float,
+    geometry_facts: dict | None = None, timeout: float = 20.0,
+) -> dict | None:
+    """Post-render QA of one finished block. Returns a verdict, never coordinates.
+
+    Advisory only: the caller decides whether a repack is worth attempting and
+    every hard geometric gate is re-checked deterministically afterwards.
+    """
+    if not ai_visual_parcel_enabled() or not preview_png or cell_count < 2:
+        return None
+    try:
+        budget = min(float(timeout), float(ai_timeout()), 20.0)
+        if not math.isfinite(budget) or budget <= .5:
+            return None
+        import base64
+        context = _parcel_qa_context()
+        facts = dict(geometry_facts or {})
+        facts.update({
+            "schema": "hp-parcel-qa-v1",
+            "block_id": int(block_id),
+            "cell_count": int(cell_count),
+            "reference_angle": round(float(reference_angle), 2),
+            "measured": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in facts.items()},
+        })
+        system = (
+            PARCEL_QA_RULES
+            + " Image legend: cyan=block extent, red=ROAD exclusion, green=emitted cells, "
+            "yellow=immutable source points. "
+            + ("Operator DXF rules: " + " | ".join(context.get("skills", [])) + ". " if context.get("skills") else "")
+            + ("Recorded decisions: " + " | ".join(context.get("decisions", [])) + ". " if context.get("decisions") else "")
+            + "Return ONLY JSON with keys tidiness, issues, repack, confidence. "
+            "tidiness is one of clean, minor, messy. issues is a short list of concrete defects "
+            "using only: overlap, road_cross, uneven_axis, partial_divider, width_jitter, "
+            "orphan_cell, missing_label, label_outside. repack is true only when a local "
+            "shared-front repack would plausibly fix the block. "
+            "Confidence concerns your visual judgement only. "
+            "Never return coordinates, polygons, sizes, IDs to delete or rule overrides. "
+            "The deterministic converter owns all geometry and re-validates every gate."
+        )
+        result = _post_json([
+            {"role": "system", "content": system},
+            {"role": "user", "content": [
+                {"type": "text", "text": json.dumps(facts, sort_keys=True)},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,"
+                                                    + base64.b64encode(preview_png).decode("ascii")}},
+            ]},
+        ], max_tokens=220, timeout=budget, retry_response_format=False, allow_redirects=False)
+        if not isinstance(result, dict):
+            return None
+        # Exact key set: a response that smuggles coordinates or any other
+        # field is rejected wholesale, never partially trusted.
+        if set(result) != {"tidiness", "issues", "repack", "confidence"}:
+            return None
+        tidiness = str(result.get("tidiness") or "").strip().lower()
+        if tidiness not in {"clean", "minor", "messy"}:
+            return None
+        allowed = {"overlap", "road_cross", "uneven_axis", "partial_divider", "width_jitter",
+                   "orphan_cell", "missing_label", "label_outside"}
+        raw_issues = result.get("issues") or []
+        if not isinstance(raw_issues, list):
+            return None
+        issues = [str(i).strip().lower() for i in raw_issues if str(i).strip().lower() in allowed]
+        repack = result.get("repack")
+        confidence = result.get("confidence")
+        if (not isinstance(repack, bool) or isinstance(confidence, bool)
+                or not isinstance(confidence, (int, float)) or not math.isfinite(float(confidence))
+                or not 0.0 <= float(confidence) <= 1.0):
+            return None
+        # A repack is only actionable when the model also named a defect it can fix.
+        actionable = {"uneven_axis", "partial_divider", "width_jitter", "orphan_cell", "label_outside"}
+        repack = bool(repack and (set(issues) & actionable) and float(confidence) >= .6)
+        return {"block_id": int(block_id), "tidiness": tidiness, "issues": issues[:8],
+                "repack": repack, "confidence": float(confidence)}
+    except Exception:
+        LOGGER.info("HP parcel QA unavailable; emitted geometry retained")
+        return None
 
 
 def suggest_dxf_asset_layout(
@@ -394,7 +840,7 @@ def suggest_dxf_asset_layout(
     result = _post_json(
         [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(payload)}],
         max_tokens=120,
-        timeout=min(ai_timeout(), 8),
+        timeout=min(ai_timeout(), 45),
     )
     if not result:
         return None
@@ -407,6 +853,129 @@ def suggest_dxf_asset_layout(
     if confidence < ai_confidence_min():
         return None
     return {"normal_side": normal_side, "offset_scale": offset_scale, "confidence": confidence, "reason": str(result.get("reason") or "").strip()}
+
+
+# ── BOUNDARY FAT polygon audit ─────────────────────────────
+
+def audit_boundary_fat_polygons(summary: dict[str, Any]) -> dict[str, Any] | None:
+    """Audit hasil konversi BOUNDARY FAT -> Polygon.
+
+    Geometri sudah final dan deterministik sebelum fungsi ini dipanggil;
+    AI hanya boleh menandai anomali, TIDAK mengubah koordinat. Return
+    None kalau AI nonaktif/gagal, sehingga pemanggil tetap jalan.
+    """
+    if not ai_assist_enabled():
+        return None
+    try:
+        if not isinstance(summary, dict):
+            return None
+        samples = summary.get("samples")
+        if not isinstance(samples, list):
+            samples = []
+        # batasi payload: maksimum 25 sampel, hanya field numerik/teks pendek
+        trimmed = []
+        for row in samples[:25]:
+            if not isinstance(row, dict):
+                continue
+            trimmed.append({
+                "name": str(row.get("name") or "")[:80],
+                "folder": str(row.get("folder") or "")[:120],
+                "vertices": row.get("vertices"),
+                "area_m2": row.get("area_m2"),
+                "source_segments": row.get("source_segments"),
+                "issue": row.get("issue"),
+            })
+        payload = {
+            "converted": summary.get("converted"),
+            "already_polygon": summary.get("already_polygon"),
+            "failed": summary.get("failed"),
+            "skipped_no_geometry": summary.get("skipped_no_geometry"),
+            "total_polygons": summary.get("total_polygons"),
+            "samples": trimmed,
+        }
+        result = _post_json([
+            {"role": "system", "content":
+             "You audit a deterministic KML geometry conversion. Every placemark in the "
+             "BOUNDARY FAT / FAT AREA folder has ALREADY been converted to a Polygon with a "
+             "closed ring by exact code. Your job is only to flag suspicious results, never to "
+             "propose coordinates or re-draw shapes. Return only JSON: "
+             "{\"ok\": boolean, \"confidence\": number, \"flags\": [string], \"note\": string}. "
+             "Flag when: area_m2 is absurdly small (<100) or absurdly large (>5,000,000) for a "
+             "field parcel tile; vertices < 4; source_segments is high relative to vertices "
+             "(possible mis-chaining); failed > 0; total_polygons == 0 while converted == 0 and "
+             "already_polygon == 0 (folder empty). Keep flags short, lowercase, no coordinates. "
+             "Set ok=true when nothing looks wrong. Confidence is 0..1 and refers to this "
+             "assessment of the provided summary only."},
+            {"role": "user", "content": json.dumps(payload, sort_keys=True)},
+        ], max_tokens=220, timeout=min(ai_timeout(), 25), retry_response_format=False,
+            allow_redirects=False)
+        if not isinstance(result, dict):
+            return None
+        ok = result.get("ok")
+        confidence = result.get("confidence")
+        if isinstance(ok, bool) is False or isinstance(confidence, bool):
+            return None
+        confidence = float(confidence)
+        if not (math.isfinite(confidence) and 0.0 <= confidence <= 1.0):
+            return None
+        raw_flags = result.get("flags")
+        flags = []
+        if isinstance(raw_flags, list):
+            for item in raw_flags[:12]:
+                if isinstance(item, str) and item.strip():
+                    flags.append(item.strip()[:120])
+        note = result.get("note")
+        return {
+            "ok": bool(ok),
+            "confidence": confidence,
+            "flags": flags,
+            "note": str(note)[:200] if isinstance(note, str) else "",
+        }
+    except Exception:
+        LOGGER.info("BOUNDARY FAT polygon audit unavailable; deterministic result retained")
+        return None
+
+def suggest_dxf_fat_boundary_trim(summary: dict[str, Any]) -> dict[str, float] | None:
+    """One bounded recommendation per drawing; deterministic geometry stays authoritative."""
+    if not ai_assist_enabled():
+        return None
+    try:
+        options = summary.get('safe_cut_options')
+        if not isinstance(options, list):
+            return None
+        allowed = {float(row['simplify_tolerance_m']) for row in options
+                   if isinstance(row, dict) and isinstance(row.get('simplify_tolerance_m'), (int, float))
+                   and not isinstance(row['simplify_tolerance_m'], bool)
+                   and math.isfinite(row['simplify_tolerance_m']) and .01 <= row['simplify_tolerance_m'] <= .5}
+        if not allowed:
+            return None
+        result = _post_json([
+            {"role": "system", "content":
+             "Recommend a small simplification tolerance for redundant FAT AREA boundary vertices. "
+             "Return only JSON: {\"simplify_tolerance_m\": number, \"confidence\": number}. "
+             "The safe_cut_options were prevalidated by exact geometry: whole HP containment, "
+             "one Polygon, no added area and zero foreign/FAT overlap. Select the option removing "
+             "the most redundant vertices; prefer the smaller tolerance on ties. Confidence refers "
+             "to this bounded choice among proven-safe options, not guessing unprovided geometry. "
+             "Tolerance must be 0.01..0.5 metres. Never propose coordinates, move HP boxes, "
+             "split FAT or authorize foreign overlap. Converter rejects any cut losing a full HP "
+             "box, connectivity, validity or exclusion of other FAT/foreign HP."},
+            {"role": "user", "content": json.dumps(summary, sort_keys=True)},
+        ], max_tokens=100, timeout=min(ai_timeout(), 20), retry_response_format=False, allow_redirects=False)
+        if not isinstance(result, dict):
+            return None
+        tolerance = result.get("simplify_tolerance_m")
+        confidence = result.get("confidence")
+        if isinstance(tolerance, bool) or isinstance(confidence, bool):
+            return None
+        tolerance, confidence = float(tolerance), float(confidence)
+        if not (math.isfinite(tolerance) and math.isfinite(confidence)
+                and tolerance in allowed and max(.8, ai_confidence_min()) <= confidence <= 1):
+            return None
+        return {"simplify_tolerance_m": tolerance, "confidence": confidence}
+    except Exception:
+        LOGGER.info("FAT AREA trim advice unavailable; retaining validated boundary")
+        return None
 
 
 # ── DXF metadata ────────────────────────────────────────────
@@ -434,6 +1003,10 @@ def ai_status() -> dict:
         "api_key_configured": bool(api_key),
         "confidence_min": ai_confidence_min(),
         "timeout": ai_timeout(),
+        "reasoning_effort": ai_reasoning_effort(),
+        "cache_ttl_seconds": ai_cache_ttl_seconds(),
+        "cache_max_entries": ai_cache_max_entries(),
+        "circuit_breaker_seconds": ai_circuit_breaker_seconds(),
         "skills_loaded": bool(_load_skills()),
         "memory_path": str(_MEMORY_PATH),
         "memory_count": len(memory.get("decisions", [])),

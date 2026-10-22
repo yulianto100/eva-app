@@ -1,4 +1,6 @@
 import json
+import heapq
+import io
 import logging
 import math
 import re
@@ -13,11 +15,15 @@ from typing import Callable, Iterable, Sequence
 import ezdxf
 import osmium
 from ezdxf import bbox
+from PIL import Image, ImageDraw
 from ezdxf.enums import TextEntityAlignment
 from ezdxf.math import Matrix44
 from pyproj import Geod, Transformer
+from shapely.affinity import rotate as affinity_rotate
+from shapely.affinity import translate as affinity_translate
+from shapely.affinity import translate as _translate
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, MultiPoint, Point as ShapelyPoint, Polygon
-from shapely.ops import nearest_points, unary_union
+from shapely.ops import nearest_points, substring, unary_union
 
 try:
     from shapely.ops import voronoi_diagram as _shapely_voronoi_diagram
@@ -25,7 +31,7 @@ except Exception:  # pragma: no cover - depends on Shapely build/GEOS version.
     _shapely_voronoi_diagram = None
 
 from config import Config
-from eva_ai_safe import suggest_dxf_parcel_orientation, suggest_dxf_visual_parcel_layout, suggest_dxf_asset_layout
+from eva_ai_safe import ai_visual_parcel_enabled, review_dxf_parcel_block, suggest_dxf_parcel_orientation, suggest_dxf_visual_parcel_layout, suggest_dxf_asset_layout, suggest_dxf_fat_boundary_trim, suggest_dxf_hp_recovery, ai_confidence_min
 
 try:
     from shapely.strtree import STRtree
@@ -72,6 +78,124 @@ DEFAULT_DXF_LAYERS = {
     "OTHER": 8,
 }
 DXF_LAYERS = {key: int(value) for key, value in dxf_rule_map("layers", DEFAULT_DXF_LAYERS).items()}
+
+
+
+class HpStripBudgetExhausted(TimeoutError):
+    """Named local-strip deadline; not proof that physical layout is infeasible."""
+
+
+class FatAreaGeometryError(ValueError):
+    """Deterministic FAT ownership/topology failure; reprocessing cannot repair it."""
+
+
+def _fat_polygon_parts(geometry):
+    if geometry.is_empty:
+        return []
+    if isinstance(geometry,Polygon):
+        return [geometry]
+    return [p for g in geometry.geoms for p in _fat_polygon_parts(g)]
+
+
+def _fat_connector_path(a,b,blocked,pad):
+    # Offset obstacle vertices create a visibility graph, not a pixel/raster approximation.
+    region=Polygon.from_bounds(*a.union(b).bounds).buffer(pad,join_style=2)
+    obstacles=blocked.intersection(region)
+    start=a.representative_point();end=b.representative_point()
+    near_a,near_b=nearest_points(a,b)
+    vertices=[(start.x,start.y),(end.x,end.y),(near_a.x,near_a.y),(near_b.x,near_b.y)]
+    for p in _fat_polygon_parts(obstacles):
+        vertices.extend((float(x),float(y)) for x,y in p.exterior.coords[:-1])
+        for ring in p.interiors:
+            vertices.extend((float(x),float(y)) for x,y in ring.coords[:-1])
+    vertices=list(dict.fromkeys(vertices))
+    # A node can be on an obstacle edge; its segment must not enter obstacle interior.
+    interior=obstacles.buffer(-1e-7)
+    graph=[[] for _ in vertices]
+    for i,v in enumerate(vertices):
+        for j in range(i):
+            line=LineString([v,vertices[j]])
+            if not interior.is_empty and line.intersects(interior):
+                continue
+            length=line.length
+            graph[i].append((j,length));graph[j].append((i,length))
+    starts=[i for i,v in enumerate(vertices) if a.buffer(1e-7).covers(ShapelyPoint(v))]
+    targets={i for i,v in enumerate(vertices) if b.buffer(1e-7).covers(ShapelyPoint(v))}
+    queue=[(0,i) for i in starts];heapq.heapify(queue);cost={i:0 for i in starts};previous={}
+    while queue:
+        distance,i=heapq.heappop(queue)
+        if distance!=cost.get(i):
+            continue
+        if i in targets:
+            path=[i]
+            while i in previous:
+                i=previous[i];path.append(i)
+            return LineString([vertices[j] for j in reversed(path)]) if len(path)>1 else None
+        for j,length in graph[i]:
+            value=distance+length
+            if value<cost.get(j,float('inf')):
+                cost[j]=value;previous[j]=i;heapq.heappush(queue,(value,j))
+    return None
+
+
+def _connect_fat_components(geometry,excluded,own_union):
+    parts=_fat_polygon_parts(geometry)
+    # Discard numerical-only debris, never a component owning any positive-area HP cell.
+    kept=[p for p in parts if p.area>1e-7 or p.intersection(own_union).area>1e-9]
+    if len(kept)!=len(parts):
+        geometry=unary_union(kept).buffer(0);parts=_fat_polygon_parts(geometry)
+    if len(parts)<=1:
+        return geometry
+    # 1m nominal corridor; shared-edge/narrow passages may use a narrower legal connector.
+    for _ in range(len(parts)-1):
+        parts=_fat_polygon_parts(geometry)
+        if len(parts)==1:
+            return geometry
+        pairs=sorted((a.distance(b),i,j) for i,a in enumerate(parts) for j,b in enumerate(parts[:i]))
+        joined=None
+        for _,i,j in pairs:
+            a,b=parts[i],parts[j]
+            for width in (.5,.2,.05):
+                clearance=width+.02
+                blocked=excluded.buffer(clearance,join_style=2).difference(own_union)
+                carve=excluded.buffer(.02,join_style=2).difference(own_union)
+                p,q=nearest_points(a,b)
+                direct=LineString([p,q])
+                routes=[direct]
+                if not blocked.is_empty and direct.intersects(blocked.buffer(-1e-7)):
+                    routes=[]
+                    for pad in (20.0,60.0):
+                        route=_fat_connector_path(a,b,blocked,pad)
+                        if route is not None:
+                            routes.append(route);break
+                for route in routes:
+                    corridor=route.buffer(width,cap_style=3,join_style=2).difference(carve)
+                    candidate=geometry.union(corridor).buffer(0)
+                    if candidate.is_valid and len(_fat_polygon_parts(candidate))<len(parts) and candidate.intersection(excluded).area<=1e-7:
+                        joined=candidate;break
+                if joined is not None:
+                    break
+            if joined is not None:
+                break
+        if joined is None:
+            return geometry
+        geometry=joined
+    return geometry
+
+
+def _trim_fat_boundary(polygon, owned, excluded, tolerance):
+    if not isinstance(polygon, Polygon) or polygon.is_empty:
+        return None
+    trimmed = polygon.simplify(tolerance, preserve_topology=True)
+    vertices = lambda p: len(p.exterior.coords) + sum(len(r.coords) for r in p.interiors)
+    if (not isinstance(trimmed, Polygon) or not trimmed.is_valid or trimmed.is_empty
+            or vertices(trimmed) >= vertices(polygon)
+            or trimmed.difference(polygon).area > 1e-7
+            or owned.difference(trimmed).area > 1e-7
+            or (not excluded.is_empty and trimmed.intersection(excluded).area > 1e-7)):
+        return None
+    return trimmed
+
 
 def pipeline_log(logger, severity: str, message: str) -> None:
     if logger is None:
@@ -126,9 +250,12 @@ REQUIRED_KML_FOLDERS = [
     "NEW HH 20X20X20",
     "NEW HH 40X40X60",
     "NEW HH 80X80X130",
-    "TWEY",
+    "T-WAY",
 ]
 OPTIONAL_KML_FOLDERS = [
+    "EXISTING HH 20X20X20",
+    "EXISTING HH 40X40X60",
+    "EXISTING HH 80X80X130",
     "OLT",
     "FDT",
     "CABLE",
@@ -174,8 +301,9 @@ STANDARD_KML_FOLDER_ALIASES.update(
             "NEW HH 20 X 20 X 20": "NEW HH 20X20X20",
             "NEW HH 40 X 40 X 60": "NEW HH 40X40X60",
             "NEW HH 80 X 80 X 130": "NEW HH 80X80X130",
-            "T-WAY": "TWEY",
-            "T-WEY": "TWEY",
+            "T-WAY": "T-WAY",
+            "T-WEY": "T-WAY",
+            "TWEY": "T-WAY",
             "FAT AREA": "BOUNDARY FAT",
             "CABLE": "CABLE",
             "JOINT CLOSURE": "JOINT CLOSURE",
@@ -196,6 +324,32 @@ KML_HOME_NUMBER_LAYER = "HOME_NUMBER"
 KML_HOME_NUMBER_BOX_LAYER = "Basic_Map"
 KML_HOME_NUMBER_BOX_COLOR = DXF_LAYERS["ROAD"]
 KML_HOME_NUMBER_COLOR = 6
+
+# Authoritative HP COVER parcel ladder. Every active strict planner tries one
+# complete tier before moving to the next smaller module.
+HP_COVER_PARCEL_SIZE_TIERS = (
+    (6.0, 12.0),
+    (5.0, 10.0),
+    (4.0, 10.0),
+    (4.0, 8.0),
+)
+
+# Housing-estate straight-row rule: a straight run of more than 15 HP COVER
+# sources along one ROAD side, with no crossing ROAD between them, shares one
+# front line and uniform dividers - one parking-bay slot per HP.
+HP_STRIP_MIN_MEMBERS = 16
+HP_STRIP_MAX_STATION_GAP_METERS = 13.0
+HP_STRIP_MAX_PAIR_BEND_DEGREES = 15.0
+HP_STRIP_MAX_RUN_BEND_DEGREES = 20.0
+HP_STRIP_DEPTH_CLUSTER_GAP_METERS = 4.0
+HP_STRIP_BAND_TOLERANCE_METERS = 2.0
+HP_STRIP_MIN_WIDTH_METERS = 4.0
+HP_STRIP_FLEX_MIN_WIDTH_METERS = 2.0
+HP_STRIP_MAX_WIDTH_METERS = 13.0
+HP_STRIP_MIN_DEPTH_METERS = 8.0
+HP_STRIP_MAX_DEPTH_METERS = 13.0
+HP_STRIP_SOURCE_MARGIN_METERS = 0.05
+HP_STRIP_UNIFORM_WIDTH_STEP_METERS = 0.01
 
 KML_UNCOVER_LAYER = "HP_UNCOVER"
 KML_UNCOVER_BOX_LAYER = "HP_UNCOVER_BOX"
@@ -271,6 +425,7 @@ KML_FAT_LAYER = "FAT"
 KML_FAT_AREA_LAYER = "FAT_AREA"
 KML_FAT_AREA_COLOR = 134
 KML_FAT_AREA_LINETYPE = "PHANTOM2"
+KML_FAT_AREA_WIDTH = 0.06
 KML_FAT_BLOCK_NAME = "FAT_ICON"
 KML_FAT_ATTR_TAG = "FAT_CODE"
 KML_FAT_ICON_WIDTH_METERS = 3.2
@@ -307,6 +462,9 @@ KML_JOINT_CLOSURE_DIAMETER_METERS = 4.0
 # the centre of a nearby pole icon (matches user expectation that placemarks placed
 # next to a pole are visually attached to it).
 KML_POLE_SNAP_RADIUS_METERS = 5.0
+# User-approved DXF-only ROAD relocation caps, measured from immutable KMZ source.
+KML_ROAD_POLE_MAX_SHIFT_METERS = 8.0
+KML_ROADSIDE_POLE_MAX_SHIFT_METERS = 5.0
 KML_HANDHOLE_40_LAYER = "NEW_HH_40X40X60"
 KML_HANDHOLE_80_LAYER = "NEW_HH_80X80X130"
 KML_HANDHOLE_20_LAYER = "NEW_HH_20X20X20"
@@ -347,16 +505,6 @@ TEMPLATE_CLUSTER_VIEWPORT_BOUNDS = (12.87, 12.73, 350.12, 281.37)
 TEMPLATE_FDT_VIEWPORT_BOUNDS = (12.87, 12.73, 350.12, 281.37)
 TEMPLATE_PAPER_VIEWPORT_CENTER = (210.0, 148.5)
 TEMPLATE_PAPER_VIEWPORT_SIZE = (420.0, 297.0)
-# Measured from Template_Feeder_AE.dxf and Template_Feeder_UG.dxf; the
-# Feeder paper viewports do not match the Cluster A3 viewport bounds.
-TEMPLATE_FEEDER_AE_PAPER_VIEWPORT_CENTER = (275.0936221713732, 145.9730807574958)
-TEMPLATE_FEEDER_AE_PAPER_VIEWPORT_SIZE = (873.1491237069812, 317.2608476561546)
-TEMPLATE_FEEDER_UG_PAPER_VIEWPORT_CENTER = (347.6070861829255, 115.4721414644476)
-TEMPLATE_FEEDER_UG_PAPER_VIEWPORT_SIZE = (1330.938937267691, 483.599884545991)
-TEMPLATE_FEEDER_PAPER_VIEWPORTS = {
-    "AE": (TEMPLATE_FEEDER_AE_PAPER_VIEWPORT_CENTER, TEMPLATE_FEEDER_AE_PAPER_VIEWPORT_SIZE),
-    "UG": (TEMPLATE_FEEDER_UG_PAPER_VIEWPORT_CENTER, TEMPLATE_FEEDER_UG_PAPER_VIEWPORT_SIZE),
-}
 TEMPLATE_PAPER_SIZE = (420.0, 297.0)
 FDT_DESIGN_SUMMARY_CLEAR_BOUNDS = (6.0, 4.0, 112.5, 95.0)
 TEMPLATE_LAYOUT_VIEWPORT_CENTER = (
@@ -414,7 +562,7 @@ DEFAULT_ROAD_WIDTHS_METERS = {
     "secondary": 10.0,
     "tertiary": 9.0,
     "unclassified": 7.0,
-    "residential": 6.0,
+    "residential": 4.0,
     "living_street": 5.0,
     "service": 4.0,
     "track": 3.5,
@@ -425,6 +573,7 @@ DEFAULT_ROAD_WIDTHS_METERS = {
     "steps": 1.8,
 }
 LANE_WIDTH_METERS = 3.2
+MAX_ROAD_WIDTH_METERS = 8.0
 ROAD_EXCLUDED_HIGHWAYS = {
     "bridleway",
     "construction",
@@ -451,7 +600,7 @@ ROAD_MIN_POLYGON_AREA_SQUARE_METERS = 12.0
 # read as a double line (road edge + inner edge) like standard CAD road
 # drawings, instead of a single thin outline. The inner boundary is the road
 # polygon shrunk inward by this offset.
-ROAD_INNER_LINE_OFFSET_METERS = 0.9
+ROAD_INNER_LINE_OFFSET_METERS = 0.6
 ROAD_INNER_LINE_MIN_POLYGON_AREA_SQUARE_METERS = 18.0
 ROAD_NAME_LABEL_HEIGHT_METERS = 1.05
 ROAD_NAME_LABEL_MIN_HEIGHT_METERS = 0.55
@@ -652,12 +801,12 @@ def estimate_road_half_width_meters(tags) -> float:
     for key in ("width", "est_width"):
         explicit_width = parse_osm_measure_meters(tag_value(tags, key))
         if explicit_width:
-            return _clamp(explicit_width / 2, 0.8, 20.0)
+            return _clamp(explicit_width / 2, 0.8, MAX_ROAD_WIDTH_METERS / 2)
 
     lanes = parse_osm_measure_meters(tag_value(tags, "lanes"))
     if lanes:
         full_width = lanes * LANE_WIDTH_METERS + 1.0
-        return _clamp(full_width / 2, 1.2, 20.0)
+        return _clamp(full_width / 2, 1.2, MAX_ROAD_WIDTH_METERS / 2)
 
     highway = tag_value(tags, "highway") or "residential"
     service = tag_value(tags, "service")
@@ -665,7 +814,7 @@ def estimate_road_half_width_meters(tags) -> float:
         return 1.6
 
     full_width = DEFAULT_ROAD_WIDTHS_METERS.get(highway, DEFAULT_ROAD_WIDTHS_METERS["residential"])
-    return _clamp(full_width / 2, 0.8, 20.0)
+    return _clamp(full_width / 2, 0.8, MAX_ROAD_WIDTH_METERS / 2)
 
 
 def should_export_road(tags, projected_coordinates: Sequence[Point]) -> bool:
@@ -979,6 +1128,18 @@ def extract_fat_code_from_path(folder_stack: Sequence[str], name: str = "") -> s
             return code
     return (name or "").strip() or "FAT"
 
+def kml_fat_owner_key(folder_stack: Sequence[str], name: str = "", source_scope: tuple = ()) -> tuple | None:
+    """Keep source project/LINE/FDT plus FAT bucket; HP labels are not FAT IDs."""
+    for index in range(len(folder_stack) - 1, -1, -1):
+        category = canonical_standard_folder(folder_stack[index])
+        if category not in {"HP COVER", "BOUNDARY FAT"}:
+            continue
+        values = [name] if category == "BOUNDARY FAT" else list(reversed(folder_stack[index + 1:]))
+        code = next((find_fat_code(value) for value in values if find_fat_code(value)), None)
+        return (source_scope, tuple(normalized_folder_name(value) for value in folder_stack[:index]), code)
+    return None
+
+
 def detect_parent_fdt_number(folder_stack: Sequence[str] | None) -> int | None:
     for folder_name in reversed(folder_stack or []):
         match = PARENT_FDT_NUMBER_PATTERN.search(folder_name or "")
@@ -1036,6 +1197,9 @@ def is_fdt_folder(folder_name: str | None) -> bool:
 
 def kml_handhole_folder_spec(folder_name: str | None) -> dict | None:
     canonical = canonical_standard_folder(folder_name) or normalized_folder_name(folder_name or "")
+    existing = canonical.startswith("EXISTING HH ")
+    if existing:
+        canonical = "NEW HH " + canonical.removeprefix("EXISTING HH ")
     specs = {
         "NEW HH 20X20X20": {
             "layer": KML_HANDHOLE_20_LAYER,
@@ -1058,12 +1222,16 @@ def kml_handhole_folder_spec(folder_name: str | None) -> dict | None:
             "label_lines": ("HANDHOLE", "80x80x130 cm"),
         },
     }
-    return specs.get(canonical)
+    spec = specs.get(canonical)
+    if spec and existing:
+        return {**spec, "layer": str(spec["layer"]).replace("NEW_HH_", "EXISTING_HH_"),
+                "block": "EXISTING_" + str(spec["block"])}
+    return spec
 
 
 def is_twey_folder(folder_name: str | None) -> bool:
     canonical = canonical_standard_folder(folder_name) or normalized_folder_name(folder_name or "")
-    return canonical == "TWEY"
+    return canonical == "T-WAY"
 
 
 def kml_color_to_true_color(value: str | None) -> int | None:
@@ -1213,6 +1381,20 @@ def resolve_kml_style(style_url: str, styles: dict[str, dict], style_maps: dict[
 
 
 
+OSM_ROAD_CACHE_POLICY_SIGNATURE = json.dumps(
+    {
+        "schema": 3,
+        "max_road_width_m": MAX_ROAD_WIDTH_METERS,
+        "default_widths": DEFAULT_ROAD_WIDTHS_METERS,
+        "lane_width": LANE_WIDTH_METERS,
+        "excluded_highways": sorted(ROAD_EXCLUDED_HIGHWAYS),
+        "excluded_services": sorted(ROAD_EXCLUDED_SERVICES),
+        "minimum_lengths": ROAD_MIN_LENGTH_METERS,
+    },
+    sort_keys=True,
+    separators=(",", ":"),
+)
+
 OSM_ROAD_CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -1307,6 +1489,7 @@ class OSMRoadCacheBuilder(osmium.SimpleHandler):
                 ("source", str(self.source_path.resolve())),
                 ("source_size", str(stat.st_size)),
                 ("source_mtime_ns", str(stat.st_mtime_ns)),
+                ("policy_signature", OSM_ROAD_CACHE_POLICY_SIGNATURE),
                 ("ways_seen", str(self.ways_seen)),
                 ("roads_saved", str(self.roads_saved)),
             ],
@@ -1326,7 +1509,11 @@ def road_cache_is_fresh(source_path: Path, cache_path: Path) -> bool:
         stat = source_path.stat()
         with sqlite3.connect(cache_path) as conn:
             rows = dict(conn.execute("SELECT key, value FROM meta").fetchall())
-        return rows.get("source_size") == str(stat.st_size) and rows.get("source_mtime_ns") == str(stat.st_mtime_ns)
+        return (
+            rows.get("source_size") == str(stat.st_size)
+            and rows.get("source_mtime_ns") == str(stat.st_mtime_ns)
+            and rows.get("policy_signature") == OSM_ROAD_CACHE_POLICY_SIGNATURE
+        )
     except Exception:
         return False
 
@@ -1429,6 +1616,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.preview_feature_limit = preview_feature_limit
         self.preview_features: list[dict] = []
         self.road_buffers = []
+        self._road_buffer_centerlines = []
         self.road_lines = []
         self.road_centerlines: list[LineString] = []
         self._road_centerline_tree = None
@@ -1436,6 +1624,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self._home_parcel_road_solid_ready = False
         self.kml_line_centerlines: list[LineString] = []
         self.kml_cable_centerlines: list[LineString] = []
+        self.hp_strip_reference_lines: list[LineString] = []
         self.subduct_line_entities: list[object] = []
         self.top_cable_line_entities: list[object] = []
         self.twey_overlay_entities: list[object] = []
@@ -1446,17 +1635,26 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.fat_area_geometries = []
         self.pending_home_numbers: list[dict] = []
         self.pending_uncover_home_numbers: list[dict] = []
+        self._last_label_only_indexes: set[int] = set()
+        self._last_relaxed_4x8_indexes: set[int] = set()
         self.pending_fat_icons: list[dict] = []
         self.pending_handhole_icons: list[dict] = []
         self.pending_twey_points: list[dict] = []
         self.pending_olt_icons: list[dict] = []
         self.pending_pole_ids: list[dict] = []
         self.fat_callout_refs: list[dict] = []
+        self.pending_boundary_fat_polygons: list[dict] = []
         self.home_number_boxes: list[Polygon] = []
-        self._hp_cover_drawn_indexes: set[int] = set()
+        # Parallel flags: True when the matching box belongs to an HP UNCOVER
+        # source point. The FAT AREA wrap must never absorb UNCOVER boxes.
+        self.home_number_box_uncover: list[bool] = []
+        self.home_number_cells: list[dict] = []
+        self.home_number_relocated_indexes: set[int] = set()
         # Pole positions used for snapping nearby slack/joint closure/cable
         # placemarks to the centre of an existing pole icon.
         self.pole_positions: list[Point] = []
+        self._roadside_poles: list[dict] = []
+        self._pole_follow_lines: list[dict] = []
         self.pending_slack_icons: list[dict] = []
         self.pending_joint_closure_icons: list[dict] = []
         # Cable polyline entities whose endpoints should snap to nearby poles.
@@ -1504,8 +1702,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.processed_nodes += 1
 
     def _create_document(self):
+        self.preserve_native_template = False
         if self.dxf_template_path.exists():
-            return ezdxf.readfile(self.dxf_template_path), True
+            doc = ezdxf.readfile(self.dxf_template_path)
+            self.preserve_native_template = (
+                doc.dxfversion == "AC1032" and (
+                    is_feeder_like_scope(self.scope_type) or (
+                        self.scope_type == "Cluster" and
+                        self.dxf_template_path.name in {"Template_AE.dxf", "Template_UG.dxf"}
+                    )
+                )
+            )
+            return doc, True
         if LEGACY_DXF_TEMPLATE_PATH.exists():
             LOGGER.warning(
                 "Template DXF tidak ditemukan: %s. Menggunakan template lama: %s",
@@ -1535,8 +1743,16 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self._ensure_viewports_layer_style()
         self._ensure_bold_text_style()
         self._turn_all_layers_visible()
+        self._force_viewport_layer_noplot()
 
     def _ensure_viewports_layer_style(self) -> None:
+        """Viewport frames must never plot.
+
+        Previously this layer was forced to ACI 255 (white) with plot enabled,
+        which renders invisible on white paper and overlaps the sheet. Standard
+        AutoCAD behavior is a non-plotting viewport frame, so we set plot=0 and
+        keep a dark color for on-screen visibility.
+        """
         if TEMPLATE_VIEWPORT_LAYER not in self.doc.layers:
             self.doc.layers.add(TEMPLATE_VIEWPORT_LAYER, color=WHITE_ACI_COLOR)
         layer = self.doc.layers.get(TEMPLATE_VIEWPORT_LAYER)
@@ -1544,8 +1760,22 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             layer.dxf.color = WHITE_ACI_COLOR
             layer.dxf.true_color = WHITE_TRUE_COLOR
             layer.rgb = (255, 255, 255)
+            # Non-plotting: viewport frames must not appear on paper.
+            layer.dxf.plot = 0
         except Exception as exc:
             LOGGER.debug("Layer %s tidak bisa diset putih: %s", TEMPLATE_VIEWPORT_LAYER, exc)
+
+    def _force_viewport_layer_noplot(self) -> None:
+        """Re-assert plot=0 on the viewport layer after template load.
+
+        The DXF template ships the VIEWPORTS layer with plot=1; the template is
+        loaded after _setup_layers() on some paths, so enforce it again here.
+        """
+        try:
+            if TEMPLATE_VIEWPORT_LAYER in self.doc.layers:
+                self.doc.layers.get(TEMPLATE_VIEWPORT_LAYER).dxf.plot = 0
+        except Exception as exc:
+            LOGGER.debug("Gagal set plot=0 pada %s: %s", TEMPLATE_VIEWPORT_LAYER, exc)
 
     def _ensure_bold_text_style(self) -> None:
         """Create the dedicated bold style used by converter labels.
@@ -1971,6 +2201,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         return coordinates
 
     def _collect_road_buffer(self, projected_coordinates: list[Point], half_width_meters: float) -> None:
+        # Operator full-width cap also covers cached/manual half-widths.
+        half_width_meters = min(half_width_meters, MAX_ROAD_WIDTH_METERS / 2)
         clean_coordinates = _clean_points(projected_coordinates)
         if len(clean_coordinates) < 2:
             return
@@ -1990,6 +2222,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         )
         if not road_area.is_empty:
             self.road_buffers.append(road_area)
+            self._road_buffer_centerlines.append(line)
 
     def _collect_road_line(self, projected_coordinates: list[Point]) -> None:
         clean_coordinates = _clean_points(projected_coordinates)
@@ -2113,11 +2346,15 @@ class OSMToDXFHandler(osmium.SimpleHandler):
     def _ensure_kml_fat_block(self) -> None:
         layer_name = self._ensure_layer(KML_FAT_LAYER, KML_FAT_BORDER_COLOR)
         if KML_FAT_BLOCK_NAME in self.doc.blocks:
-            if self._block_line_extent_matches(
-                KML_FAT_BLOCK_NAME,
-                KML_FAT_ICON_WIDTH_METERS,
-                KML_FAT_ICON_HEIGHT_METERS,
-            ):
+            existing = self.doc.blocks[KML_FAT_BLOCK_NAME]
+            points = [(float(p.x), float(p.y)) for entity in existing if entity.dxftype() == "LINE"
+                      for p in (entity.dxf.start, entity.dxf.end)]
+            centred = bool(points) and all(math.isclose(actual, expected, abs_tol=1e-6) for actual, expected in zip(
+                (min(p[0] for p in points), max(p[0] for p in points), min(p[1] for p in points), max(p[1] for p in points)),
+                (-KML_FAT_ICON_WIDTH_METERS/2, KML_FAT_ICON_WIDTH_METERS/2,
+                 -KML_FAT_ICON_HEIGHT_METERS/2, KML_FAT_ICON_HEIGHT_METERS/2)))
+            if (centred and tuple(existing.block.dxf.base_point) == (0, 0, 0) and
+                    all(e.dxftype() in ("LINE", "ATTDEF") for e in existing)):
                 return
             self.doc.blocks.delete_block(KML_FAT_BLOCK_NAME, safe=False)
 
@@ -2166,7 +2403,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         actual_height = max(y for _x, y in points) - min(y for _x, y in points)
         return math.isclose(actual_width, width, abs_tol=1e-6) and math.isclose(actual_height, height, abs_tol=1e-6)
 
-    def _add_kml_fat_icon(self, projected: Point, code: str, style: dict | None = None, rotation: float = 0.0, normal_side: int = 1, offset_scale: float = 1.0) -> object:
+    def _add_kml_fat_icon(self, projected: Point, code: str, style: dict | None = None, rotation: float = 0.0, normal_side: int = 1, offset_scale: float = 1.0, insert_override: Point | None = None) -> object:
         self._ensure_kml_fat_block()
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
         x, y = projected
@@ -2178,7 +2415,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         side = 1 if int(normal_side or 1) >= 0 else -1
         # Local cable normal. AI may choose side/scale only; anchor remains deterministic.
         radians = math.radians(float(rotation))
-        insert_point = (
+        insert_point = insert_override if insert_override is not None else (
             x - math.sin(radians) * pole_gap * side,
             y + math.cos(radians) * pole_gap * side,
         )
@@ -2371,7 +2608,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             return block_name
         block = self.doc.blocks.new(name=block_name)
         attrs = {"layer": layer_name, "color": color}
-        if block_name == "HANDHOLE_PIT_20_BLOCK":
+        if block_name.endswith("HANDHOLE_PIT_20_BLOCK"):
             # UG HH20 template: double blue square with SH only. No callout,
             # no size/name text; source point remains the insertion anchor.
             inner = icon_size - KML_HANDHOLE_ICON_INSET_METERS * 2
@@ -2490,6 +2727,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         name: str = "",
         style: dict | None = None,
         fdt_number: int | None = None,
+        folder_stack: Sequence[str] | None = None,
     ) -> str:
         clean_code = code.strip() or "FAT"
         self.pending_fat_icons.append(
@@ -2499,6 +2737,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 "name": name,
                 "style": dict(style or {}),
                 "fdt_number": fdt_number,
+                "group": self._pole_line_group(folder_stack),
             }
         )
         return clean_code
@@ -2566,35 +2805,237 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             )
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
 
+    def _source_owned_asset_pole(self, pending: dict) -> dict | None:
+        """Prefer the source route; sharing requires that route's source cable contact."""
+        group, source = pending.get("group"), pending["projected"]
+        same = min((p for p in self._roadside_poles if p["group"] == group),
+                   key=lambda p: _distance(source, p["source"]), default=None)
+        if same is not None and _distance(source, same["source"]) <= KML_POLE_SNAP_RADIUS_METERS:
+            return same
+        # Canonical storage may change LINE, never project/FDT or source coordinates.
+        pattern = r"LINE\s+[A-Z](?:\s*-\s*FDT\s+(\d+))?"
+        owner = re.fullmatch(pattern, group[-1]) if group and len(group) >= 2 else None
+        if owner is None:
+            return None
+        records = [r for r in getattr(self, "_pole_follow_lines", ()) if r["group"] == group
+                   and r.get("cable_kind") in ("distribution", "sling") and len(r["source"]) >= 2]
+        candidates = []
+        for pole in self._roadside_poles:
+            other = pole["group"]
+            route = re.fullmatch(pattern, other[-1]) if other and other[:-1] == group[:-1] else None
+            if (route is None or int(route.group(1) or 1) != int(owner.group(1) or 1)
+                    or _distance(source, pole["source"]) > KML_POLE_SNAP_RADIUS_METERS):
+                continue
+            if any(ShapelyPoint(pole["source"]).distance(LineString(r["source"])) <= 0.15 or
+                   any(_distance(pole["source"], v) <= 3.0 for v in r["source"]) for r in records):
+                candidates.append(pole)
+        return min(candidates, key=lambda p: _distance(source, p["source"]), default=None)
+
+    def _serving_pole_cable_rotation(self, pole: dict, group: tuple[str, ...] | None = None) -> float:
+        """Keep an asset's rotation on its source-owned route's rendered cable."""
+        records = getattr(self, "_pole_follow_lines", ())
+        group = pole["group"] if group is None else group
+        same_route = [r for r in records if r["group"] == group and r.get("cable_kind")]
+        if not same_route:
+            return float(self._nearest_cable_frame(pole["source"]).get("rotation") or 0.0) if not records else 0.0
+        source = ShapelyPoint(pole["source"])
+        record = min(same_route, key=lambda r: source.distance(LineString(r["source"])))
+        entity = record.get("entity")
+        vertices = [(float(v.dxf.location.x), float(v.dxf.location.y)) for v in entity.vertices] if entity is not None else record["source"]
+        line = LineString(vertices)
+        if line.is_empty or line.length <= 1e-9:
+            return 0.0
+        return self._line_angle_at_position(line, line.project(ShapelyPoint(pole["target"])))
+
+    def _plan_ae_fat_icons(self, pipeline_logger=None) -> list[dict]:
+        """Plan a complete bounded batch before emitting any FAT INSERT."""
+        owners = []
+        for pending in self.pending_fat_icons:
+            pole = self._source_owned_asset_pole(pending)
+            distance = _distance(pending["projected"], pole["source"]) if pole is not None else None
+            if distance is None or distance > KML_POLE_SNAP_RADIUS_METERS:
+                # Fallback sharing pole: cari tiang fisik terdekat dari rute/line mana pun (cross-line pole sharing)
+                fallback_pole = min(self._roadside_poles, key=lambda p: _distance(pending["projected"], p["source"]), default=None)
+                if fallback_pole is not None and _distance(pending["projected"], fallback_pole["source"]) <= KML_POLE_SNAP_RADIUS_METERS:
+                    pole = fallback_pole
+                    distance = _distance(pending["projected"], pole["source"])
+                else:
+                    nearest = f"; nearest same-route pole {distance:.2f}m" if distance is not None else ""
+                    raise ValueError(f"FAT {pending.get(code) or FAT} has no serving pole within "
+                                     f"{KML_POLE_SNAP_RADIUS_METERS:g}m{nearest}")
+            owners.append((pending, pole))
+
+        road = self._road_avoidance_geometry()
+        pole_disks = [(ShapelyPoint(float(p["icon"].dxf.insert.x), float(p["icon"].dxf.insert.y)),
+                       KML_POLE_ICON_SIZE_METERS / 2 * abs(float(p["icon"].dxf.get("xscale", 1.0))))
+                      for p in self._roadside_poles]
+        rows = []
+        for pending, pole in owners:
+            anchor = pole["target"]
+            scale = _clamp(float((pending.get("style") or {}).get("icon_scale") or 1.0), 0.5, 1.5)
+            pole_radius = KML_POLE_ICON_SIZE_METERS / 2 * abs(float(pole["icon"].dxf.get("xscale", 1.0)))
+            rotation_degrees = self._serving_pole_cable_rotation(pole, pending.get("group"))
+            rotation = math.radians(rotation_degrees)
+            along, normal = (math.cos(rotation), math.sin(rotation)), (-math.sin(rotation), math.cos(rotation))
+            half_width, half_height = KML_FAT_ICON_WIDTH_METERS * scale / 2, KML_FAT_ICON_HEIGHT_METERS * scale / 2
+            base_gap = pole_radius + (KML_FAT_TO_POLE_GAP_METERS + KML_FAT_ICON_HEIGHT_METERS / 2) * scale
+            side, offset_scale = 1, 1.0
+            try:
+                hint = suggest_dxf_asset_layout(asset_type="FAT", asset_name=str(pending.get("code") or "FAT"),
+                                                cable_angle=rotation_degrees, has_serving_pole=True)
+                if isinstance(hint, dict) and hint.get("normal_side") in (-1, 1):
+                    side = int(hint["normal_side"])
+                    value = float(hint.get("offset_scale", 1.0))
+                    if math.isfinite(value) and 0.75 <= value <= 1.35:
+                        offset_scale = value
+            except Exception as exc:
+                LOGGER.debug("FAT AI layout fallback: %s", exc)
+            # AI only ranks this finite envelope; pole shift and symbol gap are separate.
+            # ponytail: 5-degree angles, <=0.75m extra, 100000 trials; extend only with a red fixture.
+            angles = [rotation + candidate_side*math.pi/2 + math.radians(delta)
+                      for delta in [0, *[d for n in range(5, 91, 5) for d in (n, -n)]]
+                      for candidate_side in (side, -side)]
+            extras = sorted((0.0, 0.25, 0.5, 0.75), key=lambda extra: abs(base_gap + extra - base_gap*offset_scale))
+            options, road_blocked_options, seen = [], [], set()
+            retained_in_road = (_distance(pole["source"], anchor) <= 1e-7 and
+                                road is not None and not road.is_empty and
+                                road.intersects(ShapelyPoint(anchor).buffer(pole_radius)))
+            for extra in extras:
+                for angle in angles:
+                    gap = base_gap + extra
+                    center = (anchor[0] + gap*math.cos(angle), anchor[1] + gap*math.sin(angle))
+                    key = (round(center[0], 8), round(center[1], 8))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    footprint = Polygon([
+                        (center[0] + u*half_width*along[0] + v*half_height*normal[0],
+                         center[1] + u*half_width*along[1] + v*half_height*normal[1])
+                        for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+                    ])
+                    edge_gap = footprint.distance(ShapelyPoint(anchor)) - pole_radius
+                    if (0.1 <= edge_gap <= KML_FAT_TO_POLE_GAP_METERS*scale + 0.75 + 1e-6 and
+                            all(footprint.distance(point) >= radius + 0.1 - 1e-7 for point, radius in pole_disks)):
+                        if road is None or road.is_empty or road.distance(footprint) >= 0.1:
+                            options.append((center, footprint))
+                        elif retained_in_road:
+                            road_blocked_options.append((center, footprint))
+            if not options and road_blocked_options:
+                # Operator fallback: preserve source pole and its FAT attachment;
+                # ROAD alone is advisory here, never pole/FAT collisions or ownership.
+                options = sorted(road_blocked_options, key=lambda option: option[1].intersection(road).area)
+                pipeline_log(pipeline_logger, "warning",
+                             f"FAT {pending.get('code') or 'FAT'} ROAD obstruction advisory: "
+                             "serving pole retained at source; FAT stays beside its serving pole.")
+            if not options:
+                raise ValueError(f"FAT {pending.get('code') or 'FAT'} cannot attach beside serving pole "
+                                 f"and clear ROAD/poles within {base_gap + 0.75:.2f}m of its fixed centre")
+            rows.append({"anchor": anchor, "rotation": rotation_degrees, "options": options})
+
+        order = sorted(range(len(rows)), key=lambda i: (len(rows[i]["options"]),
+                       str(self.pending_fat_icons[i].get("code") or ""), self.pending_fat_icons[i]["projected"], i))
+        cursors, selected, position, trials = [0]*len(rows), {}, 0, 0
+        while 0 <= position < len(order):
+            index = order[position]
+            options = rows[index]["options"]
+            if cursors[position] == len(options):
+                cursors[position] = 0
+                position -= 1
+                if position >= 0:
+                    selected.pop(order[position], None)
+                continue
+            center, footprint = options[cursors[position]]
+            cursors[position] += 1
+            trials += 1
+            if trials > 100000:
+                raise ValueError("FAT batch cannot attach beside serving poles within bounded search budget")
+            if all(footprint.intersection(old[1]).area <= 1e-7 for old in selected.values()):
+                selected[index] = (center, footprint)
+                position += 1
+        if position < 0:
+            raise ValueError("FAT batch cannot attach beside serving poles without overlapping FATs")
+        return [{"anchor": row["anchor"], "rotation": row["rotation"], "center": selected[i][0]}
+                for i, row in enumerate(rows)]
+
     def finalize_fat_icons(self, pipeline_logger=None) -> None:
         if not self.pending_fat_icons:
             return
 
-        for pending in self.pending_fat_icons:
+        ae_plans = self._plan_ae_fat_icons(pipeline_logger) if getattr(self, "network_type", "") == "AE" else None
+        for index, pending in enumerate(self.pending_fat_icons):
             output_start_index = len(self.output_entities)
             source_point = pending["projected"]
-            frame = self._nearest_cable_frame(source_point)
-            # FAT terminates at its serving pole. Resolve against the original
-            # FAT coordinate, never the projected cable point, to avoid cluster.
-            anchor = self._snap_to_nearest_pole(source_point)
-            rotation = float(frame.get("rotation") or 0.0)
-            ai_asset = None
-            try:
-                ai_asset = suggest_dxf_asset_layout(
-                    asset_type="FAT",
-                    asset_name=str(pending.get("code") or "FAT"),
-                    cable_angle=rotation,
-                    has_serving_pole=anchor != source_point,
+            side, offset_scale = 1, 1.0
+            if ae_plans is not None:
+                plan = ae_plans[index]
+                anchor, rotation, insert_override = plan["anchor"], plan["rotation"], plan["center"]
+            else:
+                frame = self._nearest_cable_frame(source_point)
+                serving_pole = min(
+                    (pole for pole in self._roadside_poles if pole["group"] == pending["group"]),
+                    key=lambda pole: _distance(source_point, pole["source"]), default=None,
                 )
-            except Exception as exc:
-                LOGGER.debug("FAT AI layout fallback: %s", exc)
+                anchor = (serving_pole["target"] if serving_pole is not None and
+                          _distance(source_point, serving_pole["source"]) <= KML_POLE_SNAP_RADIUS_METERS else source_point)
+                rotation = float(frame.get("rotation") or 0.0)
+                ai_asset = None
+                try:
+                    ai_asset = suggest_dxf_asset_layout(asset_type="FAT", asset_name=str(pending.get("code") or "FAT"),
+                                                        cable_angle=rotation, has_serving_pole=anchor != source_point)
+                except Exception as exc:
+                    LOGGER.debug("FAT AI layout fallback: %s", exc)
+                side = 1 if int((ai_asset or {}).get("normal_side", 1)) >= 0 else -1
+                offset_scale = float((ai_asset or {}).get("offset_scale", 1.0))
+                insert_override = None
+            road = self._road_avoidance_geometry()
+            if ae_plans is None and road is not None and not road.is_empty:
+                style_scale = _clamp(float((pending.get("style") or {}).get("icon_scale") or 1.0), 0.5, 1.5)
+                radians = math.radians(rotation)
+                along = (math.cos(radians), math.sin(radians))
+                normal = (-along[1], along[0])
+                half_width = KML_FAT_ICON_WIDTH_METERS * style_scale / 2
+                half_height = KML_FAT_ICON_HEIGHT_METERS * style_scale / 2
+                base_gap = (KML_POLE_ICON_SIZE_METERS / 2 + KML_FAT_TO_POLE_GAP_METERS + KML_FAT_ICON_HEIGHT_METERS / 2) * style_scale * offset_scale
+
+                def clear_fat(center):
+                    corners = [
+                        (center[0] + u * half_width * along[0] + v * half_height * normal[0],
+                         center[1] + u * half_width * along[1] + v * half_height * normal[1])
+                        for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+                    ]
+                    return road.distance(Polygon(corners)) >= 0.1
+
+                # Try the original cable-normal side first. Widen the offset only
+                # for this FAT when its complete rotated footprint still touches ROAD.
+                for extra in (step * 0.5 for step in range(51)):
+                    for candidate_side in (side, -side):
+                        gap = base_gap + extra
+                        center = (anchor[0] + normal[0] * gap * candidate_side,
+                                  anchor[1] + normal[1] * gap * candidate_side)
+                        if _distance(source_point, center) <= 30 and clear_fat(center):
+                            insert_override = center
+                            side = candidate_side
+                            break
+                    if insert_override is not None:
+                        break
+                if insert_override is None:
+                    # A sharply angled cable normal can follow ROAD for >25m.
+                    # Use its true outer edge rather than silently drawing in-road.
+                    expanded = road.buffer(math.hypot(half_width, half_height) + 0.15)
+                    edge = nearest_points(ShapelyPoint(anchor), expanded.boundary)[1]
+                    candidate = (float(edge.x), float(edge.y))
+                    if _distance(source_point, candidate) <= 30 and clear_fat(candidate):
+                        insert_override = candidate
+                if insert_override is None:
+                    raise ValueError(f"FAT {pending.get('code') or 'FAT'} cannot clear ROAD within 30m")
             insert = self._add_kml_fat_icon(
                 anchor,
                 str(pending.get("code") or "FAT"),
                 pending.get("style") or {},
                 rotation=rotation,
-                normal_side=int((ai_asset or {}).get("normal_side", 1)),
-                offset_scale=float((ai_asset or {}).get("offset_scale", 1.0)),
+                normal_side=side,
+                offset_scale=offset_scale,
+                insert_override=insert_override,
             )
             self.fat_callout_refs.append(
                 {
@@ -2605,6 +3046,39 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 }
             )
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
+        self.pending_fat_icons.clear()
+
+    def _add_kml_handhole_label(self, source_point: Point, spec: dict, name: str,
+                                style: dict | None = None, icon_rotation: float = 0.0) -> None:
+        name = name.strip()
+        if not name:
+            return
+        scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
+        size = float(spec.get("icon_size") or KML_HANDHOLE_ICON_SIZE_METERS) * scale
+        height = KML_HANDHOLE_LABEL_HEIGHT_METERS * scale
+        road = self._nearest_road_frame(source_point)
+        rotation = float(road["road_angle"] if road else icon_rotation)
+        radians = math.radians(rotation)
+        normal = (-math.sin(radians), math.cos(radians))
+        if road:
+            side = -1.0 if sum(a * b for a, b in zip(normal, road["away"])) >= 0 else 1.0
+        else:
+            side = -1.0  # ponytail: no ROAD uses the cable's lower side; real ROAD wins when present.
+        label = self._add_centered_text(name, source_point, height,
+            dxfattribs={"layer": str(spec["layer"]),
+                        "color": int(spec.get("color") or KML_HANDHOLE_COLOR)},
+            rotation=rotation)
+        width = min(size + 4.0, max(height, len(name) * height * 0.65))
+        icon_angle = math.radians(float(icon_rotation))
+        delta = radians - icon_angle
+        edge = size / 2 * (abs(math.cos(delta)) + abs(math.sin(delta)))
+        center = tuple(float(p) + side * n * (edge + 0.22 * scale + height) for p, n in zip(source_point, normal))
+        tangent = (math.cos(radians), math.sin(radians))
+        start = tuple(p - t * width / 2 for p, t in zip(center, tangent))
+        end = tuple(p + t * width / 2 for p, t in zip(center, tangent))
+        # Native FIT enforces the width in CAD even when server fonts are absent.
+        label.set_placement(start, end, align=TextEntityAlignment.FIT)
+        self.kml_detail_stats["labels"] += 1
 
     def finalize_handhole_icons(self, pipeline_logger=None) -> None:
         if not self.pending_handhole_icons:
@@ -2620,6 +3094,10 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 pending.get("style") or {},
                 rotation=float(frame.get("rotation") or 0.0),
             )
+            if self.network_type == "UG":
+                self._add_kml_handhole_label(source_point, pending["spec"],
+                    str(pending.get("name") or ""), pending.get("style") or {},
+                    float(frame.get("rotation") or 0.0))
             self.register_fdt_entities(pending.get("fdt_number"), self.output_entities[output_start_index:])
 
     def finalize_twey_icons(self, pipeline_logger=None) -> None:
@@ -2703,11 +3181,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             points = self._ellipse_points(center_x, 0, radius_x, radius_y)
             block.add_polyline2d(points, close=True, dxfattribs=attrs)
 
-    def _add_kml_slack_hanger_icon(self, projected: Point, style: dict | None = None) -> None:
+    def _add_kml_slack_hanger_icon(self, projected: Point, style: dict | None = None, rotation: float | None = None) -> None:
         self._ensure_kml_slack_hanger_block()
-        # Preserve the asset's actual coordinate. Cable frame is for rotation
-        # only; projecting every asset onto a line makes nearby assets collapse.
-        frame = self._nearest_cable_frame(projected)
+        # AE may follow a verified source-owned pole; orientation stays on its route.
+        if rotation is None:
+            rotation = float(self._nearest_cable_frame(projected).get("rotation") or 0.0)
         scale = _clamp(float((style or {}).get("icon_scale") or 1.0), 0.5, 1.5)
         attrs = self._supported_attrs(
             {
@@ -2718,10 +3196,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             }
         )
         insert = self.modelspace.add_blockref(KML_SLACK_HANGER_BLOCK_NAME, projected, dxfattribs=attrs)
-        try:
-            insert.dxf.rotation = float(frame.get("rotation") or 0.0)
-        except Exception:
-            pass
+        insert.dxf.rotation = float(rotation)
         self._remember_output(insert)
 
     def _ensure_kml_joint_closure_block(self) -> None:
@@ -2777,6 +3252,834 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         insert = self.modelspace.add_blockref(KML_JOINT_CLOSURE_BLOCK_NAME, projected, dxfattribs=attrs)
         self._remember_output(insert)
 
+    @staticmethod
+    def _pole_line_group(folder_stack: Sequence[str] | None) -> tuple[str, ...]:
+        # Category differs (POLE vs CABLE), but parent route must be identical.
+        return tuple(normalized_folder_name(folder) for folder in (folder_stack or ())[:-1])
+
+    def finalize_roadside_poles_and_lines(self, pipeline_logger=None) -> None:
+        """Reposition DXF pole symbols; attach only their source-connected KML lines."""
+        if not self._roadside_poles:
+            self._space_unanchored_parallel_cables()
+            self._validate_new_cable_crossings()
+            return
+        road = self._road_avoidance_geometry()
+        radii = {id(pole): KML_POLE_ICON_SIZE_METERS / 2 * abs(float(pole["icon"].dxf.get("xscale", 1.0)))
+                 for pole in self._roadside_poles}
+        moved = []
+        for pole in self._roadside_poles:
+            source = ShapelyPoint(pole["source"])
+            if road is None or road.is_empty:
+                continue
+            radius = KML_POLE_ICON_SIZE_METERS / 2 * float(pole["icon"].dxf.get("xscale", 1.0))
+            # Outside ROAD: pull to the outer edge within 5m; inside: escape within 8m.
+            # ponytail: nearest point per local boundary component; no cable rerouter.
+            max_shift = (KML_ROAD_POLE_MAX_SHIFT_METERS if road.covers(source)
+                         else KML_ROADSIDE_POLE_MAX_SHIFT_METERS)
+            if source.distance(road) > radius + max_shift + 1e-8:
+                continue
+            expanded = road.buffer(radius)
+            boundary = nearest_points(source, expanded.boundary)[1]
+            boundaries = [boundary]
+            # A legal hole edge can still collapse cables; try only the nearest
+            # exterior as a second bounded target, not an angular routing search.
+            outer_edges = unary_union([polygon.exterior for polygon in
+                                       getattr(expanded, "geoms", (expanded,))])
+            if boundary.distance(outer_edges) > 1e-7:
+                boundaries.append(nearest_points(source, outer_edges)[1])
+            # Defer other nearby ROAD sides until primary targets fail; keep
+            # each trial inside the same source5/8m disk and full native guards.
+            def bounded_edges():
+                yield from boundaries
+                local = expanded.boundary.intersection(source.buffer(max_shift + 1e-8))
+                parts = sorted(getattr(local, "geoms", (local,)), key=source.distance)
+                for part in parts:
+                    if part.is_empty:
+                        continue
+                    point = nearest_points(source, part)[1]
+                    if all(point.distance(tried) > 1e-7 for tried in boundaries):
+                        yield point
+            candidates = list(bounded_edges())
+            # Both-side probe: when the local boundary intersection is one connected
+            # part, the opposite road side is never enumerated; cast bounded rays
+            # along the local road normal so the other side is tried before restore.
+            frame = self._nearest_road_frame(pole["source"])
+            if frame is not None:
+                tangent = frame["tangent"]
+                normal = (-tangent[1], tangent[0])
+                for direction in (normal, (-normal[0], -normal[1])):
+                    ray = LineString([pole["source"],
+                                      (pole["source"][0] + direction[0] * (max_shift + 2.0),
+                                       pole["source"][1] + direction[1] * (max_shift + 2.0))])
+                    hit = expanded.boundary.intersection(ray)
+                    points = [part for part in getattr(hit, "geoms", (hit,))
+                              if part.geom_type == "Point" and not part.is_empty]
+                    if not points:
+                        continue
+                    point = min(points, key=lambda part: _distance(pole["source"], (part.x, part.y)))
+                    if all(point.distance(tried) > 1e-7 for tried in candidates):
+                        candidates.append(point)
+            # v6 (operator): an in-road pole whose own-side exit would pile onto
+            # an existing pole bank (~10m, "numpuk pole") crosses the carriageway
+            # to the empty opposite side instead of hugging the crowded edge.
+            crossing = None
+            crossing_options = []
+            if road.covers(source):
+                near_edge = nearest_points(source, road.boundary)[1]
+                near_vector = (near_edge.x - source.x, near_edge.y - source.y)
+                near_length = math.hypot(near_vector[0], near_vector[1])
+                near_points = []
+                for boundary in candidates:
+                    point = (float(boundary.x), float(boundary.y))
+                    vector = (point[0] - source.x, point[1] - source.y)
+                    if vector[0] * near_vector[0] + vector[1] * near_vector[1] >= 0:
+                        near_points.append(point)
+
+                def _bank_within(target):
+                    for other in self._roadside_poles:
+                        if other is pole:
+                            continue
+                        other_point = other.get("target") or other["source"]
+                        if _distance(target, other_point) < 10.0 - 1e-5:
+                            return True
+                    return False
+
+                near_best = (min(near_points, key=lambda point: _distance(pole["source"], point))
+                             if near_points else None)
+                if near_best is not None and _bank_within(near_best) and near_length > 1e-9:
+                    # Geometric across target: continue the ray from the nearest
+                    # edge through the source to the next raw-road exit, then
+                    # offset outward until the full scaled icon clears the road
+                    # (fork geometry can angle the far edge away from the ray).
+                    ux = (pole["source"][0] - near_edge.x) / near_length
+                    uy = (pole["source"][1] - near_edge.y) / near_length
+                    ray = LineString([pole["source"], (pole["source"][0] + ux * 60.0,
+                                                       pole["source"][1] + uy * 60.0)])
+                    exit_here = ray.intersection(road.boundary)
+                    hits = (list(exit_here.geoms) if hasattr(exit_here, "geoms")
+                            else ([exit_here] if exit_here.geom_type == "Point" else []))
+                    hits = [hit for hit in hits
+                            if (hit.x - pole["source"][0]) * ux + (hit.y - pole["source"][1]) * uy > 1e-6]
+                    hits.sort(key=lambda hit: (hit.x - pole["source"][0]) * ux + (hit.y - pole["source"][1]) * uy)
+                    if hits:
+                        exit_point = hits[0]
+                        base = _distance(pole["source"], (exit_point.x, exit_point.y))
+                        # Fan search around the across direction: fork geometry
+                        # can angle the far edge so the straight ray stays
+                        # parallel to it. Try bounded angular offsets at the
+                        # exit until the full scaled icon clears the road and
+                        # the point stays genuinely across (segment crosses the
+                        # road body) and outside every pole bank.
+                        base_angle = math.atan2(uy, ux)
+                        # Sweep the radial distance up to the remaining +2m
+                        # crossing allowance; a fixed small ring can miss the
+                        # only legal spot (fork edge angles away from the ray).
+                        max_extra = max(radius, max_shift + 2.0 - base)
+                        dists = []
+                        ring = radius
+                        while ring <= max_extra + 1e-9:
+                            dists.append(ring)
+                            ring += 0.25
+                        fan = []
+                        for delta_deg in (0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90, 105, -105, 120, -120):
+                            for extra_dist in dists:
+                                angle = base_angle + math.radians(delta_deg)
+                                candidate = (exit_point.x + math.cos(angle) * extra_dist,
+                                             exit_point.y + math.sin(angle) * extra_dist)
+                                shift = _distance(pole["source"], candidate)
+                                if shift > max_shift + 2.0 + 1e-8:
+                                    continue
+                                if road.distance(ShapelyPoint(candidate)) < radius - 0.01:
+                                    continue
+                                if (candidate[0] - pole["source"][0]) * ux + (candidate[1] - pole["source"][1]) * uy <= base - 0.5:
+                                    continue
+                                crossing_seg = LineString([pole["source"], candidate])
+                                if crossing_seg.intersection(road).length < 0.1:
+                                    continue
+                                if _bank_within(candidate):
+                                    continue
+                                fan.append((abs(delta_deg), shift, candidate))
+                        if fan:
+                            fan.sort(key=lambda row: (row[0], row[1]))
+                            crossing_options = [row[2] for row in fan]
+            def _is_crossing(point):
+                return any(_distance(point, option) <= 1e-6 for option in crossing_options)
+
+            rest = []
+            for boundary in candidates:
+                point = (float(boundary.x), float(boundary.y))
+                if not _is_crossing(point):
+                    rest.append(point)
+            rest.sort(key=lambda point: (
+                not self._candidate_is_empty_side(pole, point, radii),
+                _distance(pole["source"], point)))
+            # Try every operator-authorized crossing candidate first (fan order:
+            # smallest angular deviation, then shortest shift); fall back to the
+            # regular same-side candidates only if all crossings are rejected.
+            ordered = crossing_options + rest
+            for target in ordered:
+                crossing_here = _is_crossing(target)
+                shift = _distance(pole["source"], target)
+                if (shift > max_shift + (2.0 if crossing_here else 0.0) + 1e-8
+                        or road.distance(ShapelyPoint(target)) < radius - 0.01):
+                    continue
+                pole["crossing"] = crossing_here
+                # Side rule: a candidate that would collide with or merge another
+                # pole is skipped so the opposite side can be tried first.
+                if self._pole_target_conflicts_with_poles(pole, target, radii):
+                    pipeline_log(pipeline_logger, "warning",
+                                 "ROAD pole target would merge or collide with another pole; trying the other side.")
+                    continue
+                # Compare with the current accepted layout, not inherited source conflicts.
+                before = self._preview_pole_follow_lines()
+                pole["target"] = target
+                try:
+                    after = self._preview_pole_follow_lines()
+                    if self._pole_relocation_causes_collision(before, after):
+                        pole["target"] = pole["source"]
+                        pipeline_log(pipeline_logger, "warning",
+                                     "ROAD pole movement would introduce a cable collision; trying the other side.")
+                        continue
+                except ValueError as error:
+                    pole["target"] = pole["source"]
+                    pipeline_log(pipeline_logger, "warning", f"ROAD pole target rejected: {error}; trying the next bounded target.")
+                    continue
+                if crossing_here:
+                    pipeline_log(pipeline_logger, "info",
+                                 f"ROAD pole crossing to the empty opposite side: {shift:.2f}m.")
+                break
+            else:
+                pole.pop("crossing", None)
+                pole["target"] = pole["source"]
+                pipeline_log(pipeline_logger, "warning", f"No collision-free ROAD pole target within {max_shift:g}m; left at exact source coordinate.")
+                continue
+            pole["icon"].dxf.insert = (target[0], target[1], pole["icon"].dxf.insert.z)
+            self.pole_positions[pole["position_index"]] = target
+            if pole["label"] is not None:
+                pole["label"]["projected"] = target
+            moved.append(pole)
+        self._restore_conflicting_roadside_poles(pipeline_logger)
+        moved = [pole for pole in moved if _distance(pole["source"], pole["target"]) > 1e-7]
+        updated = self._render_pole_follow_lines(pipeline_logger)
+        pipeline_log(pipeline_logger, "info", f"DXF roadside layout: {len(moved)} pole(s) moved, {updated} connected LineString(s) aligned.")
+
+    def _candidate_is_empty_side(self, pole, target, radii) -> bool:
+        """User side rule: a candidate side is 'empty' when no other pole sits near it."""
+        for other in self._roadside_poles:
+            if other is pole:
+                continue
+            other_point = other.get("target") or other["source"]
+            if _distance(target, other_point) < radii[id(pole)] + radii[id(other)] + 1.0 - 1e-5:
+                return False
+        return True
+
+    def _pole_target_conflicts_with_poles(self, pole, target, radii) -> bool:
+        """Side rule: reject a target that collides with or merges another pole bank."""
+        for other in self._roadside_poles:
+            if other is pole:
+                continue
+            other_point = other.get("target") or other["source"]
+            gap_limit = radii[id(pole)] + radii[id(other)]
+            source_gap = _distance(pole["source"], other["source"])
+            if source_gap >= gap_limit - 1e-5 and _distance(target, other_point) < gap_limit - 1e-5:
+                return True
+            if source_gap <= KML_HOME_NUMBER_ROTATION_SEARCH_RADIUS_METERS:
+                midpoint = tuple((a + b) / 2 for a, b in zip(pole["source"], other["source"]))
+                frame = self._nearest_road_frame(midpoint)
+                if frame is not None:
+                    tangent = frame["tangent"]
+                    normal = (-tangent[1], tangent[0])
+                    source_side = sum((a - b) * n for a, b, n in
+                                      zip(pole["source"], other["source"], normal))
+                    target_side = sum((a - b) * n for a, b, n in zip(target, other_point, normal))
+                    if (abs(source_side) > gap_limit + 1e-5 and
+                            (abs(target_side) < gap_limit - 1e-5 or source_side * target_side < 0)):
+                        # ponytail: an in-road pole must exit the carriageway; a
+                        # same-side bounded pull that keeps at least one icon
+                        # radius of lateral separation is accepted so the exit
+                        # is not blocked by a distant bank partner.
+                        road = self._road_avoidance_geometry()
+                        if (source_side * target_side > 0
+                                and abs(source_side) - abs(target_side) <= gap_limit + 1e-5
+                                and abs(target_side) >= KML_POLE_ICON_SIZE_METERS / 2.0 - 1e-5
+                                and road is not None and not road.is_empty
+                                and road.covers(ShapelyPoint(pole["source"]))):
+                            continue
+                        # v6: an explicit carriageway crossing to the empty
+                        # opposite side may flip the sign while keeping every
+                        # other pole at least as far apart as at source.
+                        if (pole.get("crossing")
+                                and road is not None and not road.is_empty
+                                and road.covers(ShapelyPoint(pole["source"]))
+                                and abs(target_side) >= abs(source_side) - 1e-5):
+                            continue
+                        return True
+        return False
+
+    def _pole_relocation_causes_collision(self, before, after) -> bool:
+        """Reject move-created collisions; inherited cable warnings remain advisory."""
+        records = [record for record in self._pole_follow_lines
+                   if record["entity"].dxftype() == "POLYLINE" and len(record["source"]) >= 2]
+        for index, current in enumerate(after):
+            previous = before[index]
+            if previous.is_simple and not current.is_simple:
+                return True
+            for other in range(index + 1, len(after)):
+                old_a, old_b, new_a, new_b = previous, before[other], current, after[other]
+                if len(records) == len(after):
+                    # Only actual common owners permit cable contact inside their icons.
+                    masks = []
+                    for pole in self._roadside_poles:
+                        if all(self._source_cable_contact(pole, records[i]) for i in (index, other)):
+                            radius = KML_POLE_ICON_SIZE_METERS / 2 * abs(float(pole["icon"].dxf.get("xscale", 1.0)))
+                            masks.extend(ShapelyPoint(pole[key]).buffer(radius + 1e-5)
+                                         for key in ("source", "target"))
+                    if masks:
+                        mask = unary_union(masks)
+                        old_a, old_b, new_a, new_b = (line.difference(mask) for line in
+                                                     (old_a, old_b, new_a, new_b))
+                old_cross, new_cross = old_a.intersection(old_b), new_a.intersection(new_b)
+                if old_cross.is_empty and not new_cross.is_empty:
+                    # ponytail: a source crossing hidden inside a shared pole
+                    # icon may pop out just beyond the icon when its pole moves.
+                    # It is the same crossing while it stays within the cap.
+                    source_cross = previous.intersection(before[other])
+                    if (source_cross.is_empty
+                            or new_cross.length > source_cross.length + 1e-5
+                            or new_cross.distance(source_cross) > KML_ROAD_POLE_MAX_SHIFT_METERS + 1e-5):
+                        return True
+                elif new_cross.length > old_cross.length + 1e-5:
+                    return True
+                if (old_a.distance(old_b) >= 0.7 and new_a.distance(new_b) < 0.7 - 1e-4
+                        and previous.distance(before[other]) >= 0.7 - 1e-4):
+                    return True
+        return False
+
+    def _restore_conflicting_roadside_poles(self, pipeline_logger=None) -> None:
+        """Keep only implicated poles at KMZ source; never infer sides from numbering."""
+        poles = self._roadside_poles
+        while True:
+            restore = set()
+            for index, first in enumerate(poles):
+                for other in range(index + 1, len(poles)):
+                    second = poles[other]
+                    if all(_distance(p["source"], p["target"]) <= 1e-7 for p in (first, second)):
+                        continue
+                    radius = sum(KML_POLE_ICON_SIZE_METERS / 2 * abs(float(p["icon"].dxf.get("xscale", 1.0)))
+                                 for p in (first, second))
+                    source_gap = _distance(first["source"], second["source"])
+                    conflict = (source_gap >= radius - 1e-5 and
+                                _distance(first["target"], second["target"]) < radius - 1e-5)
+                    if source_gap <= KML_HOME_NUMBER_ROTATION_SEARCH_RADIUS_METERS:
+                        midpoint = tuple((a + b) / 2 for a, b in zip(first["source"], second["source"]))
+                        frame = self._nearest_road_frame(midpoint)
+                        if frame is not None:
+                            tangent = frame["tangent"]
+                            normal = (-tangent[1], tangent[0])
+                            source_side = sum((a - b) * n for a, b, n in
+                                              zip(first["source"], second["source"], normal))
+                            target_side = sum((a - b) * n for a, b, n in
+                                              zip(first["target"], second["target"], normal))
+                            # ponytail: local transverse bank collapse only; no ROAD realignment.
+                            # In-road exits with bounded same-side pulls are kept.
+                            road = self._road_avoidance_geometry()
+                            if (abs(source_side) > radius + 1e-5 and
+                                    (abs(target_side) < radius - 1e-5 or source_side * target_side < 0) and
+                                    not (source_side * target_side > 0
+                                         and abs(source_side) - abs(target_side) <= radius + 1e-5
+                                         and abs(target_side) >= KML_POLE_ICON_SIZE_METERS / 2.0 - 1e-5
+                                         and road is not None and not road.is_empty
+                                         and (road.covers(ShapelyPoint(first["source"]))
+                                              or road.covers(ShapelyPoint(second["source"]))))
+                                    and not ((first.get("crossing") or second.get("crossing"))
+                                             and road is not None and not road.is_empty
+                                             and abs(target_side) >= abs(source_side) - 1e-5)):
+                                conflict = True
+                    if conflict:
+                        restore.update(i for i in (index, other)
+                                       if _distance(poles[i]["source"], poles[i]["target"]) > 1e-7)
+            if not restore:
+                return
+            for index in sorted(restore):
+                pole = poles[index]
+                pole["target"] = pole["source"]
+                insert = pole["icon"].dxf.insert
+                pole["icon"].dxf.insert = (*pole["source"], insert.z)
+                self.pole_positions[pole["position_index"]] = pole["source"]
+                if pole["label"] is not None:
+                    pole["label"]["projected"] = pole["source"]
+                pipeline_log(pipeline_logger, "warning",
+                             f"ROAD pole {pole['icon'].dxf.handle}: move would merge source banks or collide; retained exact KMZ coordinate.")
+
+    def _nearest_vertex_pole(self, vertex: Point) -> dict | None:
+        """DXF vertex matching only; never broadens FAT/slack source ownership."""
+        pole = min(self._roadside_poles, key=lambda p: _distance(vertex, p["source"]), default=None)
+        return pole if pole is not None and _distance(vertex, pole["source"]) <= 10.0 + 1e-8 else None
+
+    def _source_cable_contact(self, pole: dict, record: dict) -> bool:
+        """Nearest source vertices within10m or a proven segment-only contact."""
+        if not record.get("cable_kind") or len(record["source"]) < 2:
+            return False
+        return (any(self._nearest_vertex_pole(vertex) is pole for vertex in record["source"]) or
+                ShapelyPoint(pole["source"]).distance(LineString(record["source"])) <= 0.15)
+
+    def _preview_pole_follow_lines(self) -> list[LineString]:
+        """Render disposable cable entities through exactly the commit path."""
+        from copy import copy
+        preview = copy(self)
+        document = ezdxf.new()
+        preview._pole_follow_lines = []
+        for record in self._pole_follow_lines:
+            entity = record["entity"]
+            if entity.dxftype() != "POLYLINE":
+                continue
+            trial = document.modelspace().add_polyline2d(record["source"],
+                                                        dxfattribs={"layer": entity.dxf.layer})
+            preview._pole_follow_lines.append({**record, "entity": trial})
+        preview._render_pole_follow_lines()
+        rendered = [LineString([(v.dxf.location.x, v.dxf.location.y) for v in record["entity"].vertices])
+                    for record in preview._pole_follow_lines]
+        return rendered
+
+    def _cable_collision_warning(self, message: str, records, pipeline_logger=None) -> bool:
+        """Operator policy: cable collisions are advisory, not attachment failures."""
+        records = tuple(records)
+        if not records or any(record.get("cable_kind") not in {"distribution", "sling"}
+                              for record in records):
+            return False
+        routes = ','.join(str(record["entity"].dxf.handle) for record in records)
+        pipeline_log(pipeline_logger, "warning",
+                     f"DXF cable collision advisory (handles {routes}): {message}; "
+                     "Distribution/Sling pole attachments retained.")
+        return True
+
+    def _render_pole_follow_lines(self, pipeline_logger=None) -> int:
+        """Shared existing port/interpolation renderer; preview and commit agree."""
+        road = self._road_avoidance_geometry()
+        # Keep unchanged poles as anchors too: all connected LineStrings need
+        # an exact vertex at each pole circle, even when its source is roadside.
+
+        # Source geometry, not LINE ancestry, establishes cable contact.
+        associated: dict[int, list[tuple[dict, float]]] = defaultdict(list)
+        for pole in self._roadside_poles:
+            source = ShapelyPoint(pole["source"])
+            options = []
+            for index, record in enumerate(self._pole_follow_lines):
+                line = LineString(record["source"])
+                distance = source.distance(line)
+                if self._source_cable_contact(pole, record):
+                    vertices = [vertex for vertex in record["source"] if self._nearest_vertex_pole(vertex) is pole]
+                    contact = min(vertices, key=lambda vertex: _distance(vertex, pole["source"])) if vertices else source
+                    options.append((distance, index, line.project(ShapelyPoint(contact))))
+            if not options:
+                continue
+            options.sort()
+            # All verified source visits count, including an interior vertex
+            # beside another cable's endpoint; proximity alone is not contact.
+            for _distance_m, index, station in options:
+                associated[index].append((pole, station))
+
+        links: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        for index, anchors in associated.items():
+            for pole, station in anchors:
+                links[id(pole)].append((index, station))
+        # Assign shared pole-to-pole runs in one frame. Per-pole greedy angles
+        # can reverse their order when a source LineString runs B -> A.
+        runs: dict[tuple[int, int], list[tuple[int, dict, dict, float, float]]] = defaultdict(list)
+        for index, anchors in associated.items():
+            for (left, s_left), (right, s_right) in zip(sorted(anchors, key=lambda item: item[1]),
+                                                       sorted(anchors, key=lambda item: item[1])[1:]):
+                if abs(s_right - s_left) <= 2.5:
+                    continue
+                a, b = sorted((left, right), key=lambda pole: pole["source"])
+                runs[(id(a), id(b))].append((index, a, b, min(s_left, s_right), max(s_left, s_right)))
+
+        requests: dict[tuple[int, int], list[Point]] = defaultdict(list)
+        shared_runs = {}
+        for key, members in runs.items():
+            if len(members) < 2:
+                continue
+            a, b = members[0][1:3]
+            dx, dy = b["source"][0] - a["source"][0], b["source"][1] - a["source"][1]
+            length = math.hypot(dx, dy)
+            if length < 2.5:
+                continue
+            normal = (-dy / length, dx / length)
+            origin = a["source"]
+            def side(member):
+                _, _, _, start, end = member
+                mid = LineString(self._pole_follow_lines[member[0]]["source"]).interpolate((start + end) / 2)
+                return (mid.x - origin[0]) * normal[0] + (mid.y - origin[1]) * normal[1]
+            ordered = sorted(members, key=lambda member: (round(side(member), 2), member[0]))
+            lanes = {2: (-0.6, 0.6), 3: (-1.05, -0.35, 0.35),
+                     4: (-1.125, -0.375, 0.375, 1.125)}.get(len(ordered))
+            if lanes is None:
+                lanes = tuple(0.7 * (i - (len(ordered) - 1) / 2) for i in range(len(ordered)))
+            for member, lane in zip(ordered, lanes):
+                index, _, _, start, end = member
+                for pole in (a, b):
+                    requests[(id(pole), index)].append((normal[0] * lane, normal[1] * lane))
+            shared_runs[key] = (a, b, tuple(member[0] for member in members))
+
+        ports: dict[tuple[int, int], Point] = {}
+        for pole in self._roadside_poles:
+            connections = sorted(links[id(pole)])
+            if len(connections) < 2:
+                continue
+            center = pole["target"]
+            radius = (KML_POLE_ICON_SIZE_METERS / 2) * float(pole["icon"].dxf.get("xscale", 1.0))
+            inset = radius * 0.6
+            used = []
+            for index, station in connections:
+                key = (id(pole), index)
+                if key not in requests:
+                    continue
+                vectors = requests[key]
+                vx = sum(item[0] for item in vectors) / len(vectors)
+                vy = sum(item[1] for item in vectors) / len(vectors)
+                if math.hypot(vx, vy) > radius - 0.2 + 1e-8:
+                    message = "Shared cable lane cannot fit inside pole"
+                    if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                        raise ValueError(message)
+                    factor = max(0.0, radius - 0.2) / math.hypot(vx, vy)
+                    vx, vy = vx * factor, vy * factor
+                ports[key] = (center[0] + vx, center[1] + vy)
+                used.append(math.atan2(vy, vx))
+            if any(_distance(ports[(id(pole), i)], ports[(id(pole), j)]) < 0.7 - 1e-5
+                   for n, (i, _) in enumerate(connections) for j, _ in connections[n + 1:]
+                   if (id(pole), i) in ports and (id(pole), j) in ports):
+                message = "Shared cable lanes collide inside pole"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                    raise ValueError(message)
+            for index, station in connections:
+                if (id(pole), index) in ports:
+                    continue
+                line = LineString(self._pole_follow_lines[index]["source"])
+                before = line.interpolate(max(0.0, station - 0.5))
+                after = line.interpolate(min(line.length, station + 0.5))
+                dx, dy = after.x - before.x, after.y - before.y
+                if station > 0.5 and station < line.length - 0.5:
+                    dx, dy = -dy, dx
+                elif station >= line.length - 0.5:
+                    dx, dy = -dx, -dy
+                angle = math.atan2(dy, dx)
+                angles = sorted((2 * math.pi * step / 72 for step in range(72)),
+                                key=lambda candidate: (1 - math.cos(candidate - angle), candidate))
+                chosen = next((candidate for candidate in angles if all(
+                    2 * inset * abs(math.sin((candidate - other) / 2)) >= min(0.7, inset)
+                    for other in used)), None)
+                if chosen is None:
+                    message = "Too many cables to separate inside one pole circle"
+                    if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                        raise ValueError(message)
+                    chosen = angles[0]  # Keep the owning pole attachment when lanes are full.
+                used.append(chosen)
+                ports[(id(pole), index)] = (center[0] + inset * math.cos(chosen),
+                                             center[1] + inset * math.sin(chosen))
+            if any(_distance(ports[(id(pole), i)], ports[(id(pole), j)]) < 0.7 - 1e-5
+                   for n, (i, _) in enumerate(connections) for j, _ in connections[n + 1:]):
+                message = "Cable ports collide inside pole circle"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _ in connections], pipeline_logger):
+                    raise ValueError(message)
+
+        # Reserve one position per native vertex visit, including return legs.
+        # Route-level ports alone can hide a returning vertex on another cable.
+        vertex_ports = {}
+        visits = defaultdict(list)
+        for index, record in enumerate(self._pole_follow_lines):
+            if not record.get("cable_kind"):
+                continue
+            owners = [self._nearest_vertex_pole(point) for point in record["source"]]
+            for k, owner in enumerate(owners):
+                if owner is None:
+                    continue
+                anchor = ports.get((id(owner), index), owner["target"])
+                points = [point for point, pole in zip(record["source"], owners) if pole is owner]
+                dx, dy = anchor[0] - owner["target"][0], anchor[1] - owner["target"][1]
+                radius = KML_POLE_ICON_SIZE_METERS / 2 * abs(float(owner["icon"].dxf.get("xscale", 1.0)))
+                if len(points) > 1:
+                    extent = max(math.hypot(dx + point[0] - owner["source"][0],
+                                            dy + point[1] - owner["source"][1]) for point in points)
+                    factor = min(1.0, (radius - 0.2) / max(extent, 1e-8))
+                    target = (owner["target"][0] + factor * (dx + record["source"][k][0] - owner["source"][0]),
+                              owner["target"][1] + factor * (dy + record["source"][k][1] - owner["source"][1]))
+                else:
+                    target = anchor
+                vertex_ports[(index, k)] = target
+                visits[id(owner)].append((index, k, record["source"][k]))
+        inserted_visits = {}
+        for index, anchors in associated.items():
+            record = self._pole_follow_lines[index]
+            for pole, station in anchors:
+                if any(self._nearest_vertex_pole(point) is pole for point in record["source"]):
+                    continue
+                k = -self._roadside_poles.index(pole) - 1
+                point = LineString(record["source"]).interpolate(station)
+                vertex_ports[(index, k)] = ports.get((id(pole), index), pole["target"])
+                visits[id(pole)].append((index, k, (point.x, point.y)))
+                inserted_visits[(index, k)] = (pole, station)
+        for pole in self._roadside_poles:
+            occupied = visits[id(pole)]
+            has_inserted_return = any(k < 0 for _, k, _ in occupied) and any(
+                sum(j == i and l >= 0 for j, l, _ in occupied) > 1 for i, k, _ in occupied if k >= 0)
+            if len(occupied) < 2 or (not has_inserted_return and all(
+                    _distance(vertex_ports[(i, k)], vertex_ports[(j, l)]) >= 0.7 - 1e-4
+                    for n, (i, k, _) in enumerate(occupied) for j, l, _ in occupied[n + 1:])):
+                continue
+            # ponytail: crowded visits share one source-tangent frame; no route detour.
+            spans = [(points[q][0] - points[k][0], points[q][1] - points[k][1])
+                     for i, k, _ in occupied if k >= 0 for points in [self._pole_follow_lines[i]["source"]]
+                     for q in (k - 1, k + 1) if 0 <= q < len(points)]
+            for i, k, _ in occupied:
+                if k >= 0:
+                    continue
+                _, station = inserted_visits[(i, k)]
+                line = LineString(self._pole_follow_lines[i]["source"])
+                left, right = line.interpolate(max(0.0, station - 8)), line.interpolate(min(line.length, station + 8))
+                spans.append((right.x - left.x, right.y - left.y))
+            dx, dy = max(spans, key=lambda delta: math.hypot(*delta))
+            length = math.hypot(dx, dy)
+            if length < 1e-8:
+                raise ValueError("Coincident cable visits have no source lane direction")
+            if dx < 0 or (abs(dx) < 1e-8 and dy < 0):
+                dx, dy = -dx, -dy
+            normal = (-dy / length, dx / length)
+            ordered = sorted(occupied, key=lambda item: ((item[2][0] - pole["source"][0]) * normal[0] +
+                                                          (item[2][1] - pole["source"][1]) * normal[1], item[:2]))
+            radius = KML_POLE_ICON_SIZE_METERS / 2 * abs(float(pole["icon"].dxf.get("xscale", 1.0)))
+            if 0.7 * (len(ordered) - 1) / 2 > radius - 0.2 + 1e-8:
+                message = "Cable vertex visits cannot fit distinct lanes inside pole"
+                if not self._cable_collision_warning(message, [self._pole_follow_lines[i] for i, _, _ in ordered], pipeline_logger):
+                    raise ValueError(message)
+            spacing = min(0.8, 2 * (radius - 0.2) / (len(ordered) - 1))
+            for n, (i, k, _) in enumerate(ordered):
+                lane = spacing * (n - (len(ordered) - 1) / 2)
+                vertex_ports[(i, k)] = (pole["target"][0] + normal[0] * lane,
+                                        pole["target"][1] + normal[1] * lane)
+            if len({i for i, _, _ in occupied}) == 1:
+                i = occupied[0][0]
+                source = self._pole_follow_lines[i]["source"]
+                def trial_curve(options):
+                    return LineString([options.get((i, k), vertex_ports.get((i, k), point))
+                                       for k, point in enumerate(source)])
+                if LineString(source).is_simple and not trial_curve({}).is_simple:
+                    # A bent return loop needs angular ports, not collinear lanes.
+                    angular = sorted(occupied, key=lambda item: (math.atan2(item[2][1] - pole["source"][1],
+                                                                           item[2][0] - pole["source"][0]), item[1]))
+                    count = len(angular)
+                    for anchor, (_, _, point) in enumerate(angular):
+                        angle = math.atan2(point[1] - pole["source"][1], point[0] - pole["source"][0]) - anchor * math.tau / count
+                        options = {(i, k): (pole["target"][0] + (radius - 0.2) * math.cos(angle + n * math.tau / count),
+                                            pole["target"][1] + (radius - 0.2) * math.sin(angle + n * math.tau / count))
+                                   for n, (i, k, _) in enumerate(angular)}
+                        if (trial_curve(options).is_simple and
+                                all(_distance(a, b) >= 0.7 - 1e-4 for n, a in enumerate(options.values())
+                                    for b in list(options.values())[n + 1:])):
+                            vertex_ports.update(options)
+                            break
+
+        updated = 0
+        for index, anchors in associated.items():
+            record = self._pole_follow_lines[index]
+            entity = record["entity"]
+            if entity.dxftype() != "POLYLINE" or len(entity.vertices) != len(record["source"]):
+                continue
+            old = record["source"]
+            line = LineString(old)
+            stations = [line.project(ShapelyPoint(p)) for p in old]
+            entries = []
+            for pole, station in sorted(anchors, key=lambda item: item[1]):
+                if entries and abs(entries[-1][0] - station) < 0.1:
+                    continue
+                entries.append((station, pole))
+            vertex_owners = [self._nearest_vertex_pole(point) for point in old]
+            for vertex_index, vertex in enumerate(entity.vertices):
+                station = stations[vertex_index]
+                owner = vertex_owners[vertex_index]
+                if owner is not None:
+                    target = vertex_ports[(index, vertex_index)]
+                else:
+                    continue  # Unmatched >10m vertices retain exact source.
+                loc = vertex.dxf.location
+                vertex.dxf.location = (target[0], target[1], loc.z)
+            inserted = []
+            for station, pole in entries:
+                if any(self._nearest_vertex_pole(original) is pole for original in old):
+                    continue
+                segment = next((j for j in range(len(stations)-1) if stations[j]+1e-7 < station < stations[j+1]-1e-7), None)
+                if segment is not None:
+                    k = -self._roadside_poles.index(pole) - 1
+                    inserted.append((segment + 1, station, vertex_ports[(index, k)]))
+            for position, _, target in sorted(inserted, key=lambda entry: entry[:2], reverse=True):
+                source_vertex = entity.vertices[position - 1]
+                attrs = {key: source_vertex.dxf.get(key, 0.0) for key in ("start_width", "end_width", "bulge")}
+                entity.insert_vertices(position, [(target[0], target[1], 0.0)], dxfattribs=attrs)
+            updated += 1
+        # A third cable leaving a shared pole can collide just outside its
+        # symbol even when its port is distinct. Rotate only that branch's DXF
+        # port; the pole, other vertices and the distant cable route stay put.
+        for pole in self._roadside_poles:
+            attached = sorted({index for index, _ in links[id(pole)]})
+            if len(attached) < 2:
+                continue
+            center = pole["target"]
+            radius = KML_POLE_ICON_SIZE_METERS / 2 * float(pole["icon"].dxf.get("xscale", 1.0))
+            circle = ShapelyPoint(center).buffer(radius + 1e-5)
+            nearby = ShapelyPoint(center).buffer(12.0)
+            def exposed(points):
+                return LineString(points).intersection(nearby).difference(circle)
+            def coords(index):
+                return [(v.dxf.location.x, v.dxf.location.y)
+                        for v in self._pole_follow_lines[index]["entity"].vertices]
+            for index in attached:
+                if len(associated[index]) != 1:
+                    continue
+                record = self._pole_follow_lines[index]
+                entity = record["entity"]
+                if entity.dxftype() != "POLYLINE" or entity.dxf.layer == KML_TALI_PANCING_LAYER:
+                    continue
+                points = coords(index)
+                ends = [end for end in (0, -1)
+                        if _distance(record["source"][end], pole["source"]) <= 1.25
+                        and 0.3 <= _distance(points[end], center) <= radius - 0.2]
+                if not ends:
+                    continue
+                for end in ends:
+                    others = [(other, coords(other)) for other in attached if other != index
+                              and self._pole_follow_lines[other]["entity"].dxftype() == "POLYLINE"]
+                    if not others or all(exposed(points).distance(exposed(other_points)) >= 0.7 - 1e-4
+                                         for _, other_points in others):
+                        continue
+                    origin = points[end]
+                    port_radius = _distance(origin, center)
+                    angle = math.atan2(origin[1] - center[1], origin[0] - center[0])
+                    old_curve = LineString(points)
+                    # Only routes within the 1.5m movement envelope can be newly crossed.
+                    third_routes = [third for other in range(len(self._pole_follow_lines))
+                                    if other != index and self._pole_follow_lines[other]["entity"].dxftype() == "POLYLINE"
+                                    for third in [LineString(coords(other))]
+                                    if old_curve.distance(third) <= 1.5 + 1e-5]
+                    angles = sorted((2 * math.pi * step / 72 for step in range(72)),
+                                    key=lambda test: (1 - math.cos(test - angle), test))
+                    for test in angles:
+                        rotated = (center[0] + port_radius * math.cos(test),
+                                   center[1] + port_radius * math.sin(test))
+                        if _distance(rotated, origin) > 1.5:
+                            continue
+                        if any(_distance(rotated, vertex) < 0.7 - 1e-4
+                               for _, other_points in others for vertex in other_points
+                               if _distance(vertex, center) <= radius + 1e-4):
+                            continue
+                        candidate = list(points)
+                        candidate[end] = rotated
+                        new_curve = LineString(candidate)
+                        # ponytail: preserve source intersections, reject newly introduced ones.
+                        if (new_curve.is_simple and
+                            all(exposed(candidate).distance(exposed(other_points)) >= 0.7 - 1e-4
+                                for _, other_points in others) and
+                            (road is None or new_curve.intersection(road).difference(
+                                old_curve.intersection(road).buffer(1e-5)).is_empty) and
+                            all(new_curve.intersection(third).difference(
+                                old_curve.intersection(third).buffer(1e-4)).is_empty
+                                for third in third_routes)):
+                            entity.vertices[end].dxf.location = (rotated[0], rotated[1], entity.vertices[end].dxf.location.z)
+                            break
+        # A valid port at each end is insufficient: reject any shared span that
+        # still crosses or collapses between poles. Conversion cannot save it.
+        for a, b, indexes in shared_runs.values():
+            circles = ShapelyPoint(a["target"]).buffer(KML_POLE_ICON_SIZE_METERS / 2 + 1e-5).union(
+                ShapelyPoint(b["target"]).buffer(KML_POLE_ICON_SIZE_METERS / 2 + 1e-5))
+            for n, first_index in enumerate(indexes):
+                first = self._pole_follow_lines[first_index]["entity"]
+                first_line = LineString([(vertex.dxf.location.x, vertex.dxf.location.y)
+                                         for vertex in first.vertices])
+                first_run = substring(first_line,
+                                      first_line.project(ShapelyPoint(ports[(id(a), first_index)])),
+                                      first_line.project(ShapelyPoint(ports[(id(b), first_index)])))
+                for second_index in indexes[n + 1:]:
+                    second = self._pole_follow_lines[second_index]["entity"]
+                    second_line = LineString([(vertex.dxf.location.x, vertex.dxf.location.y)
+                                              for vertex in second.vertices])
+                    second_run = substring(second_line,
+                                           second_line.project(ShapelyPoint(ports[(id(a), second_index)])),
+                                           second_line.project(ShapelyPoint(ports[(id(b), second_index)])))
+                    if not first_run.intersection(second_run).difference(circles).is_empty:
+                        message = "Shared cable crossing outside pole; no non-twisting route found"
+                        if not self._cable_collision_warning(message, [self._pole_follow_lines[first_index], self._pole_follow_lines[second_index]], pipeline_logger):
+                            raise ValueError(message)
+        self._space_unanchored_parallel_cables()
+        self._validate_new_cable_crossings(pipeline_logger)
+        # Collision-only checks are advisory for Distribution/Sling; unrelated
+        # line types and asset/attachment checks retain their original guards.
+        records = [record for record in self._pole_follow_lines
+                   if record["entity"].dxftype() == "POLYLINE"]
+        rendered = [LineString([(v.dxf.location.x, v.dxf.location.y) for v in record["entity"].vertices])
+                    for record in records]
+        for index, first in enumerate(rendered):
+            source = LineString(records[index]["source"])
+            if source.is_simple and not first.is_simple:
+                message = "Cable attachment introduced a self-crossing or shared return span"
+                if not self._cable_collision_warning(message, [records[index]], pipeline_logger):
+                    raise ValueError(message)
+            for other in range(index + 1, len(rendered)):
+                reference = LineString(records[other]["source"])
+                if source.distance(reference) >= 0.7 and first.distance(rendered[other]) < 0.7 - 1e-4:
+                    message = "ROAD pole relocation would collapse another cable"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+        return updated
+
+    def _validate_new_cable_crossings(self, pipeline_logger=None) -> None:
+        """Report Distribution/Sling collisions; guard other source line types."""
+        records = [record for record in self._pole_follow_lines
+                   if record["entity"].dxftype() == "POLYLINE" and len(record["source"]) >= 2]
+        source = [LineString(record["source"]) for record in records]
+        rendered = [LineString([(v.dxf.location.x, v.dxf.location.y)
+                                for v in record["entity"].vertices]) for record in records]
+        tree = STRtree(rendered) if STRtree is not None and rendered else None
+        for index, current in enumerate(rendered):
+            neighbours = (tree.query(current) if tree is not None else range(index + 1, len(rendered)))
+            for item in neighbours:
+                other = int(item) if not hasattr(item, "geom_type") else next(
+                    (n for n, geom in enumerate(rendered) if geom is item), -1)
+                if other <= index or not current.intersects(rendered[other]):
+                    continue
+                crossing = current.intersection(rendered[other])
+                original = source[index].intersection(source[other])
+                # A source point crossing never authorizes a newly shared span.
+                if crossing.length > original.length + 1e-5:
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+                    continue
+                # Existing intersection locations may shift up to the pole
+                # relocation cap, but one source crossing cannot license two
+                # output ones.
+                # ponytail: line-overlap source remains bounded by its buffer;
+                # richer matching only needed for multi-component overlaps.
+                if original.is_empty or not crossing.difference(
+                        original.buffer(KML_ROAD_POLE_MAX_SHIFT_METERS + 0.01)).is_empty:
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+                    continue
+                def points(geometry):
+                    if geometry.geom_type == "Point":
+                        return [geometry]
+                    if hasattr(geometry, "geoms"):
+                        return [point for part in geometry.geoms for point in points(part)]
+                    return []
+                old_points = points(original)
+                new_points = points(crossing)
+                if old_points and len(new_points) > len(old_points):
+                    message = "New cable crossing outside source topology"
+                    if not self._cable_collision_warning(message, [records[index], records[other]], pipeline_logger):
+                        raise ValueError(message)
+
+    def _space_unanchored_parallel_cables(self) -> None:
+        """Unmatched native vertices stay exact; retain pre-existing source gaps."""
+        # ponytail: no unowned DXF detours; explicit source edits need a new contract.
+
     def _snap_to_nearest_pole(self, projected: Point) -> Point:
         """If a pole is within KML_POLE_SNAP_RADIUS_METERS, return its centre."""
         if not self.pole_positions:
@@ -2801,9 +4104,26 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         Also snaps cable polyline endpoints to nearby pole centres so the cable
         visually attaches to the pole.
         """
-        for pending in self.pending_slack_icons:
-            projected = self._snap_to_nearest_pole(pending["projected"])
-            self._add_kml_slack_hanger_icon(projected, pending.get("style"))
+        slack_plan = []
+        if getattr(self, "network_type", "") == "AE":
+            for pending in self.pending_slack_icons:
+                source = pending["projected"]
+                pole = self._source_owned_asset_pole(pending)
+                if pole is None or _distance(source, pole["source"]) > KML_POLE_SNAP_RADIUS_METERS:
+                    # Fallback: cari tiang fisik terdekat dalam radius snap agar konversi tidak crash
+                    fallback_pole = min(self._roadside_poles, key=lambda p: _distance(source, p["source"]), default=None)
+                    if fallback_pole is not None and _distance(source, fallback_pole["source"]) <= KML_POLE_SNAP_RADIUS_METERS:
+                        pole = fallback_pole
+                    else:
+                        raise ValueError(f"Slack hanger {pending.get('name') or 'SLACK HANGER'} has no serving pole "
+                                         f"within {KML_POLE_SNAP_RADIUS_METERS:g}m of its source on the same route")
+                rotation = self._serving_pole_cable_rotation(pole, pending.get("group"))
+                slack_plan.append((pending, pole["target"], rotation))
+        else:
+            slack_plan = [(p, self._snap_to_nearest_pole(p["projected"]), None) for p in self.pending_slack_icons]
+        # Validate the complete AE ownership batch before emitting any slack.
+        for pending, projected, rotation in slack_plan:
+            self._add_kml_slack_hanger_icon(projected, pending.get("style"), rotation=rotation)
         self.pending_slack_icons.clear()
 
         for pending in self.pending_joint_closure_icons:
@@ -2994,6 +4314,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         self.pole_positions.append((float(projected[0]), float(projected[1])))
         self._queue_kml_pole_id(name, projected, radius, scale, fdt_number=fdt_number)
 
+    def _record_home_number_cell(self, cell: Polygon, item: dict) -> None:
+        # Individual final cells retain identity even when the planner stores a mixed outer block.
+        self.home_number_cells.append({
+            "polygon": cell, "fat_owner": item.get("fat_owner"),
+            "source": item["projected"], "text": item["text"],
+            "hp_uncover": bool(item.get("hp_uncover")),
+        })
+
     def _queue_home_number(self, projected: Point, name: str, fdt_number: int | None = None) -> str:
         text = (name or "").strip() or "HP"
         self.pending_home_numbers.append({"text": text, "projected": projected, "fdt_number": fdt_number})
@@ -3096,6 +4424,41 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 return candidates
             radius *= 2
         return self.road_centerlines
+
+    def _hp_cover_axis_lines(
+        self, indexes: Sequence[int] | None = None, sites: Sequence[Point] | None = None,
+    ) -> tuple[list[LineString], str]:
+        """Prefer a local usable ROAD; otherwise use Distribution Cable as axis."""
+        roads = [
+            line for line in self.road_centerlines
+            if line is not None and not line.is_empty and line.length > 2
+        ]
+        local_roads = roads
+        if roads and indexes and sites is not None:
+            # ROAD membership is source-local, not group-centroid based. A long
+            # HP group may span a bend/corridor whose centroid is >12m from ROAD
+            # even though one or more immutable HP sources have a valid nearby
+            # ROAD. Centroid-only filtering demotes the whole group to CABLE.
+            source_points = [
+                ShapelyPoint(sites[index])
+                for index in indexes
+                if index is not None and 0 <= index < len(sites)
+            ]
+            local_roads = [
+                line for line in roads
+                if any(point.distance(line) <= 12.0 + 1e-6 for point in source_points)
+            ]
+        if local_roads:
+            return local_roads, "ROAD"
+        cables = [
+            line for line in self.kml_cable_centerlines
+            if line is not None and not line.is_empty and line.length > 2
+        ]
+        if cables:
+            return cables, "CABLE"
+        # Preserve existing safe behavior when cable is absent: the normal ROAD
+        # planner still decides whether a distant route can produce legal cells.
+        return roads, "ROAD"
 
     def _nearest_road_frame(self, projected: Point) -> dict | None:
         candidates = self._road_centerline_candidates(projected)
@@ -3756,17 +5119,18 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if self._home_parcel_road_solid_ready:
             return self._home_parcel_road_solid_cache
         parts = []
-        clearance = KML_HOME_PARCEL_ROAD_CLEARANCE_METERS
+        # Hard ROAD exclusion uses actual OSM footprint only. Parcel edge-touch
+        # is legal; clearance is a candidate-spacing preference, not ROAD area.
         if self.road_buffers:
             try:
-                area = unary_union(self.road_buffers).buffer(clearance)
+                area = unary_union(self.road_buffers).buffer(0)
                 if not area.is_empty:
                     parts.append(area)
             except Exception:
                 pass
         if self.road_lines:
             try:
-                lines = unary_union(self.road_lines).buffer(2.0 + clearance, cap_style=2, join_style=2)
+                lines = unary_union(self.road_lines).buffer(2.0, cap_style=2, join_style=2)
                 if not lines.is_empty:
                     parts.append(lines)
             except Exception:
@@ -3774,9 +5138,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # Distribution Cable and SLING WIRE remain visible reference lines.
         # They do not clip HP COVER parcels; ROAD remains the hard exclusion.
         if not parts:
+            self._home_parcel_road_solid_cache = None
+            self._home_parcel_road_solid_ready = True
             return None
         solid = unary_union(parts).buffer(0)
-        return None if solid.is_empty else solid
+        self._home_parcel_road_solid_cache = None if solid.is_empty else solid
+        self._home_parcel_road_solid_ready = True
+        return self._home_parcel_road_solid_cache
 
     def _home_parcel_block_geometry(self, points: list[Point]):
         """Build the 'block' a set of HP COVER points live in: the area around
@@ -3790,7 +5158,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         hull = multipoint.convex_hull
         block = hull.buffer(
             KML_HOME_PARCEL_BLOCK_PADDING_METERS,
-            cap_style=2,
+            cap_style=3 if hull.geom_type == "Point" else 2,
             join_style=2,
         )
         if block.is_empty:
@@ -3825,202 +5193,1811 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             return None
         return block.buffer(0)
 
-    def _finalize_home_numbers_as_parcels(self, pipeline_logger=None) -> None:
-        """Render HP COVER as land-parcel cells (Voronoi tessellation clipped
-        to the block) instead of independent fixed-ratio boxes. Produces the
-        neat, hand-drawn cadastral look: cells share edges, vary in size,
-        never overlap, never cross roads, and never spill outside their FAT
-        area."""
-        pending = self.pending_home_numbers
-        total = len(pending)
-        if pipeline_logger is not None:
-            pipeline_progress(pipeline_logger, 70, "Menyusun HP COVER sebagai parcel.")
-            pipeline_log(
-                pipeline_logger,
-                "info",
-                f"[3/6] HP COVER parcel tessellation untuk {total:,} titik.",
-            )
-        sub_step_start = time.perf_counter()
+    def _hp_rotation_candidates(self, source):
+        frame = self._nearest_road_frame(source) or self._nearest_home_number_reference_frame(source)
+        base = frame["road_angle"] if frame else 0.0
+        # Rotation first: sample the whole rectangle-axis range before allowing a shift.
+        deltas = [0.0] + [sign * step for step in range(5, 91, 5) for sign in (-1, 1)]
+        return tuple(dict.fromkeys(self._readable_angle(base + delta) for delta in deltas))
 
-        # De-duplicate exact-coincident points (Voronoi cannot handle them):
-        # nudge duplicates by a sub-metre amount so each gets its own cell.
-        seen: dict[tuple[int, int], int] = {}
-        sites: list[Point] = []
-        for item in pending:
-            px, py = float(item["projected"][0]), float(item["projected"][1])
-            key = (round(px * 100), round(py * 100))
-            bump = seen.get(key, 0)
-            seen[key] = bump + 1
-            if bump:
-                angle = bump * 2.39996
-                spread = 3.2 * (1 + (bump - 1) * 0.5)
-                px += math.cos(angle) * spread
-                py += math.sin(angle) * spread
-            sites.append((px, py))
+    def _hp_centered_road_clear_options(self, source, road, preferred_angle=None):
+        # ROAD-only zero-translation pass; local neighbour relief is a separate gate.
+        if road is not None:
+            point = ShapelyPoint(source)
+            if road.distance(point) < 2.0 - 1e-6:
+                return []
+            road = road.intersection(point.buffer(10.0))
+        options = []
+        angles = self._hp_rotation_candidates(source)
+        if preferred_angle is not None:
+            angles = tuple(dict.fromkeys((self._readable_angle(preferred_angle),
+                                          self._readable_angle(preferred_angle + 90), *angles)))
+        for width, depth in HP_COVER_PARCEL_SIZE_TIERS:
+            for angle in angles:
+                parcel = self._home_number_box_polygon(source, width, depth, angle)
+                if road is None or not self._strict_positive_overlap(parcel, road):
+                    options.append((parcel, angle))
+        return options
 
-        # Group HP points by the FAT area that contains them. Each FAT area is
-        # tessellated independently and every cell is clipped to that FAT
-        # polygon, so HP COVER parcels can NEVER spill outside their FAT area.
-        # Points that fall in no FAT area are tessellated against the block
-        # (hull minus roads) as a fallback.
-        fat_clip_for_area: list = []
-        groups: dict[int, list[int]] = {}
-        no_fat_indexes: list[int] = []
-        fat_areas = [poly for poly in self.fat_area_geometries if poly is not None and not poly.is_empty]
-        for poly in fat_areas:
-            clip = poly
-            road_solid = self._home_parcel_road_solid()
-            if road_solid is not None and not road_solid.is_empty:
-                try:
-                    clip = clip.difference(road_solid)
-                except Exception:
-                    clip = poly
-            fat_clip_for_area.append(clip.buffer(0) if not clip.is_empty else poly)
-
-        for index, point in enumerate(sites):
-            sp = ShapelyPoint(point)
-            best_area_idx = None
-            best_area = None
-            for area_idx, poly in enumerate(fat_areas):
-                if poly.buffer(1e-6).covers(sp):
-                    # Prefer the smallest containing FAT area (most specific).
-                    if best_area is None or poly.area < best_area:
-                        best_area = poly.area
-                        best_area_idx = area_idx
-            if best_area_idx is None:
-                no_fat_indexes.append(index)
-            else:
-                groups.setdefault(best_area_idx, []).append(index)
-
-        box_attrs = {"layer": KML_HOME_NUMBER_BOX_LAYER, "color": KML_HOME_NUMBER_BOX_COLOR}
-        text_attrs = {
-            "layer": KML_HOME_NUMBER_LAYER,
-            "color": KML_HOME_NUMBER_COLOR,
-            "style": "EVA_BOLD",
-        }
-        site_points = [ShapelyPoint(p) for p in sites]
-
-        drawn = 0
-        # Run-1 identity tracking. Used by deferred compact retry; avoids
-        # re-drawing HPs that already have a valid parcel.
-        self._hp_cover_drawn_indexes = set()
-        # Track the union of all drawn parcels so overflow from one FAT group
-        # never intersects parcels from another group (no overlapping boxes).
-        drawn_union = None
-
-        batch_size = 250
-        for area_idx, indexes in groups.items():
-            clip_region = fat_clip_for_area[area_idx]
-            if clip_region is None or clip_region.is_empty:
-                no_fat_indexes.extend(indexes)
+    def _hp_same_side_relief_contexts(self, pending, centered=None):
+        """Bound permission to ROAD/dense seeds plus same-owner neighbours within13m."""
+        road = self._home_parcel_road_solid()
+        sites = [ShapelyPoint(item["projected"]) for item in pending]
+        centered = centered if centered is not None else [
+            self._hp_centered_road_clear_options(item["projected"], road) for item in pending]
+        seeds = {i for i, options in enumerate(centered) if not options and not pending[i].get("hp_uncover")}
+        for i, point in enumerate(sites):
+            for j in range(i + 1, len(sites)):
+                if (pending[i].get("fat_owner") == pending[j].get("fat_owner")
+                        and point.distance(sites[j]) < 4.0 - 1e-7):
+                    seeds.update(k for k in (i, j) if not pending[k].get("hp_uncover"))
+        # A narrow ROAD corridor can make long centred cells conflict even
+        # with sources >4m apart. Discover those local same-owner seed conflicts
+        # before granting neighbour relief; distant/foreign HP remain fixed.
+        tree = STRtree(sites) if STRtree is not None and sites else None
+        source_index = {id(point): i for i, point in enumerate(sites)}
+        for i, options in enumerate(centered):
+            if not options or pending[i].get("hp_uncover"):
                 continue
-            if KML_HOME_PARCEL_FAT_OVERFLOW_METERS > 0:
-                clip_region = clip_region.buffer(KML_HOME_PARCEL_FAT_OVERFLOW_METERS, join_style=2)
-                road_solid = self._home_parcel_road_solid()
-                if road_solid is not None and not road_solid.is_empty:
-                    try:
-                        clip_region = clip_region.difference(road_solid)
-                    except Exception:
-                        pass
-                clip_region = clip_region.buffer(0)
-            if drawn_union is not None and not drawn_union.is_empty:
-                try:
-                    clip_region = clip_region.difference(drawn_union)
-                except Exception:
-                    pass
-                if clip_region.is_empty:
-                    no_fat_indexes.extend(indexes)
+            conflicts = set()
+            for parcel, angle in options:
+                neighbours = (self._query_indexed_geometries(tree, sites, parcel.buffer(2.0))
+                              if tree is not None else sites)
+                blockers = {source_index[id(point)] for point in neighbours
+                            if source_index[id(point)] != i
+                            and parcel.distance(point) < 2.0 - 1e-7}
+                if not blockers:
+                    break
+                conflicts.update(j for j in blockers if not pending[j].get("hp_uncover")
+                                 and pending[j].get("fat_owner") == pending[i].get("fat_owner")
+                                 and sites[i].distance(sites[j]) <= 13.0 + 1e-7)
+            else:
+                if conflicts:
+                    seeds.add(i)
+                    seeds.update(conflicts)
+        contexts = {}
+        # Match the unchanged no-entry path oracle: boundary/erosion-band
+        # sources must retain their original-bank exit, not be forced across ROAD.
+        road_interior = road.buffer(-1e-7) if road is not None else None
+        for i in sorted(seeds):
+            point = sites[i]
+            roads = self._road_centerline_candidates(pending[i]["projected"])
+            reference = min(roads, key=lambda line: point.distance(line)) if roads else None
+            frame = self._home_number_frame_from_line(pending[i]["projected"], reference) if reference is not None else None
+            tangent = frame["tangent"] if frame else (1.0, 0.0)
+            normal = (-tangent[1], tangent[0])
+            origin = frame["nearest"] if frame else pending[i]["projected"]
+            def signed(index):
+                q = sites[index]
+                return (q.x - origin[0]) * normal[0] + (q.y - origin[1]) * normal[1]
+            own = [j for j in range(len(pending)) if not pending[j].get("hp_uncover")
+                   and pending[j].get("fat_owner") == pending[i].get("fat_owner")
+                   and point.distance(sites[j]) <= 13.0 + 1e-7]
+            side_value = signed(i)
+            if abs(side_value) <= 1e-6:
+                votes = [signed(j) for j in own if j != i and abs(signed(j)) > 1e-6]
+                side_value = sum(1 if v > 0 else -1 for v in votes) or 1.0
+            side = 1.0 if side_value >= 0 else -1.0
+            if reference is not None and road_interior is not None and road_interior.contains(point):
+                # A source inside ROAD has no occupied bank yet. Prefer the bank
+                # with less nearby HP pressure; never move a foreign source.
+                # ponytail: source-local13m station x18m bank survey, not site repack;
+                # exact candidate/8m/path/overlap guards decide actual feasibility.
+                def pressure(bank):
+                    score = 0.0
+                    for k, neighbour in enumerate(sites):
+                        if (k == i or road.covers(neighbour)
+                                or (pending[k].get("fat_owner") == pending[i].get("fat_owner")
+                                    and k in seeds)):
+                            continue
+                        along = abs((neighbour.x - origin[0]) * tangent[0]
+                                    + (neighbour.y - origin[1]) * tangent[1])
+                        outward = signed(k) * bank
+                        if along <= 13.0 and 1e-6 < outward <= 18.0:
+                            score += (14.0 - along) / max(outward, 2.0)
+                    return score
+                opposite, current = pressure(-side), pressure(side)
+                if opposite + 1e-7 < current:
+                    side = -side
+            for j in own:
+                if (reference is not None and signed(j) * side < -1e-6
+                        and not (road is not None and road.covers(sites[j]))):
                     continue
-            for batch_start in range(0, len(indexes), batch_size):
-                batch_indexes = indexes[batch_start:batch_start + batch_size]
-                if pipeline_logger is not None and len(indexes) > batch_size:
-                    pipeline_log(
-                        pipeline_logger,
-                        "info",
-                        f"[3/6] HP COVER parcel batch {batch_start // batch_size + 1}/"
-                        f"{math.ceil(len(indexes) / batch_size)}: {len(batch_indexes):,} titik.",
+                context = {"seed": i, "source": pending[j]["projected"],
+                           "normal": normal, "origin": origin, "side": side,
+                           "road_reference": reference, "road_angle": frame["road_angle"] if frame else 0.0}
+                if j not in contexts or point.distance(sites[j]) < sites[contexts[j]["seed"]].distance(sites[j]):
+                    contexts[j] = context
+        return contexts
+
+    @staticmethod
+    def _hp_center_stays_on_side(center, context):
+        if context["road_reference"] is None:
+            return True
+        nx, ny = context["normal"]
+        ox, oy = context["origin"]
+        return ((center[0] - ox) * nx + (center[1] - oy) * ny) * context["side"] >= -1e-6
+
+    @staticmethod
+    def _hp_relief_path_clear(source, center, road, interior=None):
+        """Only exit the source ROAD; never enter another ROAD during relief."""
+        if road is None or road.is_empty or _distance(source, center) <= 1e-6:
+            return True
+        path = LineString([source, center])
+        interior = road.buffer(-1e-7) if interior is None else interior
+        touch = path.intersection(interior)
+        if touch.is_empty:
+            return True
+        parts = ([touch] if isinstance(touch, LineString) else
+                 [part for part in getattr(touch, "geoms", ()) if isinstance(part, LineString)])
+        parts = [part for part in parts if not part.is_empty and part.length > 1e-7]
+        if not parts:
+            return True
+        if len(parts) != 1 or not interior.covers(ShapelyPoint(source)):
+            return False
+        return min(path.project(ShapelyPoint(parts[0].coords[0])),
+                   path.project(ShapelyPoint(parts[0].coords[-1]))) <= 1e-5
+
+    def _strict_strip_physical_references(self, reference_lines=None):
+        """Join touching, tangent-compatible OSM ends for strip grouping only.
+
+        Original ROAD solids/coordinates stay authoritative. Junction branches
+        never join unless their end tangents provide a straight continuation.
+        """
+        lines = [line for line in (self.road_centerlines if reference_lines is None else reference_lines)
+                 if line is not None and not line.is_empty and line.length > 0.0]
+        endpoints = [ShapelyPoint(line.coords[end]) for line in lines for end in (0, -1)]
+        if not endpoints:
+            return {}
+        tree = STRtree(endpoints) if STRtree is not None else None
+        endpoint_ids = {id(point): index for index, point in enumerate(endpoints)}
+        inward = []
+        for line in lines:
+            delta = min(2.0, line.length)
+            for end, station in ((0, delta), (-1, line.length - delta)):
+                origin = ShapelyPoint(line.coords[end])
+                other = line.interpolate(station)
+                inward.append(math.atan2(other.y - origin.y, other.x - origin.x))
+        pairs = []
+        for a, point in enumerate(endpoints):
+            nearby = (self._query_indexed_geometries(tree, endpoints, point.buffer(1e-6))
+                      if tree is not None else endpoints)
+            for other in nearby:
+                b = endpoint_ids[id(other)]
+                if b <= a or a // 2 == b // 2 or point.distance(other) > 1e-6:
+                    continue
+                turn = abs(180.0 - abs(math.degrees(
+                    math.atan2(math.sin(inward[a] - inward[b]), math.cos(inward[a] - inward[b])))))
+                if turn <= HP_STRIP_MAX_PAIR_BEND_DEGREES:
+                    pairs.append((turn, point.distance(other), a, b))
+        links = {}
+        for _turn, _distance, a, b in sorted(pairs):
+            if a not in links and b not in links:
+                links[a], links[b] = b, a
+        references = {}
+        visited = set()
+        # Traverse open chains first, then any remaining smooth closed cycles.
+        # The consumer still derives each strip's LOCAL frame and bend gates.
+        starts = [i for i in range(len(endpoints)) if i not in links]
+        starts.extend(i for i in range(len(endpoints)) if i in links)
+        for start in starts:
+            if start // 2 in visited:
+                continue
+            coords, members = [], []
+            endpoint = start
+            while endpoint // 2 not in visited:
+                index = endpoint // 2
+                visited.add(index)
+                members.append(lines[index])
+                part = list(lines[index].coords)
+                if endpoint % 2:
+                    part.reverse()
+                coords.extend(part[1:] if coords and coords[-1] == part[0] else part)
+                exit_endpoint = 2 * index + (1 - endpoint % 2)
+                if exit_endpoint not in links:
+                    break
+                endpoint = links[exit_endpoint]
+            reference = LineString(coords) if len(members) > 1 else members[0]
+            references.update((id(line), reference) for line in members)
+        return references
+
+    def _strict_hp_strip_layout(
+        self, indexes, points, pending, cluster, fixed, pipeline_logger=None,
+        precommit_check=None,
+    ):
+        """Housing-estate straight-row rule (user-directed).
+
+        More than HP_STRIP_MIN_MEMBERS-1 HP COVER sources lined up straight
+        along one ROAD side, with no crossing ROAD between them, share a single
+        front line and uniform dividers: one parking-bay slot per HP. Chains
+        are physical-line based: every unclaimed HP whose projected v stays in
+        the band corridor joins, even when OSM splits the road into several
+        LineString objects, and straightness is judged on the row ROAD's own
+        local tangent. Returns (parcels, contexts, rotations, centers); every
+        other run keeps the existing per-source planner unchanged.
+        """
+        if len(pending) < HP_STRIP_MIN_MEMBERS:
+            return {}, {}, {}, {}
+        road_solid = self._home_parcel_road_solid()
+        # Real ROAD remains the hard exclusion. Native route lines can provide
+        # a strip front/axis only when no eligible ROAD exists near this HP.
+        road_solid = road_solid if road_solid is not None else Polygon()
+        physical_references = self._strict_strip_physical_references()
+        route_segments = [LineString([a, b])
+                          for line in getattr(self, "hp_strip_reference_lines", [])
+                          for a, b in zip(list(line.coords), list(line.coords)[1:])
+                          if _distance(a, b) > 1e-6]
+        route_references = self._strict_strip_physical_references(route_segments)
+        route_lines = list({id(line): line for line in route_references.values()}.values())
+        entries = {}
+        for i in indexes:
+            item = pending[i]
+            if item.get("hp_uncover"):
+                continue
+            projected = item["projected"]
+            point = points[i]
+            candidates = [physical_references.get(id(line), line)
+                          for line in self._road_centerline_candidates(projected)
+                          if point.distance(line) <= HP_STRIP_MAX_DEPTH_METERS + 1e-7]
+            kind = "ROAD"
+            if not candidates:
+                kind = "ROUTE"
+                candidates = [line for line in route_lines
+                              if point.distance(line) <= HP_STRIP_MAX_DEPTH_METERS + 1e-7]
+            if not candidates:
+                continue
+            reference = min(candidates, key=lambda line: point.distance(line))
+            frame = self._home_number_frame_from_line(projected, reference)
+            if frame is None:
+                continue
+            tangent = frame["tangent"]
+            normal = (-tangent[1], tangent[0])
+            away = (float(projected[0]) - frame["nearest"][0], float(projected[1]) - frame["nearest"][1])
+            side = 1.0 if away[0] * normal[0] + away[1] * normal[1] >= 0 else -1.0
+            entries[i] = {
+                "index": i, "reference": reference, "frame": frame, "point": point,
+                "projected": (float(projected[0]), float(projected[1])),
+                "depth": point.distance(reference), "side": side, "reference_kind": kind,
+            }
+        groups = {}
+        for entry in entries.values():
+            groups.setdefault((id(entry["reference"]), entry["side"]), []).append(entry)
+        accepted = {}
+        contexts = {}
+        rotations = {}
+        centers = {}
+        records = []
+        locked_runs = []
+        residual_rows = []
+        claimed = set()
+        for members in sorted(groups.values(), key=lambda group: min(entry["index"] for entry in group)):
+            # Nearest-reference groups seed a corridor, not eligibility: a
+            # non-crossing stub can own one member of a valid physical row.
+            bands = []
+            for entry in sorted(members, key=lambda item: (item["depth"], item["index"])):
+                anchor = bands[-1][0]["depth"] if bands else 0.0
+                if (bands and entry["depth"] - (anchor if entry["reference_kind"] == "ROUTE"
+                                                   else bands[-1][-1]["depth"]) <=
+                        (HP_STRIP_BAND_TOLERANCE_METERS if entry["reference_kind"] == "ROUTE"
+                         else HP_STRIP_DEPTH_CLUSTER_GAP_METERS)):
+                    bands[-1].append(entry)
+                else:
+                    bands.append([entry])
+            for band in bands:
+                reference = band[0]["reference"]
+                middle = band[len(band) // 2]["point"]
+                frame = self._home_number_frame_from_line((middle.x, middle.y), reference)
+                if frame is None:
+                    continue
+                tangent = frame["tangent"]
+                normal = (-tangent[1], tangent[0])
+                origin = frame["nearest"]
+                def project_with(entry, tan, nrm):
+                    point = entry["point"]
+                    u = (point.x - origin[0]) * tan[0] + (point.y - origin[1]) * tan[1]
+                    v = (point.x - origin[0]) * nrm[0] + (point.y - origin[1]) * nrm[1]
+                    return u, v
+                band_projected = [[entry, *project_with(entry, tangent, normal)] for entry in band]
+                flipped = False
+                if sum(item[2] for item in band_projected) < 0.0:
+                    normal = (-normal[0], -normal[1])
+                    band_projected = [[entry, u, -v] for entry, u, v in band_projected]
+                    flipped = True
+                sign = -1.0 if flipped else 1.0
+                # One physical row, not one road object: absorb every unclaimed
+                # HP whose projected v stays inside this band corridor and
+                # whose row-ROAD tangent keeps the run straight.
+                if band[0]["reference_kind"] == "ROUTE":
+                    # One source row, not a transitive bridge of nearby depths.
+                    middle_v = sorted(item[2] for item in band_projected)[len(band_projected) // 2]
+                    v_lo = middle_v - HP_STRIP_BAND_TOLERANCE_METERS
+                    v_hi = middle_v + HP_STRIP_BAND_TOLERANCE_METERS
+                else:
+                    v_lo = min(item[2] for item in band_projected) - HP_STRIP_BAND_TOLERANCE_METERS
+                    v_hi = max(item[2] for item in band_projected) + HP_STRIP_BAND_TOLERANCE_METERS
+                def row_angle(entry):
+                    if reference.distance(entry["point"]) > 20.0:
+                        return None
+                    position = reference.project(entry["point"])
+                    epsilon = min(2.0, max(.25, reference.length * .01))
+                    before = reference.interpolate(max(0.0, position - epsilon))
+                    after = reference.interpolate(min(reference.length, position + epsilon))
+                    return math.degrees(math.atan2(after.y - before.y, after.x - before.x))
+                items = []
+                for entry in entries.values():
+                    if entry["reference_kind"] != band[0]["reference_kind"]:
+                        continue
+                    if entry["index"] in claimed or entry["depth"] > HP_STRIP_MAX_DEPTH_METERS + 1e-7:
+                        continue
+                    u, v = project_with(entry, tangent, normal)
+                    if v < v_lo or v > v_hi or v <= HP_STRIP_SOURCE_MARGIN_METERS:
+                        continue
+                    angle = row_angle(entry)
+                    if angle is None:
+                        continue
+                    if band[0]["reference_kind"] == "ROUTE":
+                        row_tangent = frame["road_angle"]
+                        own_tangent = entry["frame"]["road_angle"]
+                        if abs(((own_tangent - row_tangent + 90.0) % 180.0) - 90.0) > HP_STRIP_MAX_PAIR_BEND_DEGREES:
+                            continue
+                        if abs(((angle - row_tangent + 90.0) % 180.0) - 90.0) > HP_STRIP_MAX_PAIR_BEND_DEGREES:
+                            continue
+                    items.append([entry, u, v, angle])
+                items.sort(key=lambda item: (item[1], item[0]["index"]))
+                chains = []
+                current = []
+                for item in items:
+                    if current:
+                        previous = current[-1]
+                        gap = item[1] - previous[1]
+                        bend = abs(((item[3] - previous[3] + 90.0) % 180.0) - 90.0)
+                        crossing = LineString([previous[0]["point"], item[0]["point"]]).intersection(road_solid)
+                        crossed = (not crossing.is_empty) and (crossing.length > 1e-6 or crossing.area > 1e-7)
+                        if gap > HP_STRIP_MAX_STATION_GAP_METERS or bend > HP_STRIP_MAX_PAIR_BEND_DEGREES or crossed:
+                            chains.append(current)
+                            current = []
+                    current.append(item)
+                if current:
+                    chains.append(current)
+                for chain in chains:
+                    if len(chain) < HP_STRIP_MIN_MEMBERS:
+                        residual_rows.append((list(chain), tangent, normal, origin, sign))
+                        continue
+                    reference_angle = chain[0][3]
+                    if any(abs(((item[3] - reference_angle + 90.0) % 180.0) - 90.0) > HP_STRIP_MAX_RUN_BEND_DEGREES
+                           for item in chain):
+                        continue
+                    # Stage one legal full-row proposal, then at most one
+                    # endpoint per variant. A corner keeps ordinary planning;
+                    # it is never discarded or forced into the straight strip.
+                    variants = [chain]
+                    if (band[0]["reference_kind"] == "ROUTE" and precommit_check is not None
+                            and len(chain) > HP_STRIP_MIN_MEMBERS):
+                        variants.extend((chain[1:], chain[:-1]))
+                    plan, candidate_chain, run_tangent, run_normal = self._hp_strip_chain_plan(
+                        variants, tangent, normal, origin, road_solid, cluster, fixed,
+                        accepted, points, records, sign, pending, pipeline_logger, precommit_check,
                     )
-                drawn += self._draw_parcel_group(
-                    batch_indexes,
-                    sites,
-                    site_points,
-                    pending,
-                    clip_region,
-                    box_attrs,
-                    text_attrs,
-                    cap_radius=False,
-                    fill_region=True,
-                pipeline_logger=pipeline_logger,
-                )
-
-        if no_fat_indexes:
-            block = self._home_parcel_block_geometry([sites[i] for i in no_fat_indexes])
-            if block is not None and not block.is_empty:
-                for batch_start in range(0, len(no_fat_indexes), batch_size):
-                    batch_indexes = no_fat_indexes[batch_start:batch_start + batch_size]
-                    if pipeline_logger is not None and len(no_fat_indexes) > batch_size:
-                        pipeline_log(
-                            pipeline_logger,
-                            "info",
-                            f"[3/6] HP COVER fallback batch {batch_start // batch_size + 1}/"
-                            f"{math.ceil(len(no_fat_indexes) / batch_size)}: {len(batch_indexes):,} titik.",
-                        )
-                    drawn += self._draw_parcel_group(
-                        batch_indexes,
-                        sites,
-                        site_points,
-                        pending,
-                        block,
-                        box_attrs,
-                        text_attrs,
-                        cap_radius=True,
-                        fill_region=False,
-                pipeline_logger=pipeline_logger,
-                    )
-
-        # Run-2: only source HPs that Run-1 could not fit. AI visual axis
-        # selection remains Run-1 behaviour; retry only finds nearby free room.
-        missing_indexes = [i for i in range(total) if i not in self._hp_cover_drawn_indexes]
-        if missing_indexes:
-            retry_drawn = self._draw_missing_hp_cover_retry(
-                missing_indexes, sites, pending, fat_areas, box_attrs, text_attrs, pipeline_logger
-            )
-            drawn += retry_drawn
-            if pipeline_logger is not None:
-                pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER relocate retry: {retry_drawn}/{len(missing_indexes)} fallback titik dipasang ke space kosong terdekat (maks 12m).")
-
-        # Run-3: every HP COVER source remains visible even where FAT/ROAD/
-        # cable constraints leave no valid non-overlapping parcel. Do not force
-        # bad geometry; retain the HOME_NUMBER label at its original KMZ point.
-        label_only_indexes = [i for i in range(total) if i not in self._hp_cover_drawn_indexes]
-        if label_only_indexes:
-            fallback_angle = 0.0
-            for idx in label_only_indexes:
-                item = pending[idx]
-                source = site_points[idx]
-                self._add_centered_text(
-                    str(item["text"]), (source.x, source.y),
-                    KML_HOME_NUMBER_HEIGHT_METERS,
-                    dxfattribs=text_attrs, rotation=fallback_angle,
-                )
-                self._hp_cover_drawn_indexes.add(idx)
-            if pipeline_logger is not None:
-                pipeline_log(
-                    pipeline_logger, "warning",
-                    f"[3/6] HP COVER label-only fallback: {len(label_only_indexes)}/{len(label_only_indexes)} "
-                    "titik retained tanpa parcel karena ruang aman tidak tersedia.",
-                )
-
-        if drawn == 0 and not label_only_indexes:
-            raise ValueError("tidak ada HP COVER yang dapat dipertahankan")
-
-        if pipeline_logger is not None:
+                    if plan is None:
+                        continue
+                    slots, run_contexts, run_angle, run_centers = plan
+                    accepted.update(slots)
+                    contexts.update(run_contexts)
+                    centers.update(run_centers)
+                    for index in slots:
+                        rotations[index] = run_angle
+                    claimed.update(slots)
+                    locked_runs.append((list(candidate_chain), run_tangent, run_normal, origin))
+        # Extend only terminals of already legal long rows. Preserve every
+        # primary cell and its common front/back; stop at the first bad source.
+        for chain, tangent, normal, origin in locked_runs:
+            kind = chain[0][0]["reference_kind"]
+            reference = chain[0][0]["reference"]
+            axis = self._readable_angle(math.degrees(math.atan2(tangent[1], tangent[0])))
+            def uv(point):
+                return (sum((point[k] - origin[k]) * tangent[k] for k in (0, 1)),
+                        sum((point[k] - origin[k]) * normal[k] for k in (0, 1)))
+            for direction, endpoint in ((-1.0, chain[0]), (1.0, chain[-1])):
+                terminal = accepted[endpoint[0]["index"]]
+                coords = list(terminal.exterior.coords)[:-1]
+                edge_u = (min if direction < 0 else max)(uv(p)[0] for p in coords)
+                edge = sorted((p for p in coords if abs(uv(p)[0] - edge_u) <= 1e-5),
+                              key=lambda p: uv(p)[1])
+                if len(edge) != 2:
+                    continue
+                front, back = uv(edge[0])[1], uv(edge[1])[1]
+                candidates = []
+                for entry in entries.values():
+                    if entry["index"] in claimed or entry["reference_kind"] != kind:
+                        continue
+                    u, v = uv(entry["projected"])
+                    bend = abs(((entry["frame"]["road_angle"] - axis + 90.0) % 180.0) - 90.0)
+                    if (direction * (u - edge_u) <= HP_STRIP_SOURCE_MARGIN_METERS
+                            or not front + HP_STRIP_SOURCE_MARGIN_METERS <= v <= back - HP_STRIP_SOURCE_MARGIN_METERS
+                            or bend > HP_STRIP_MAX_PAIR_BEND_DEGREES):
+                        continue
+                    candidates.append((direction * u, entry["index"], entry))
+                previous_u = uv(endpoint[0]["projected"])[0]
+                for _station, index, entry in sorted(candidates):
+                    if index in claimed:
+                        continue
+                    u, _v = uv(entry["projected"])
+                    if direction * (u - previous_u) > HP_STRIP_MAX_STATION_GAP_METERS:
+                        break
+                    width = _clamp(2.0 * direction * (u - edge_u),
+                                   HP_STRIP_FLEX_MIN_WIDTH_METERS, HP_STRIP_MAX_WIDTH_METERS)
+                    moved = [(p[0] + direction * width * tangent[0],
+                              p[1] + direction * width * tangent[1]) for p in edge]
+                    slot = Polygon([edge[0], moved[0], moved[1], edge[1]])
+                    context = {"seed": index, "source": entry["projected"], "normal": normal,
+                               "origin": origin, "side": 1.0, "road_reference": reference,
+                               "road_angle": axis, "reference_kind": kind}
+                    # Construction may rotate; source-side authority must not rotate with it.
+                    context = {**contexts[endpoint[0]["index"]], "seed": index,
+                               "source": entry["projected"]}
+                    if (not self._hp_strip_slot_valid(index, slot, context, points,
+                                                     road_solid, cluster, fixed, accepted)
+                            or precommit_check is not None
+                            and not precommit_check({**accepted, index: slot})):
+                        break
+                    accepted[index] = slot
+                    contexts[index] = context
+                    centers[index] = (slot.centroid.x, slot.centroid.y)
+                    rotations[index] = axis
+                    claimed.add(index)
+                    edge, edge_u, previous_u = moved, edge_u + direction * width, u
+        # A second deterministic pass boxes short physical fragments only
+        # after a primary long row exists; the16HP eligibility rule is intact.
+        if accepted:
+            seen_rows = set()
+            for chain, tangent, normal, origin, sign in sorted(residual_rows, key=lambda row: -len(row[0])):
+                remaining = [item for item in chain if item[0]["index"] not in claimed]
+                key = tuple(item[0]["index"] for item in remaining)
+                if not key or key in seen_rows:
+                    continue
+                seen_rows.add(key)
+                plan = self._hp_residual_row_slots(remaining, tangent, normal, origin,
+                                                   road_solid, cluster, fixed, accepted, points,
+                                                   precommit_check)
+                if plan is None:
+                    continue
+                slots, run_contexts, run_angle, run_centers = plan
+                accepted.update(slots)
+                contexts.update(run_contexts)
+                centers.update(run_centers)
+                rotations.update((i, run_angle) for i in slots)
+                claimed.update(slots)
+        if accepted and pipeline_logger is not None:
             pipeline_log(
-                pipeline_logger,
-                "success",
-                f"[3/6] HP COVER parcel selesai: {drawn:,}/{total:,} parcel digambar dalam "
-                f"{format_stage_seconds(time.perf_counter() - sub_step_start)}.",
+                pipeline_logger, "info",
+                f"[3/6] HP strip rule: {len(accepted)} HP in {len(records)} primary shared-front run(s).",
             )
+        return accepted, contexts, rotations, centers
+
+    def _hp_strip_chain_plan(
+        self, variants, tangent, normal, origin, road, cluster, fixed, accepted,
+        points, records, sign, pending, pipeline_logger=None, precommit_check=None,
+    ):
+        """One60s chain deadline, including advisory and every endpoint variant."""
+        chain = variants[0]
+        indexes = [item[0]["index"] for item in chain]
+        # Stable source membership + reference bytes, never Python object identity.
+        key = (chain[0][0]["reference_kind"], chain[0][0]["reference"].wkb,
+               sign, tuple(sorted(indexes)))
+        budgets = getattr(self, "_hp_strip_chain_budgets", None)
+        if budgets is None:
+            budgets = self._hp_strip_chain_budgets = {}
+        started = budgets.setdefault(key, time.monotonic())
+        deadline, first_deadline = started + 60.0, started + 10.0
+        def current():
+            if time.monotonic() >= deadline:
+                raise HpStripBudgetExhausted("HP strip_generation_budget exhausted; no complete shared-front strip")
+        current()
+        pipeline_log(pipeline_logger, "info",
+                     f"[3/6] HP strip planning: cells={len(indexes)}, budget=60s, AI handoff=10s.")
+        exhausted = False
+        for position, candidate in enumerate(variants):
+            now = time.monotonic()
+            if now >= first_deadline:
+                exhausted = True
+                break
+            attempt_deadline = now + (first_deadline-now)/(len(variants)-position)
+            staged_records = list(records)
+            try:
+                plan = self._strict_strip_chain_slots(
+                    candidate, tangent, normal, origin, road, cluster, fixed, accepted,
+                    points, staged_records, sign, precommit_check=precommit_check, deadline=attempt_deadline,
+                )
+            except HpStripBudgetExhausted:
+                exhausted = True
+                continue
+            if plan is not None:
+                current()
+                if time.monotonic() >= attempt_deadline:
+                    exhausted = True
+                    continue
+                records[:] = staged_records
+                return plan, candidate, tangent, normal
+        if not exhausted:
+            return None, chain, tangent, normal
+        pipeline_log(pipeline_logger, "warning",
+                     f"[3/6] HP strip generation budget reached: cells={len(indexes)}; requesting local AI review.")
+        sites = [tuple(item["projected"]) for item in pending]
+        angle = self._readable_angle(math.degrees(math.atan2(tangent[1], tangent[0])))
+        hint = self._hp_ai_recovery_hint(
+            indexes, pending, sites, points, accepted, fixed, angle,
+            "strip_generation_budget", pipeline_logger, deadline=deadline,
+        )
+        if hint is not None:
+            delta = math.radians(hint["angle"] - angle)
+            tx = tangent[0] * math.cos(delta) - tangent[1] * math.sin(delta)
+            ty = tangent[0] * math.sin(delta) + tangent[1] * math.cos(delta)
+            nx = normal[0] * math.cos(delta) - normal[1] * math.sin(delta)
+            ny = normal[0] * math.sin(delta) + normal[1] * math.cos(delta)
+            frozen = {i: {"seed": i, "source": sites[i], "normal": normal,
+                          "origin": origin, "side": 1.0, "road_reference": chain[0][0]["reference"],
+                          "road_angle": angle, "reference_kind": chain[0][0]["reference_kind"]}
+                      for i in indexes}
+            for candidate in variants:
+                projected = sorted([
+                    [item[0], (sites[item[0]["index"]][0]-origin[0])*tx
+                     + (sites[item[0]["index"]][1]-origin[1])*ty,
+                     (sites[item[0]["index"]][0]-origin[0])*nx
+                     + (sites[item[0]["index"]][1]-origin[1])*ny, item[3]]
+                    for item in candidate], key=lambda item: (item[1], item[0]["index"]))
+                plan = self._strict_strip_chain_slots(
+                    projected, (tx, ty), (nx, ny), origin, road, cluster, fixed,
+                    accepted, points, records, sign, precommit_check=precommit_check,
+                    deadline=deadline, source_contexts=frozen,
+                )
+                if plan is not None:
+                    current()
+                    self._hp_ai_recovery_state["applied"] += len(plan[0])
+                    pipeline_log(pipeline_logger, "success",
+                                 f"[3/6] HP AI strip recovery applied: {len(plan[0])} shared-front cells; native guards retained.")
+                    return plan, projected, (tx, ty), (nx, ny)
+        # Weak/unavailable advice retains the original domain, never a new budget.
+        if hint is None or not hint["authoritative"]:
+            for candidate in variants:
+                plan = self._strict_strip_chain_slots(
+                    candidate, tangent, normal, origin, road, cluster, fixed,
+                    accepted, points, records, sign, precommit_check=precommit_check, deadline=deadline,
+                )
+                if plan is not None:
+                    current()
+                    return plan, candidate, tangent, normal
+        pipeline_log(pipeline_logger, "warning",
+                     f"[3/6] HP strip review exhausted: cells={len(indexes)}, elapsed={time.monotonic()-started:.2f}s; no partial strip emitted.")
+        raise HpStripBudgetExhausted(
+            f"HP strip_generation_budget exhausted: cells={len(indexes)}; "
+            "AI review did not produce a complete legal shared-front strip")
+
+    def _hp_residual_row_slots(self, chain, tangent, normal, origin, road, cluster, fixed,
+                               accepted, points, precommit_check=None):
+        """Finite source-owned short-row choices, no generic whole-site solver."""
+        us = [item[1] for item in chain]
+        vs = [item[2] for item in chain]
+        reference = chain[0][0]["reference"]
+        angle = self._readable_angle(math.degrees(math.atan2(tangent[1], tangent[0])))
+        if len(chain) == 1:
+            divider_options = [[us[0] - width / 2.0, us[0] + width / 2.0]
+                               for width in (4.0, 3.0, 2.0)]
+        else:
+            divider_options = [[us[0] - (us[1] - us[0]) / 2.0]
+                               + [(a + b) / 2.0 for a, b in zip(us, us[1:])]
+                               + [us[-1] + (us[-1] - us[-2]) / 2.0]]
+        for dividers in divider_options:
+            if any(not HP_STRIP_FLEX_MIN_WIDTH_METERS - 1e-7 <= b - a <= HP_STRIP_MAX_WIDTH_METERS + 1e-7
+                   or not a + HP_STRIP_SOURCE_MARGIN_METERS <= u <= b - HP_STRIP_SOURCE_MARGIN_METERS
+                   for a, b, u in zip(dividers, dividers[1:], us)):
+                continue
+            # Try route front, centered row, then source-covering extremes.
+            depth = max(HP_STRIP_MIN_DEPTH_METERS, max(vs) - min(vs) + 2 * HP_STRIP_SOURCE_MARGIN_METERS)
+            if depth > HP_STRIP_MAX_DEPTH_METERS:
+                continue
+            fronts = list(dict.fromkeys((0.02, (min(vs) + max(vs) - depth) / 2.0,
+                                        min(vs) - HP_STRIP_SOURCE_MARGIN_METERS,
+                                        max(vs) + HP_STRIP_SOURCE_MARGIN_METERS - depth)))
+            for front in fronts:
+                cells, contexts, centers = {}, {}, {}
+                for k, item in enumerate(chain):
+                    i = item[0]["index"]
+                    def xy(u, v):
+                        return (origin[0] + u * tangent[0] + v * normal[0],
+                                origin[1] + u * tangent[1] + v * normal[1])
+                    slot = Polygon([xy(dividers[k], front), xy(dividers[k+1], front),
+                                    xy(dividers[k+1], front+depth), xy(dividers[k], front+depth)])
+                    context = {"seed": i, "source": item[0]["projected"], "normal": normal,
+                               "origin": origin, "side": 1.0, "road_reference": reference,
+                               "road_angle": angle, "reference_kind": item[0]["reference_kind"]}
+                    if not self._hp_strip_slot_valid(i, slot, context, points, road, cluster, fixed, accepted):
+                        break
+                    cells[i], contexts[i] = slot, context
+                    centers[i] = (slot.centroid.x, slot.centroid.y)
+                if (len(cells) == len(chain) and (precommit_check is None
+                        or precommit_check({**accepted, **cells}))):
+                    return cells, contexts, angle, centers
+        return None
+
+    def _hp_strip_slot_valid(self, index, slot, context, points, road, cluster, fixed, accepted):
+        """One unchanged source/side/path/overlap oracle for rows and terminals."""
+        point = points[index]
+        if slot.is_empty or not slot.buffer(1e-6).covers(point):
+            return False
+        center = slot.centroid
+        if center.distance(point) > 8.0 - 1e-6:
+            return False
+        erosion = None
+        if road is not None and not road.is_empty:
+            cached_road = getattr(self, "_hp_strip_road_interior", None)
+            if cached_road is None or cached_road[0] is not road:
+                cached_road = self._hp_strip_road_interior = (road, road.buffer(-1e-7))
+            erosion = cached_road[1]
+        if (not self._hp_center_stays_on_side((center.x, center.y), context)
+                or not self._hp_relief_path_clear(context["source"], (center.x, center.y), road, erosion)
+                or cluster is not None and not cluster.covers(slot)):
+            return False
+        padded = slot.buffer(1e-7)
+        cached = getattr(self, "_hp_strip_source_index", None)
+        if cached is None or cached[0] is not points:
+            cached = self._hp_strip_source_index = (
+                points, STRtree(points) if STRtree is not None else None, Counter(map(id, points)))
+        nearby = (self._query_indexed_geometries(cached[1], points, padded)
+                  if cached[1] is not None else points)
+        if (any(self._strict_positive_overlap(slot, other) for other in fixed)
+                or any(self._strict_positive_overlap(slot, other) for other in accepted.values())
+                or any(padded.covers(other) for other in nearby
+                       if other is not point or cached[2][id(point)] > 1)):
+            return False
+        return road is None or self._strict_positive_overlap(slot, road) is False
+
+    def _strict_strip_chain_slots(
+        self, chain, tangent, normal, origin, road_solid, cluster, fixed, accepted, points, records, sign,
+        precommit_check=None, deadline=None, source_contexts=None,
+    ):
+        """One shared-front strip; deadline covers construction, guards and precommit."""
+        def checkpoint():
+            if deadline is not None and time.monotonic() >= deadline:
+                raise HpStripBudgetExhausted("HP strip_generation_budget exhausted; local AI review or bounded refusal required")
+        checkpoint()
+        reference = chain[0][0]["reference"]
+        reference_id = id(reference)
+        epsilon = HP_STRIP_SOURCE_MARGIN_METERS
+        us = [item[1] for item in chain]
+        count = len(us)
+        average = (us[-1] - us[0]) / (count - 1)
+        widths = []
+        steps = int(round((HP_STRIP_MAX_WIDTH_METERS - HP_STRIP_FLEX_MIN_WIDTH_METERS)
+                          / HP_STRIP_UNIFORM_WIDTH_STEP_METERS)) + 1
+        for step in range(steps):
+            checkpoint()
+            width = HP_STRIP_FLEX_MIN_WIDTH_METERS + step * HP_STRIP_UNIFORM_WIDTH_STEP_METERS
+            lower = max(u - (k + 1) * width for k, u in enumerate(us))
+            upper = min(u - k * width for k, u in enumerate(us))
+            slack = upper - lower - 2.0 * epsilon
+            if slack < 0.0:
+                continue
+            # Normal frontage first; operator-approved2m+ fallback only when
+            # no legal normal-width proposal survives the unchanged guards.
+            score = (width < HP_STRIP_MIN_WIDTH_METERS, -slack, abs(width - average))
+            widths.append((score, width, lower, upper))
+        # If one width cannot span irregular source pitch, shared midpoint
+        # dividers retain the ordered identities and one common front/back.
+        variable_dividers = ([us[0] - (us[1] - us[0]) / 2.0]
+                             + [(left + right) / 2.0 for left, right in zip(us, us[1:])]
+                             + [us[-1] + (us[-1] - us[-2]) / 2.0])
+        if all(HP_STRIP_FLEX_MIN_WIDTH_METERS - 1e-7 <= right - left <= HP_STRIP_MAX_WIDTH_METERS + 1e-7
+               and left + epsilon <= source <= right - epsilon
+               for left, right, source in zip(variable_dividers, variable_dividers[1:], us)):
+            widths.append(((2, 0.0, 0.0), None, None, None))
+        if not widths:
+            return None
+        stations = [reference.project(item[0]["point"]) for item in chain]
+        station_min, station_max = min(stations), max(stations)
+        edge_values = []
+        route_reference = chain[0][0].get("reference_kind") == "ROUTE"
+        for item in chain:
+            checkpoint()
+            point = item[0]["point"]
+            # Route front is its actual centerline, never a fabricated ROAD
+            # footprint. Actual ROAD still owns crossing/overlap/path guards.
+            edge = reference if route_reference else road_solid.boundary
+            nearest = nearest_points(point, edge)[1]
+            toward = (nearest.x - point.x) * normal[0] + (nearest.y - point.y) * normal[1]
+            if toward < 0.0 and point.distance(nearest) <= 15.0:
+                edge_values.append((nearest.x - origin[0]) * normal[0] + (nearest.y - origin[1]) * normal[1])
+        if not edge_values:
+            return None
+        front0 = max(edge_values) + 0.02
+        for record in records:
+            if record["reference_id"] != reference_id or record["sign"] != sign:
+                continue
+            overlap = min(station_max, record["station_max"]) - max(station_min, record["station_min"])
+            back_at_frame = max(
+                (p[0]-origin[0])*normal[0] + (p[1]-origin[1])*normal[1]
+                for p in record["back_edge"]) if "back_edge" in record else record["back"]
+            if overlap > 1.0 and back_at_frame > front0:
+                front0 = back_at_frame
+        min_v = min(item[2] for item in chain)
+        max_v = max(item[2] for item in chain)
+        # Edge-measured fronts can exceed min_v when the nearest boundary
+        # belongs to another street; clamp to the proven-legal limit and let
+        # the slot gates (road overlap, coverage, shift) decide.
+        front0 = min(front0, min_v - epsilon)
+        if max_v + epsilon - front0 > HP_STRIP_MAX_DEPTH_METERS + 1e-9:
+            return None
+        # Retain every permitted width in the original ranking. A clip or
+        # obstacle rejection of the best width does not exhaust the domain.
+        for _score, width, lower, upper in sorted(widths):
+            checkpoint()
+            # ponytail: finite start domain (midpoint, both source-margin
+            # bounds, then <=0.25m samples); native gates own every acceptance.
+            if width is None:
+                starts = [None]
+            else:
+                lo, hi = lower + epsilon, upper - epsilon
+                starts = list(dict.fromkeys([(lower + upper) / 2.0, lo, hi]
+                              + [lo + (hi - lo) * k / max(1, math.ceil((hi - lo) / .25))
+                                 for k in range(1, max(1, math.ceil((hi - lo) / .25)))]))
+            for start in starts:
+                checkpoint()
+                dividers = (variable_dividers if width is None
+                            else [start + k * width for k in range(count + 1)])
+                slots = None
+                front = back = 0.0
+                bumps = (0.0, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2, 1.6, 2.4, 3.2, 4.0, 5.0, 6.5, 8.0)
+                for bump in bumps:
+                    checkpoint()
+                    candidate_front = front0 + bump
+                    if candidate_front > min_v - epsilon:
+                        break
+                    candidate_depth = max(max_v + epsilon - candidate_front, HP_STRIP_MIN_DEPTH_METERS)
+                    if candidate_depth > HP_STRIP_MAX_DEPTH_METERS + 1e-9:
+                        continue
+                    candidate_back = candidate_front + candidate_depth
+                    def xy(u_value, v_value):
+                        return (origin[0] + tangent[0] * u_value + normal[0] * v_value,
+                                origin[1] + tangent[1] * u_value + normal[1] * v_value)
+                    candidate_slots = {}
+                    for k, item in enumerate(chain):
+                        checkpoint()
+                        left, right = dividers[k], dividers[k + 1]
+                        candidate_slots[item[0]["index"]] = Polygon([
+                            xy(left, candidate_front), xy(right, candidate_front),
+                            xy(right, candidate_back), xy(left, candidate_back),
+                        ])
+                    valid = True
+                    for item in chain:
+                        checkpoint()
+                        index = item[0]["index"]
+                        context = {"seed": index, "source": item[0]["projected"], "normal": normal,
+                                   "origin": origin, "side": 1.0, "road_reference": reference,
+                                   "road_angle": self._readable_angle(math.degrees(math.atan2(tangent[1], tangent[0])))}
+                        context = (source_contexts or {}).get(index, context)
+                        if not self._hp_strip_slot_valid(index, candidate_slots[index], context,
+                                                         points, road_solid, cluster, fixed, accepted):
+                            valid = False
+                            break
+                    if valid:
+                        checkpoint()
+                        union = unary_union(list(candidate_slots.values()))
+                        if road_solid.intersection(union).area <= 1e-7:
+                            if (precommit_check is not None
+                                    and not precommit_check({**accepted, **candidate_slots})):
+                                # Finite first-choice refusal, not domain UNSAT:
+                                # let the caller try its bounded corner partition.
+                                # A refusal that completes only after the absolute
+                                # deadline is capacity exhaustion, not feasibility:
+                                # it must reach the named budget handoff, never a
+                                # plain None that skips AI recovery.
+                                checkpoint()
+                                return None
+                            checkpoint()
+                            slots = candidate_slots
+                            front, back = candidate_front, candidate_back
+                            break
+                if slots is None:
+                    continue
+                run_contexts = {}
+                run_centers = {}
+                run_angle = self._readable_angle(math.degrees(math.atan2(tangent[1], tangent[0])))
+                for item in chain:
+                    index = item[0]["index"]
+                    run_contexts[index] = {
+                        "seed": index, "source": item[0]["projected"], "normal": normal,
+                        "origin": origin, "side": 1.0, "road_reference": reference,
+                        "road_angle": run_angle, "reference_kind": "ROUTE" if route_reference else "ROAD",
+                    }
+                    if source_contexts is not None:
+                        run_contexts[index] = dict(source_contexts[index])
+                    center = slots[index].centroid
+                    run_centers[index] = (center.x, center.y)
+                checkpoint()
+                records.append({
+                    "reference_id": reference_id, "sign": sign, "station_min": station_min,
+                    "station_max": station_max, "back": back,
+                    "back_edge": (xy(dividers[0], back), xy(dividers[-1], back)),
+                })
+                return slots, run_contexts, run_angle, run_centers
+        return None
+
+    def _dense_shared_block_tessellation(
+        self, target_hp_indexes, pending, sites, points, fixed, road, angles_by_index,
+        pipeline_logger=None, relief_contexts=None, recovery_hint=None,
+    ):
+        """Bounded shared-edge options; select the complete local component atomically."""
+        indexes = tuple(sorted(target_hp_indexes))
+        if not indexes:
+            return {}
+        contexts = self._hp_same_side_relief_contexts(pending)
+        for i in indexes:
+            if i in contexts or pending[i].get("hp_uncover"):
+                continue
+            if not any(j != i and pending[j].get("fat_owner") == pending[i].get("fat_owner")
+                       and points[i].distance(points[j]) <= 13.0+1e-7
+                       and self._hp_relief_path_clear(sites[i],sites[j],road) for j in indexes):
+                continue
+            frame = self._nearest_road_frame(sites[i])
+            references = self._road_centerline_candidates(sites[i])
+            if frame is None or not references:
+                continue
+            tangent = frame["tangent"]
+            normal = (-tangent[1], tangent[0])
+            delta = (sites[i][0]-frame["nearest"][0], sites[i][1]-frame["nearest"][1])
+            contexts[i] = {"source":sites[i], "normal":normal, "origin":frame["nearest"],
+                           "side":1.0 if sum(delta[k]*normal[k] for k in (0,1)) >= 0 else -1.0,
+                           "road_reference":min(references,key=lambda line:points[i].distance(line)),
+                           "road_angle":frame["road_angle"]}
+        cluster = self.road_clip_geometry
+        cluster = cluster.buffer(1e-6) if cluster is not None and not cluster.is_empty else None
+        frames = [self._nearest_road_frame(sites[i]) for i in indexes]
+        angles = list(dict.fromkeys(self._readable_angle(frame["road_angle"])
+                                   for frame in frames if frame is not None))
+        # ponytail: at most4 local ROAD axes x9 lattice origins; no whole-site repack.
+        angles = angles[:4] or [0.0]
+        if recovery_hint is not None:
+            angles = ([recovery_hint["angle"]] if recovery_hint.get("authoritative")
+                      else list(dict.fromkeys([recovery_hint["angle"]] + angles)))
+        origin = points[indexes[0]]
+        source_tree = STRtree(points) if STRtree is not None else None
+        fixed_tree = STRtree(fixed) if STRtree is not None and fixed else None
+        def clear(cell, index):
+            if (cluster is not None and not cluster.covers(cell)
+                    or road is not None and self._strict_positive_overlap(cell,road)):
+                return False
+            obstacles = self._query_indexed_geometries(fixed_tree,fixed,cell) if fixed_tree is not None else fixed
+            if any(self._strict_positive_overlap(cell,p) for p in obstacles):
+                return False
+            padded = cell.buffer(1e-7)
+            neighbours = self._query_indexed_geometries(source_tree,points,padded) if source_tree is not None else points
+            return not any(p is not points[index] and padded.covers(p) for p in neighbours)
+        for angle in angles:
+            theta = math.radians(angle)
+            tx, ty = math.cos(theta), math.sin(theta)
+            nx, ny = -ty, tx
+            width, depth = HP_COVER_PARCEL_SIZE_TIERS[-1]
+            local = {i: ((sites[i][0]-origin.x)*tx + (sites[i][1]-origin.y)*ty,
+                         (sites[i][0]-origin.x)*nx + (sites[i][1]-origin.y)*ny)
+                     for i in indexes}
+            centered = {}
+            centered_angles = {}
+            for i in indexes:
+                centered[i] = []
+                for cell, cell_angle in self._hp_centered_road_clear_options(sites[i],road,angle):
+                    if recovery_hint is not None and abs(((cell_angle-angle+90.0)%180.0)-90.0)>1e-6:
+                        continue
+                    if clear(cell,i):
+                        centered[i].append({i:cell})
+                        centered_angles[cell.wkb] = cell_angle
+            if recovery_hint is not None:
+                # AI axis stays authoritative; its phase is tried first, then the
+                # deterministic phase domain, so one bad phase cannot veto the axis.
+                along_phases = tuple(dict.fromkeys((recovery_hint["along_phase"], 0, 1, 2)))
+                normal_phases = tuple(dict.fromkeys((recovery_hint["normal_phase"], 0, 1, 2)))
+            else:
+                along_phases = normal_phases = (0, 1, 2)
+            for along_phase in along_phases:
+                offset_u = width * along_phase / 3.0
+                for normal_phase in normal_phases:
+                    offset_v = depth * normal_phase / 3.0
+                    plans, option_angles = [], dict(centered_angles)
+                    for i in indexes:
+                        u, v = local[i]
+                        options = list(centered[i])
+                        # Shared lattice vertices, not independently rounded boxes.
+                        for col in range(math.ceil((u-8.0-offset_u)/width),
+                                         math.floor((u+8.0-offset_u)/width)+1):
+                            for row in range(math.ceil((v-8.0-offset_v)/depth),
+                                             math.floor((v+8.0-offset_v)/depth)+1):
+                                cu, cv = offset_u+col*width, offset_v+row*depth
+                                center = (origin.x+cu*tx+cv*nx, origin.y+cu*ty+cv*ny)
+                                shift = _distance(sites[i], center)
+                                if shift > 8.0+1e-7:
+                                    continue
+                                if shift > 1e-6 and (pending[i].get("hp_uncover") or i not in contexts):
+                                    continue
+                                if (shift > 1e-6 and not self._hp_center_stays_on_side(center, contexts[i])
+                                        or not self._hp_relief_path_clear(sites[i], center, road)):
+                                    continue
+                                def xy(a, b):
+                                    return (origin.x+a*tx+b*nx, origin.y+a*ty+b*ny)
+                                cell = Polygon([xy(cu-width/2,cv-depth/2), xy(cu+width/2,cv-depth/2),
+                                                xy(cu+width/2,cv+depth/2), xy(cu-width/2,cv+depth/2)])
+                                if not clear(cell,i):
+                                    continue
+                                options.append({i:cell})
+                                option_angles[cell.wkb] = angle
+                        options.sort(key=lambda opt: opt[i].centroid.distance(points[i]))
+                        if not options:
+                            break
+                        plans.append({"indexes":[i],"options":options})
+                    if len(plans) != len(indexes):
+                        continue
+                    selected = self._select_strict_strip_candidates(plans, base_obstacles=fixed,
+                                                                    pipeline_logger=pipeline_logger)
+                    if selected is None:
+                        continue
+                    for i, cell in selected.items():
+                        angles_by_index.setdefault(i,{})[cell.wkb] = option_angles[cell.wkb]
+                    if relief_contexts is not None:
+                        relief_contexts.update({i:contexts[i] for i in indexes if i in contexts})
+                    return selected
+        return {}
+
+    def _hp_ai_recovery_hint(
+        self, indexes, pending, sites, points, selected, fixed, reference_angle,
+        failure_kind, pipeline_logger=None, preview_cells=None, deadline=None,
+    ):
+        """Bounded failure-only visual review; deterministic solver owns every cell."""
+        indexes = tuple(sorted(set(indexes)))
+        if (not indexes or len(indexes) > 64 and failure_kind != "strip_generation_budget"
+                or not ai_visual_parcel_enabled()
+                or any(pending[i].get("hp_uncover") for i in indexes)):
+            return None
+        state = getattr(self, "_hp_ai_recovery_state", None)
+        if not state:
+            state = self._hp_ai_recovery_state = {"calls": 0, "started": time.monotonic(), "applied": 0}
+        if state["started"] is None:
+            state["started"] = time.monotonic()
+        remaining = 20.0 - (time.monotonic() - state["started"])
+        if state["calls"] >= 2 or remaining <= .5:
+            return None
+        if deadline is not None and deadline - time.monotonic() <= .5:
+            return None
+        region = MultiPoint([points[i] for i in indexes]).envelope.buffer(18.0)
+        outside = list(fixed) + [p for i, p in selected.items() if i not in indexes]
+        nearby = [p for p in outside if p.intersects(region)]
+        visible = list(preview_cells or []) + nearby
+        try:
+            # Rendering is advisory too: degenerate source geometry must never turn
+            # an otherwise deterministic failure into a new, unrelated crash.
+            preview = self._hp_visual_parcel_png(
+                region, [points[i] for i in indexes], candidate_parcels=visible,
+                failed_points=[points[i] for i in indexes],
+            )
+        except Exception:
+            pipeline_log(pipeline_logger, "info",
+                         "[3/6] HP AI recovery preview unavailable; deterministic fallback retained.")
+            return None
+        if not preview:
+            return None
+        # Argument construction stays outside the guard; preview expiry is not a request.
+        reference_angle = float(reference_angle)
+        budget = min(10.0, 20.0 - (time.monotonic() - state["started"]))
+        if deadline is not None:
+            budget = min(budget, deadline-time.monotonic())
+        if budget <= .5:
+            return None
+        state["calls"] += 1
+        pipeline_log(pipeline_logger, "info",
+                     f"[3/6] HP AI recovery review: reason={failure_kind}, cells={len(indexes)}, "
+                     f"request={state['calls']}/2; converter cells rechecked.")
+        try:
+            hint = suggest_dxf_hp_recovery(
+                preview_png=preview, reference_angle=reference_angle,
+                point_count=len(indexes), placed_count=len(visible),
+                failure_kind=failure_kind, timeout=budget,
+            )
+        except Exception:
+            hint = None
+        if ((deadline is not None and time.monotonic() >= deadline)
+                or time.monotonic() - state["started"] >= 20.0):
+            return None
+        if not isinstance(hint, dict):
+            pipeline_log(pipeline_logger, "info", "[3/6] HP AI recovery unavailable; deterministic fallback retained.")
+            return None
+        delta, along, normal, confidence = (hint.get(k) for k in
+                                            ("axis_delta_degrees", "along_phase", "normal_phase", "confidence"))
+        authoritative = hint.get("authoritative")
+        if (any(isinstance(v, bool) for v in (delta, along, normal, confidence))
+                or not isinstance(delta, (int, float)) or not math.isfinite(delta)
+                or delta not in (-15, -10, -5, 0, 5, 10, 15)
+                or type(along) is not int or type(normal) is not int
+                or along not in (0, 1, 2) or normal not in (0, 1, 2)
+                or not isinstance(confidence, (int, float)) or not math.isfinite(confidence)
+                or not .5 <= confidence <= 1.0 or not isinstance(authoritative, bool)
+                or (authoritative and confidence < max(.8, ai_confidence_min()))):
+            return None
+        angle = self._readable_angle(reference_angle + delta)
+        pipeline_log(pipeline_logger, "info",
+                     f"[3/6] HP AI recovery hint accepted: axis={angle:.2f}, "
+                     f"phase={along}/{normal}, confidence={confidence:.2f}, "
+                     f"mode={'axis' if authoritative else 'order-only'}.")
+        return {"angle": angle, "along_phase": along, "normal_phase": normal,
+                "authoritative": authoritative}
+
+    def _hp_ai_recovery(
+        self, indexes, pending, sites, points, selected, fixed, road,
+        angles_by_index, contexts, failure_kind, pipeline_logger=None, preview_cells=None,
+    ):
+        """Dense recovery reuses the same request/parser and per-job advisory budget."""
+        indexes = tuple(sorted(set(indexes)))
+        if (not indexes or len(indexes) > 64 or not ai_visual_parcel_enabled()
+                or any(pending[i].get("hp_uncover") for i in indexes)):
+            return {}
+        frame = self._nearest_road_frame(sites[indexes[0]])
+        if frame is None:
+            return {}
+        hint = self._hp_ai_recovery_hint(
+            indexes, pending, sites, points, selected, fixed, float(frame["road_angle"]),
+            failure_kind, pipeline_logger, preview_cells,
+        )
+        if hint is None:
+            return {}
+        state = self._hp_ai_recovery_state
+        outside = list(fixed) + [p for i, p in selected.items() if i not in indexes]
+        staged_angles, staged_contexts = {}, dict(contexts)
+        try:
+            result = self._dense_shared_block_tessellation(
+                indexes, pending, sites, points, outside, road, staged_angles,
+                pipeline_logger=pipeline_logger, relief_contexts=staged_contexts,
+                recovery_hint=hint,
+            )
+        except TimeoutError:
+            pipeline_log(pipeline_logger, "info", "[3/6] HP AI recovery search budget exhausted; deterministic fallback retained.")
+            return {}
+        if set(result) != set(indexes):
+            pipeline_log(pipeline_logger, "info", "[3/6] HP AI recovery geometry rejected; deterministic fallback retained.")
+            return {}
+        for i, cell in result.items():
+            center = cell.centroid
+            shift = center.distance(points[i])
+            if (not cell.is_valid or cell.is_empty or shift > 8.0 + 1e-7
+                    or road is not None and self._strict_positive_overlap(cell, road)
+                    or any(self._strict_positive_overlap(cell, p) for p in outside)
+                    or any(self._strict_positive_overlap(cell, p) for j, p in result.items() if j != i)
+                    or shift > 1e-6 and (i not in staged_contexts
+                        or not self._hp_center_stays_on_side((center.x, center.y), staged_contexts[i])
+                        or not self._hp_relief_path_clear(sites[i], (center.x, center.y), road))):
+                return {}
+        angles_by_index.update(staged_angles)
+        contexts.update({i: staged_contexts[i] for i in indexes if i in staged_contexts})
+        state["applied"] += len(result)
+        pipeline_log(pipeline_logger, "success",
+                     f"[3/6] HP AI recovery applied: {len(result)} cells; ROAD/overlap=0, center<=8m.")
+        return result
+
+    def _hp_ai_recheck_plan(
+        self, selected, sites, points, pending, fixed, road,
+        rotations, centers, contexts, pipeline_logger=None,
+    ):
+        """Recheck converter-created cells before emission; repair only a local failure."""
+        # Byte-for-byte baseline behaviour when AI is off: no extra scan, no repair.
+        if not ai_visual_parcel_enabled() or not selected:
+            return
+        affected = set()
+        ids = sorted(selected)
+        cells = [selected[i] for i in ids]
+        tree = STRtree(cells) if STRtree is not None else None
+        index_of = {id(poly): i for i, poly in enumerate(cells)}
+        fixed_tree = STRtree(fixed) if STRtree is not None and fixed else None
+        for position, i in enumerate(ids):
+            cell = cells[position]
+            if road is not None and self._strict_positive_overlap(cell, road):
+                affected.add(i)
+            local_fixed = (self._query_indexed_geometries(fixed_tree, fixed, cell)
+                           if fixed_tree is not None else fixed)
+            if any(self._strict_positive_overlap(cell, p) for p in local_fixed):
+                affected.add(i)
+            nearby = (self._query_indexed_geometries(tree, cells, cell)
+                      if tree is not None else cells[position + 1:])
+            for other in nearby:
+                j = ids[index_of[id(other)]]
+                if j != i and self._strict_positive_overlap(cell, other):
+                    affected.update((i, j))
+        if not affected:
+            return
+        # ponytail: one bounded64-cell closure; unrelated strips/owners never repacked.
+        if len(affected) > 64:
+            return
+        angles = {}
+        repaired = self._hp_ai_recovery(
+            sorted(affected), pending, sites, points, selected, fixed, road, angles, contexts,
+            "pre_emission_overlap", pipeline_logger,
+            preview_cells=[selected[i] for i in affected],
+        )
+        if set(repaired) != affected:
+            return
+        selected.update(repaired)
+        for i, cell in repaired.items():
+            centers[i] = (cell.centroid.x, cell.centroid.y)
+            rotations[i] = angles[i][cell.wkb]
+
+    def _hp_local_block_hints(self, pending, sites, pipeline_logger=None):
+        """One bounded visual decision per source-local same-owner/ROAD-side block."""
+        frames = [self._nearest_road_frame(site) for site in sites]
+        remaining = set(range(len(sites)))
+        blocks = []
+        while remaining:
+            seed = min(remaining)
+            remaining.remove(seed)
+            group = [seed]
+            base = float((frames[seed] or {}).get("road_angle", 0.0))
+            def same_side(left, right):
+                frame = frames[left]
+                if frame is None:
+                    return False
+                theta = math.radians(float(frame["road_angle"]))
+                normal = (-math.sin(theta), math.cos(theta))
+                origin = frame["nearest"]
+                a = sum((sites[left][k] - origin[k]) * normal[k] for k in (0, 1))
+                b = sum((sites[right][k] - origin[k]) * normal[k] for k in (0, 1))
+                return a * b >= -1e-6
+            for index in sorted(remaining, key=lambda i: (_distance(sites[seed], sites[i]), i)):
+                angle = float((frames[index] or {}).get("road_angle", base))
+                if (len(group) >= 16 or pending[index].get("fat_owner") != pending[seed].get("fat_owner")
+                        or abs(((angle - base + 90.0) % 180.0) - 90.0) > 15.0
+                        or _distance(sites[seed], sites[index]) > 40.0
+                        or not same_side(seed, index)
+                        or not any(_distance(sites[other], sites[index]) <= 16.0 for other in group)):
+                    continue
+                group.append(index)
+                remaining.remove(index)
+            angles = [math.radians(2 * float((frames[i] or {}).get("road_angle", base))) for i in group]
+            base = self._readable_angle(math.degrees(math.atan2(sum(map(math.sin, angles)),
+                                                              sum(map(math.cos, angles)))) / 2)
+            blocks.append({"indexes": group, "angle": base, "ai": False})
+        calls = accepted = 0
+        started = time.monotonic()
+        # ponytail: <=8 local requests; stop starting calls after60s, never call per house.
+        for block in sorted(blocks, key=lambda row: (-len(row["indexes"]), min(row["indexes"]))):
+            indexes, base = block["indexes"], block["angle"]
+            if (not ai_visual_parcel_enabled() or len(indexes) < 2 or calls >= 8
+                    or time.monotonic() - started >= 60.):
+                continue
+            points = [ShapelyPoint(sites[i]) for i in indexes]
+            region = MultiPoint(points).envelope.buffer(10.0)
+            road = self._home_parcel_road_solid()
+            preview_cells = {i: self._home_number_box_polygon(sites[i], 4., 8., base) for i in indexes}
+            legal = {i: cell for i, cell in preview_cells.items()
+                     if road is None or not self._strict_positive_overlap(cell, road)}
+            preview = self._hp_visual_parcel_png(
+                region, points, candidate_parcels=list(legal.values()),
+                failed_points=[ShapelyPoint(sites[i]) for i in indexes if i not in legal],
+            )
+            calls += 1
+            try:
+                deadline = started + 60.0
+                hint = suggest_dxf_visual_parcel_layout(
+                    preview_png=preview, fat_angle=base,
+                    road_angle=base, point_count=len(indexes), axis_only=True,
+                    deadline_s=deadline
+                )
+                angle = float(hint["angle_degrees"]) if hint else None
+                confidence = float(hint["confidence"]) if hint else 0.0
+                if (angle is not None and math.isfinite(angle) and math.isfinite(confidence)
+                        and .8 <= confidence <= 1.0
+                        and abs(((angle - base + 90.) % 180.) - 90.) <= 15.):
+                    block["angle"] = self._readable_angle(angle)
+                    block["ai"] = True
+                    accepted += 1
+                    pipeline_log(pipeline_logger, "info",
+                                 f"[3/6] HP AI block hint accepted: IDs={indexes}, axis={angle:.2f}, confidence={confidence:.2f}.")
+            except Exception as exc:
+                LOGGER.debug("HP block AI unavailable: %s", type(exc).__name__)
+        pipeline_log(pipeline_logger, "info",
+                     f"[3/6] HP local block hints: blocks={len(blocks)}, requests={calls}, accepted={accepted}.")
+        return blocks
+
+    def _hp_align_local_rows(self, blocks, selected, sites, pending, fixed, road,
+                             cluster, rotations, centers, contexts, pipeline_logger=None):
+        """Repack only complete legal same-owner rows; never clip or drop a cell."""
+        aligned = set()
+        for block in blocks:
+            theta = math.radians(block["angle"])
+            tx, ty = math.cos(theta), math.sin(theta)
+            nx, ny = -ty, tx
+            origin = sites[min(block["indexes"])]
+            entries = [(i, (sites[i][0] - origin[0])*tx + (sites[i][1] - origin[1])*ty,
+                           (sites[i][0] - origin[0])*nx + (sites[i][1] - origin[1])*ny)
+                       for i in block["indexes"] if i in selected]
+            bands = []
+            for entry in sorted(entries, key=lambda row: (row[2], row[1], row[0])):
+                if not bands or entry[2] - bands[-1][0][2] > 4.0:
+                    bands.append([])
+                bands[-1].append(entry)
+            for band in bands:
+                rows = []
+                for entry in sorted(band, key=lambda row: (row[1], row[0])):
+                    if not rows or entry[1] - rows[-1][-1][1] > 13.0:
+                        rows.append([])
+                    rows[-1].append(entry)
+                for row in rows:
+                    if len(row) < 2:
+                        continue
+                    ids = {entry[0] for entry in row}
+                    outside = list(fixed) + [poly for i, poly in selected.items() if i not in ids]
+                    mean_u = sum(entry[1] for entry in row) / len(row)
+                    mean_v = sum(entry[2] for entry in row) / len(row)
+                    spacing = (row[-1][1] - row[0][1]) / (len(row) - 1)
+                    widths = sorted({max(4.0, min(13.0, spacing)), 4., 5., 6., 7., 8., 10., 12., 13.},
+                                    key=lambda width: (abs(width - spacing), -width))
+                    chosen = None
+                    row_contexts = {}
+                    for width in widths:
+                        for depth in (12., 10., 8.):
+                            for shift_v in (0., .5, -.5, 1., -1., 2., -2.):
+                                candidate = {}
+                                for position, (i, _u, _v) in enumerate(row):
+                                    u = mean_u + (position - (len(row)-1)/2)*width
+                                    v = mean_v + shift_v
+                                    center = (origin[0] + u*tx + v*nx, origin[1] + u*ty + v*ny)
+                                    if _distance(sites[i], center) > 8.0 + 1e-7:
+                                        break
+                                    frame = self._nearest_road_frame(sites[i])
+                                    if frame is None:
+                                        break
+                                    tangent = frame["tangent"]
+                                    normal = (-tangent[1], tangent[0])
+                                    delta = (sites[i][0] - frame["nearest"][0], sites[i][1] - frame["nearest"][1])
+                                    sign = 1. if sum(delta[k]*normal[k] for k in (0,1)) >= 0 else -1.
+                                    context = {"source": sites[i], "normal": normal, "origin": frame["nearest"],
+                                               "side": sign, "road_reference": frame.get("line"),
+                                               "road_angle": frame["road_angle"]}
+                                    # Retain an actual source-local ROAD reference, never a permission bypass.
+                                    references = self._road_centerline_candidates(sites[i])
+                                    context["road_reference"] = min(references, key=lambda line: ShapelyPoint(sites[i]).distance(line)) if references else None
+                                    if (not self._hp_center_stays_on_side(center, context)
+                                            or not self._hp_relief_path_clear(sites[i], center, road)):
+                                        break
+                                    poly = self._home_number_box_polygon(center, width, depth, block["angle"])
+                                    if (cluster is not None and not cluster.covers(poly)
+                                            or road is not None and self._strict_positive_overlap(poly, road)
+                                            or any(self._strict_positive_overlap(poly, other) for other in outside)
+                                            or any(self._strict_positive_overlap(poly, other) for other in candidate.values())
+                                            or any(poly.buffer(1e-7).covers(ShapelyPoint(site)) for j,site in enumerate(sites) if j != i)):
+                                        break
+                                    candidate[i] = poly
+                                    row_contexts[i] = context
+                                if set(candidate) == ids:
+                                    chosen = candidate
+                                    break
+                            if chosen is not None:
+                                break
+                        if chosen is not None:
+                            break
+                    if chosen is None:
+                        continue
+                    selected.update(chosen)
+                    for i, poly in chosen.items():
+                        centers[i] = (poly.centroid.x, poly.centroid.y)
+                        rotations[i] = block["angle"]
+                        contexts[i] = row_contexts[i]
+                    aligned.update(ids)
+        pipeline_log(pipeline_logger, "info",
+                     f"[3/6] HP block layout applied: shared-row cells={len(aligned)}, AI-blocks={sum(block['ai'] for block in blocks)}.")
+        return aligned
+
+    def _hp_flexible_residual_plan(self, indexes, pending, sites, points, fixed, road,
+                                    cluster, contexts, pipeline_logger=None):
+        """Centered first; widen only finite same-owner incompatible pair cores."""
+        if not indexes:
+            return {}, {}, {}
+        started = time.monotonic()
+        source_tree = STRtree(points) if STRtree is not None else None
+        fixed_tree = STRtree(fixed) if STRtree is not None and fixed else None
+        domains, metadata, frames = {}, {}, {}
+        def checkpoint():
+            if time.monotonic() - started > 60.0:
+                raise TimeoutError("HP flexible local residual generation budget exhausted")
+        def keep(i, cell, angle):
+            if cell.wkb in domains[i] or not cell.buffer(1e-6).covers(points[i]):
+                return
+            if (cluster is not None and not cluster.covers(cell)
+                    or road is not None and self._strict_positive_overlap(cell, road)):
+                return
+            neighbours = (self._query_indexed_geometries(source_tree, points, cell.buffer(1e-7))
+                          if source_tree is not None else points)
+            if any(other is not points[i] and cell.buffer(1e-7).covers(other) for other in neighbours):
+                return
+            obstacles = (self._query_indexed_geometries(fixed_tree, fixed, cell)
+                         if fixed_tree is not None else fixed)
+            if any(self._strict_positive_overlap(cell, other) for other in obstacles):
+                return
+            domains[i][cell.wkb] = cell
+            metadata[i, cell.wkb] = angle
+        for i in indexes:
+            checkpoint()
+            routes = [line for line in self.hp_strip_reference_lines
+                      if points[i].distance(line) <= HP_STRIP_MAX_DEPTH_METERS + 1e-7]
+            if not routes:
+                return None
+            frame = self._home_number_frame_from_line(sites[i], min(routes, key=points[i].distance))
+            if frame is None:
+                return None
+            frames[i] = frame
+            domains[i] = {}
+            for delta in [0.0] + [sign * step for step in range(5, 91, 5) for sign in (-1, 1)]:
+                angle = frame["road_angle"] + delta
+                for width in (4.0, 3.0, HP_STRIP_FLEX_MIN_WIDTH_METERS):
+                    keep(i, self._home_number_box_polygon(sites[i], width, HP_STRIP_MIN_DEPTH_METERS, angle), angle)
+            if not domains[i]:
+                return None
+        # Pair contradiction is verified over complete captured centered domains;
+        # it chooses a recovery scope, never claims continuous infeasibility.
+        core = set()
+        for position, i in enumerate(indexes):
+            for j in indexes[position+1:]:
+                if points[i].distance(points[j]) > 15.0:
+                    continue
+                checkpoint()
+                if any(not self._strict_positive_overlap(a, b)
+                       for a in domains[i].values() for b in domains[j].values()):
+                    continue
+                if (pending[i].get("fat_owner") != pending[j].get("fat_owner")
+                        or i not in contexts or j not in contexts):
+                    return None
+                core.update((i, j))
+        if len(core) > 8:
+            return None
+        for i in sorted(core):
+            base = frames[i]["road_angle"]
+            for delta in [0.0] + [sign * step for step in range(5, 91, 5) for sign in (-1, 1)]:
+                checkpoint()
+                angle = base + delta
+                theta = math.radians(angle)
+                for dv in (-.5, .5, -1., 1., -1.5, 1.5, -2., 2., -2.5, 2.5, -3., 3., -3.5, 3.5):
+                    for du in (0., -.5, .5):
+                        center = (sites[i][0] + du*math.cos(theta) - dv*math.sin(theta),
+                                  sites[i][1] + du*math.sin(theta) + dv*math.cos(theta))
+                        if (not self._hp_center_stays_on_side(center, contexts[i])
+                                or not self._hp_relief_path_clear(sites[i], center, road)):
+                            continue
+                        keep(i, self._home_number_box_polygon(center, HP_STRIP_FLEX_MIN_WIDTH_METERS,
+                                                              HP_STRIP_MIN_DEPTH_METERS, angle), angle)
+        plans = [{"indexes": [i], "options": [{i: cell} for cell in domains[i].values()]} for i in indexes]
+        # Keep the selector's unchanged60s hard budget; generation above has
+        # its own explicit60s bound, not an unbounded whole-file retry.
+        selected = self._select_hp_local_candidates(plans, [], pipeline_logger)
+        if selected is None or set(selected) != set(indexes):
+            return None
+        pipeline_log(pipeline_logger, "info", f"[3/6] HP flexible residuals: {len(selected)} cells, local recovery IDs={sorted(core)}.")
+        return selected, {i: metadata[i, cell.wkb] for i, cell in selected.items()}, {
+            i: (cell.centroid.x, cell.centroid.y) for i, cell in selected.items()}
+
+    def _finalize_home_numbers_as_parcels(self, pipeline_logger=None) -> None:
+        """Rotate first; same-side local relief<=8m, never cross ROAD for a free slot."""
+        pending = self.pending_home_numbers
+        self._hp_ai_recovery_state = {"calls": 0, "started": None, "applied": 0}
+        self._hp_strip_chain_budgets = {}
+        self._hp_cover_progress_started = time.perf_counter()
+        self._hp_cover_progress_total = len(pending)
+        self._hp_cover_progress_next, self._hp_cover_progress_last = 25, 0
+        sites = [tuple(float(value) for value in item["projected"]) for item in pending]
+        if any(len(site) != 2 or not all(math.isfinite(v) for v in site) for site in sites):
+            raise ValueError("HP fixed anchor has invalid coordinates")
+        points = [ShapelyPoint(site) for site in sites]
+        road = self._home_parcel_road_solid()
+        blocks = self._hp_local_block_hints(pending, sites, pipeline_logger)
+        preferred = {i: block["angle"] for block in blocks for i in block["indexes"]}
+        centered = [self._hp_centered_road_clear_options(site, road, preferred.get(i))
+                    for i, site in enumerate(sites)]
+        contexts = self._hp_same_side_relief_contexts(pending, centered)
+        movable = set(contexts)
+        tight = [(i, j) for i, point in enumerate(points) if i not in movable
+                 for j in range(i + 1, len(points)) if j not in movable
+                 and point.distance(points[j]) < 4.0 - 1e-7]
+        if tight:
+            raise ValueError(f"HP fixed-anchor density infeasible: stationary centers below 4m pairs={tight}")
+        source_tree = STRtree(points) if STRtree is not None and points else None
+        fixed = [p for p in self.home_number_boxes if p is not None and not p.is_empty]
+        cluster = self.road_clip_geometry
+        cluster = cluster.buffer(1e-6) if cluster is not None and not cluster.is_empty else None
+        # Preserve at least one legal centered option for stationary sources
+        # outside a proposed strip. A route corner is not a straight-row member.
+        stationary_domains = {}
+        stationary_point_ids = {id(points[j]) for j in range(len(points)) if j not in movable}
+        for i in range(len(pending)):
+            if i in movable:
+                continue
+            legal = {}
+            for parcel, _angle in centered[i]:
+                if (parcel.wkb in legal
+                        or cluster is not None and not cluster.covers(parcel)
+                        or any(self._strict_positive_overlap(parcel, other) for other in fixed)):
+                    continue
+                nearby = (self._query_indexed_geometries(source_tree, points, parcel.buffer(2.0))
+                          if source_tree is not None else points)
+                padded = parcel.buffer(1e-7)
+                if any(other is not points[i] and
+                       (padded.covers(other) or id(other) in stationary_point_ids
+                        and parcel.distance(other) < 2.0 - 1e-7) for other in nearby):
+                    continue
+                legal[parcel.wkb] = parcel
+            if legal:
+                stationary_domains[i] = list(legal.values())
+        # A dense/route corner can need the newly authorized2m frontage even
+        # when the legacy4m domain marked it movable. Reserve only actual legal
+        # centered options; this creates no permission to move another source.
+        corner_domains = {}
+        for i, site in enumerate(sites):
+            if pending[i].get("hp_uncover"):
+                continue
+            routes = [line for line in self.hp_strip_reference_lines
+                      if points[i].distance(line) <= HP_STRIP_MAX_DEPTH_METERS + 1e-7]
+            if not routes:
+                continue
+            line = min(routes, key=points[i].distance)
+            frame = self._home_number_frame_from_line(site, line)
+            if frame is None:
+                continue
+            options = []
+            angles = [frame["road_angle"] + delta for delta in
+                      [0.0] + [sign * step for step in range(5, 91, 5) for sign in (-1, 1)]]
+            for angle in angles:
+                cell = self._home_number_box_polygon(site, HP_STRIP_FLEX_MIN_WIDTH_METERS,
+                                                     HP_STRIP_MIN_DEPTH_METERS, angle)
+                if (cluster is not None and not cluster.covers(cell)
+                        or road is not None and self._strict_positive_overlap(cell, road)
+                        or any(self._strict_positive_overlap(cell, other) for other in fixed)):
+                    continue
+                nearby = (self._query_indexed_geometries(source_tree, points, cell.buffer(1e-7))
+                          if source_tree is not None else points)
+                if any(other is not points[i] and cell.buffer(1e-7).covers(other) for other in nearby):
+                    continue
+                options.append(cell)
+            if options:
+                corner_domains[i] = options
+        def strip_keeps_stationary_options(proposal):
+            occupied = list(proposal.values())
+            tree = STRtree(occupied) if STRtree is not None and occupied else None
+            def clear(cell):
+                nearby = (self._query_indexed_geometries(tree, occupied, cell)
+                          if tree is not None else occupied)
+                return not any(self._strict_positive_overlap(cell, other) for other in nearby)
+            return all(i in proposal or any(clear(cell) for cell in options)
+                       for domains in (stationary_domains, corner_domains)
+                       for i, options in domains.items())
+        # Housing-estate rule: long straight ROAD-side runs share one front
+        # line with uniform dividers; those slots become fixed obstacles for
+        # the remaining per-source planning only after neighbour support passes.
+        strip_parcels, strip_contexts, strip_rotations, strip_centers = self._strict_hp_strip_layout(
+            list(range(len(pending))), points, pending, cluster, fixed, pipeline_logger,
+            precommit_check=strip_keeps_stationary_options,
+        )
+        strip_indexes = set(strip_parcels)
+        if strip_parcels:
+            fixed = fixed + list(strip_parcels.values())
+        flexible = None
+        residual_indexes = [i for i in range(len(pending)) if i not in strip_indexes]
+        if strip_parcels and self.hp_strip_reference_lines:
+            flexible = self._hp_flexible_residual_plan(residual_indexes, pending, sites, points,
+                                                      fixed, road, cluster, contexts, pipeline_logger)
+        # Retain alternatives; one neighbour can force another HP to a smaller tier.
+        plans = []
+        angles_by_index = {}
+        missing = []
+        source_index = {id(point): i for i, point in enumerate(points)}
+        for i in range(len(pending)):
+            if i in strip_indexes:
+                continue
+            if flexible is not None:
+                cell, angle = flexible[0][i], flexible[1][i]
+                plans.append({"indexes": [i], "options": [{i: cell}]})
+                angles_by_index[i] = {cell.wkb: angle}
+                continue
+            options = []
+            angles_by_index[i] = {}
+            def accept(parcel, angle):
+                if cluster is not None and not cluster.covers(parcel):
+                    return
+                if any(self._strict_positive_overlap(parcel, other) for other in fixed):
+                    return
+                neighbours = (self._query_indexed_geometries(source_tree, points, parcel.buffer(2.0))
+                              if source_tree is not None else points)
+                if any(source_index[id(other)] != i and source_index[id(other)] not in movable
+                       and parcel.distance(other) < 2.0 - 1e-7 for other in neighbours):
+                    return
+                if parcel.wkb not in angles_by_index[i]:
+                    options.append({i: parcel})
+                    angles_by_index[i][parcel.wkb] = angle
+            # Any centred ROAD-clear tier keeps this HP immobile, even if crowded.
+            for parcel, angle in centered[i]:
+                accept(parcel, angle)
+            if i in movable:
+                context = contexts[i]
+                base = context["road_angle"]
+                # Normal/tangent local relief, not grid-slot assignment or a cross-road exit.
+                angles = tuple(dict.fromkeys([self._readable_angle(base), self._readable_angle(base + 90)]
+                                             + list(self._hp_rotation_candidates(sites[i]))))
+                directions = (90., -90., 0., 180., 75., 105., -75., -105., 60., 120., -60., -120.)
+                local_road = road.intersection(points[i].buffer(18.0)) if road is not None else None
+                # ponytail: 16rings x12directions x2rotations, intact4x8 relief;
+                # span all<=8m, then grow accepted cells without moving centers.
+                for ring in range(1, 17):
+                    radius = ring * 0.5
+                    for width, depth in HP_COVER_PARCEL_SIZE_TIERS[-1:]:
+                        for angle in angles[:2]:
+                            for delta in directions:
+                                theta = math.radians(base + delta)
+                                center = (sites[i][0] + radius * math.cos(theta),
+                                          sites[i][1] + radius * math.sin(theta))
+                                if (not self._hp_center_stays_on_side(center, context)
+                                        or not self._hp_relief_path_clear(sites[i], center, local_road)):
+                                    continue
+                                parcel = self._home_number_box_polygon(center, width, depth, angle)
+                                if local_road is not None and self._strict_positive_overlap(parcel, local_road):
+                                    continue
+                                accept(parcel, angle)
+            if not options:
+                missing.append(i)
+            plans.append({"indexes": [i], "options": options})
+            self._hp_cover_progress_checkpoint(pipeline_logger, i + 1, "rotate-first candidates")
+        def identities(indexes):
+            return [{"index": i, "text": pending[i]["text"], "source": sites[i],
+                     "class": "HP UNCOVER" if pending[i].get("hp_uncover") else "HP COVER",
+                     "owner": pending[i].get("fat_owner")} for i in indexes]
+        if missing:
+            recovered = self._hp_ai_recovery(
+                missing, pending, sites, points, {}, fixed, road, angles_by_index, contexts,
+                "angle_size_exhausted", pipeline_logger,
+            )
+            for plan in plans:
+                i = plan["indexes"][0]
+                if i in recovered:
+                    plan["options"] = [{i: recovered[i]}]
+            if set(recovered) != set(missing):
+                if cluster is not None and any(not cluster.covers(points[i]) for i in missing if i not in recovered):
+                    raise ValueError("Boundary cluster tidak mencakup semua HP. Revisi KMZ pada bagian BOUNDARY CLUSTER agar mencakup seluruh HP, lalu upload dan convert ulang.")
+                raise ValueError(f"HP fixed-anchor bounded angle/size options exhausted: {identities(missing)}")
+        # Candidate-envelope components only; no 823-member global greedy allocator.
+        # Strip-run HP are absent from `plans`; envelope keys follow each plan's
+        # own HP index, never its position in the list.
+        envelopes = [Polygon.from_bounds(
+            min(option[plan["indexes"][0]].bounds[0] for option in plan["options"]),
+            min(option[plan["indexes"][0]].bounds[1] for option in plan["options"]),
+            max(option[plan["indexes"][0]].bounds[2] for option in plan["options"]),
+            max(option[plan["indexes"][0]].bounds[3] for option in plan["options"]),
+        ) for plan in plans]
+        parent = list(range(len(plans)))
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        envelope_tree = STRtree(envelopes) if STRtree is not None and envelopes else None
+        envelope_index = {id(poly): i for i, poly in enumerate(envelopes)}
+        for i, envelope in enumerate(envelopes):
+            nearby = (self._query_indexed_geometries(envelope_tree, envelopes, envelope)
+                      if envelope_tree is not None else envelopes)
+            for other in nearby:
+                j = envelope_index[id(other)]
+                if j > i and self._strict_positive_overlap(envelope, other):
+                    parent[find(j)] = find(i)
+        components = defaultdict(list)
+        for i in range(len(plans)):
+            components[find(i)].append(i)
+        selected = {}
+        for indexes in components.values():
+            pipeline_log(pipeline_logger, "info",
+                         f"[3/6] HP candidate component: plans={len(indexes)} "
+                         f"options={sum(len(plans[i]['options']) for i in indexes)}.")
+            component_probe = unary_union([envelopes[i] for i in indexes])
+            occupied = [poly for poly in fixed + list(selected.values()) if poly.intersects(component_probe)]
+            result = self._select_strict_strip_candidates([plans[i] for i in indexes], base_obstacles=occupied,
+                                                          pipeline_logger=pipeline_logger)
+            if result is None:
+                pipeline_log(pipeline_logger, "warning",
+                             f"[3/6] HP candidate component exhausted; applying dense shared-block tessellation fallback for {len(indexes)} HPs.")
+                hp_target_indexes = [plans[idx]["indexes"][0] for idx in indexes]
+                result = self._hp_ai_recovery(
+                    hp_target_indexes, pending, sites, points, selected, fixed, road,
+                    angles_by_index, contexts, "candidate_exhausted", pipeline_logger,
+                    preview_cells=[next(iter(plans[idx]["options"][0].values())) for idx in indexes],
+                )
+                if not result:
+                    result = self._dense_shared_block_tessellation(
+                        hp_target_indexes, pending, sites, points, fixed + list(selected.values()), road,
+                        angles_by_index, pipeline_logger=pipeline_logger, relief_contexts=contexts,
+                    )
+                if not result or len(result) != len(hp_target_indexes):
+                    # A fallback can leave its original candidate envelope. Reopen
+                    # only the already-selected cells blocking this local domain.
+                    closure = set(hp_target_indexes)
+                    for _round in range(3):
+                        probe = unary_union([envelopes[pos] for pos, plan in enumerate(plans)
+                                             if plan["indexes"][0] in closure])
+                        blockers = {i for i, poly in selected.items()
+                                    if i not in closure and poly.intersects(probe)}
+                        if not blockers or len(closure | blockers) > 64:
+                            break
+                        closure.update(blockers)
+                        outside = fixed + [poly for i, poly in selected.items() if i not in closure]
+                        repaired = self._dense_shared_block_tessellation(
+                            sorted(closure), pending, sites, points, outside, road,
+                            angles_by_index, pipeline_logger=pipeline_logger, relief_contexts=contexts,
+                        )
+                        if set(repaired) == closure:
+                            for i in closure:
+                                selected.pop(i, None)
+                            result = repaired
+                            break
+                    if not result:
+                        outside = fixed + [poly for i, poly in selected.items() if i not in closure]
+                        recovered = self._hp_ai_recovery(
+                            sorted(closure), pending, sites, points, selected, fixed, road,
+                            angles_by_index, contexts, "local_closure_exhausted", pipeline_logger,
+                            preview_cells=[selected[i] for i in closure if i in selected],
+                        )
+                        if set(recovered) == closure:
+                            for i in closure:
+                                selected.pop(i, None)
+                            result = recovered
+                    if not result:
+                        raise ValueError(f"HP fixed-anchor bounded candidate search exhausted: {identities(hp_target_indexes)}")
+            selected.update(result)
+        rotations = {i: angles_by_index[i][parcel.wkb] for i, parcel in selected.items()}
+        centers = {i: (parcel.centroid.x, parcel.centroid.y) for i, parcel in selected.items()}
+        # Centred13x13 cells have radius<9.2m: only centres<=19m can overlap.
+        center_ids = list(selected)
+        center_points = [ShapelyPoint(centers[i]) for i in center_ids]
+        center_tree = STRtree(center_points) if STRtree is not None and center_points else None
+        center_index = {id(point): i for i, point in zip(center_ids, center_points)}
+        fixed_tree = STRtree(fixed) if STRtree is not None and fixed else None
+        # Grow symmetrically only; keep selected center/angle and all hard gates.
+        for i in ([] if flexible is not None else sorted(selected)):
+            corners = list(selected[i].exterior.coords)
+            width, depth = (round(math.dist(corners[j], corners[j + 1]), 6) for j in (0, 1))
+            probe = ShapelyPoint(centers[i]).buffer(19.0)
+            nearby = (self._query_indexed_geometries(center_tree, center_points, probe)
+                      if center_tree is not None else center_points)
+            neighbours_ids = [center_index[id(point)] for point in nearby if center_index[id(point)] != i]
+            local_fixed = (self._query_indexed_geometries(fixed_tree, fixed, probe)
+                           if fixed_tree is not None else fixed)
+            local_road = road.intersection(probe) if road is not None else None
+            dimensions = [(w, d) for w in dict.fromkeys([width + .5 * n for n in range(27)
+                                                        if width + .5 * n < 13.0] + [13.0])
+                          for d in dict.fromkeys([depth + .5 * n for n in range(27)
+                                                 if depth + .5 * n < 13.0] + [13.0])]
+            others = local_fixed + [selected[j] for j in neighbours_ids]
+            for w, d in sorted(dimensions, key=lambda size: (-size[0] * size[1], -size[1], -size[0])):
+                parcel = self._home_number_box_polygon(centers[i], w, d, rotations[i])
+                if local_road is not None and self._strict_positive_overlap(parcel, local_road):
+                    continue
+                if cluster is not None and not cluster.covers(parcel):
+                    continue
+                if any(self._strict_positive_overlap(parcel, other) for other in others):
+                    continue
+                neighbours = (self._query_indexed_geometries(source_tree, points, parcel.buffer(1e-7))
+                              if source_tree is not None else points)
+                if any(other is not points[i] and parcel.buffer(1e-7).covers(other) for other in neighbours):
+                    continue
+                selected[i] = parcel
+                break
+        aligned = (set() if flexible is not None else
+                   self._hp_align_local_rows(blocks, selected, sites, pending, fixed, road,
+                                             cluster, rotations, centers, contexts, pipeline_logger))
+        combined = dict(strip_parcels)
+        combined.update(selected)
+        all_rotations = dict(strip_rotations); all_rotations.update(rotations)
+        all_centers = dict(strip_centers); all_centers.update(centers)
+        all_contexts = dict(strip_contexts); all_contexts.update(contexts)
+        self._hp_ai_recheck_plan(
+            combined, sites, points, pending,
+            [p for p in self.home_number_boxes if p is not None and not p.is_empty], road,
+            all_rotations, all_centers, all_contexts, pipeline_logger,
+        )
+        for i, cell in combined.items():
+            if i in strip_indexes:
+                strip_parcels[i] = cell; strip_rotations[i] = all_rotations[i]
+                strip_centers[i] = all_centers[i]
+                if i in all_contexts: strip_contexts[i] = all_contexts[i]
+            else:
+                selected[i] = cell; rotations[i] = all_rotations[i]; centers[i] = all_centers[i]
+                if i in all_contexts: contexts[i] = all_contexts[i]
+        ai_indexes = {i for block in blocks if block["ai"] for i in block["indexes"]}
+        ai_applied = sum(i in selected and abs(((rotations[i] - preferred[i] + 90.) % 180.) - 90.) <= 1e-6
+                         for i in ai_indexes)
+        self.hp_layout_summary = {"blocks": len(blocks), "ai_accepted_blocks": sum(block["ai"] for block in blocks),
+                                  "ai_applied_cells": ai_applied, "shared_row_cells": len(aligned)}
+        pipeline_log(pipeline_logger, "info", f"[3/6] HP AI applied: cells={ai_applied}; shared-row cells={len(aligned)}.")
+        self._last_label_only_indexes = set()
+        self._last_relaxed_4x8_indexes = set()
+        self._hp_cover_drawn_indexes = set()
+        if strip_parcels:
+            self._commit_strict_strip_parcels(
+                sorted(strip_parcels), strip_parcels, points, pending,
+                {"layer": KML_HOME_NUMBER_BOX_LAYER, "color": KML_HOME_NUMBER_BOX_COLOR},
+                {"layer": KML_HOME_NUMBER_LAYER, "color": KML_HOME_NUMBER_COLOR, "style": "EVA_BOLD"},
+                rotation_by_index=strip_rotations, centers_by_index=strip_centers,
+                extra_relief_contexts=strip_contexts,
+            )
+        remaining = [i for i in range(len(pending)) if i not in strip_indexes]
+        if remaining:
+            self._commit_strict_strip_parcels(
+                remaining, selected, points, pending,
+                {"layer": KML_HOME_NUMBER_BOX_LAYER, "color": KML_HOME_NUMBER_BOX_COLOR},
+                {"layer": KML_HOME_NUMBER_LAYER, "color": KML_HOME_NUMBER_COLOR, "style": "EVA_BOLD"},
+                rotation_by_index=rotations, centers_by_index=centers,
+                extra_relief_contexts=contexts,
+            )
+        if self._hp_cover_drawn_indexes != set(range(len(pending))):
+            raise ValueError("HP fixed-anchor source/cell/label accounting failed")
+        pipeline_log(pipeline_logger, "success",
+                     f"[3/6] HP rotate-first: {len(pending)} cells; "
+                     f"same-side shifted={sum(ShapelyPoint(centers[i]).distance(points[i]) > 1e-6 for i in centers)}, cap=8m.")
+
+    def _finalize_hp_uncover_relief(self, pipeline_logger=None) -> None:
+        """UNCOVER owns no FAT; place intact cells only in remaining legal space."""
+        road = self._home_parcel_road_solid()
+        fats = self.fat_area_geometries + [item["polygon"] for item in self.pending_boundary_fat_polygons]
+        if self.pending_uncover_home_numbers and self.pending_boundary_fat_polygons:
+            # Reserve the unchanged COVER-only FAT plan plus native connector clearance.
+            fats += [polygon.buffer(.6, join_style=2) for polygon in
+                     self.finalize_boundary_fat_polygons(reserve_only=True) if not polygon.is_empty]
+        for index, raw in enumerate(self.pending_uncover_home_numbers):
+            source = tuple(float(value) for value in raw["projected"])
+            if len(source) != 2 or not all(math.isfinite(v) for v in source):
+                raise ValueError("HP UNCOVER anchor has invalid coordinates")
+            obstacles = self.home_number_boxes + fats
+            parcel = next((cell for cell, angle in self._hp_centered_road_clear_options(source, road)
+                           if not any(self._strict_positive_overlap(cell, other) for other in obstacles)), None)
+            if parcel is None:
+                # ponytail: exhaustive local 0.5m rings x24 directions x5-degree axes;
+                # no site-wide allocator, option truncation, clipping or source nudge.
+                probe = ShapelyPoint(source).buffer(25.0)
+                blocked = unary_union(([road.intersection(probe)] if road is not None else [])
+                                      + [other for other in obstacles if other.intersects(probe)])
+                angles = self._hp_rotation_candidates(source)
+                directions = (90., -90., 0., 180.) + tuple(d for d in range(0, 360, 15)
+                                                          if d not in (0, 90, 180, 270))
+                def displaced_options():
+                    for ring in range(1, 31):
+                        for direction in directions:
+                            theta = math.radians(angles[0] + direction)
+                            center = (source[0] + ring * .5 * math.cos(theta),
+                                      source[1] + ring * .5 * math.sin(theta))
+                            if blocked.distance(ShapelyPoint(center)) < 2.0 - 1e-7:
+                                continue
+                            for width, depth in HP_COVER_PARCEL_SIZE_TIERS:
+                                for angle in angles:
+                                    cell = self._home_number_box_polygon(center, width, depth, angle)
+                                    if not self._strict_positive_overlap(cell, blocked):
+                                        yield cell
+                parcel = next(displaced_options(), None)
+            center = (parcel.centroid.x, parcel.centroid.y) if parcel is not None else source
+            if _distance(source, center) > 15.0 + 1e-7:
+                raise ValueError("HP UNCOVER center shift exceeds15m")
+            attrs = {"layer": KML_UNCOVER_LAYER, "color": 8}
+            self._ensure_layer(KML_UNCOVER_LAYER, color=8)
+            start = len(self.output_entities)
+            if parcel is None:
+                self._remember_output(self.modelspace.add_point(source, dxfattribs=attrs))
+                message = (f"HP UNCOVER {raw['text']} index={index}: bounded housing options exhausted "
+                           f"within15m; retaining gray source point+label at {source}.")
+                LOGGER.warning(message)
+                pipeline_log(pipeline_logger, "warning", message)
+            else:
+                self._add_polyline(list(parcel.exterior.coords), close=True, dxfattribs=attrs)
+                self.home_number_boxes.append(parcel)
+                self.home_number_box_uncover.append(True)
+            self._add_centered_text(str(raw["text"]), center, KML_HOME_NUMBER_HEIGHT_METERS,
+                                    dxfattribs={**attrs, "style": "EVA_BOLD"},
+                                    rotation=self._polygon_label_rotation(parcel) if parcel is not None else 0.0)
+            self._record_home_number_cell(parcel if parcel is not None else Polygon(),
+                                          {**raw, "hp_uncover": True, "fat_owner": None})
+            self.home_number_cells[-1]["source_only"] = parcel is None
+            self.register_fdt_entities(raw.get("fdt_number"), self.output_entities[start:])
 
     def _finalize_uncover_home_numbers_as_parcels(self, pipeline_logger=None) -> None:
         """Render HP UNCOVER as land-parcel cells (Voronoi tessellation clipped
@@ -4076,10 +7053,15 @@ class OSMToDXFHandler(osmium.SimpleHandler):
 
         for index, point in enumerate(sites):
             sp = ShapelyPoint(point)
-            owned = [(area_idx, poly) for area_idx, poly in enumerate(fat_areas) if poly.buffer(1e-6).covers(sp)]
-            if owned:
-                area_idx, _poly = min(owned, key=lambda item: item[1].area)
-                groups.setdefault(area_idx, []).append(index)
+            best_area_idx = None
+            best_dist = None
+            for area_idx, poly in enumerate(fat_areas):
+                dist = point_polygon_distance_meter(point, poly.exterior.coords)
+                if best_dist is None or dist < best_dist:
+                    best_dist = dist
+                    best_area_idx = area_idx
+            if best_area_idx is not None:
+                groups.setdefault(best_area_idx, []).append(index)
             else:
                 no_fat_indexes.append(index)
 
@@ -4186,7 +7168,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         """
         if len(indexes) < 3:
             return [indexes]
-        gap = 32.0  # ponytail: fixed locality ceiling; make config only after field tuning.
+        # A shared strip may not bridge a source gap beyond 13m parcel cap.
+        gap = 13.0
         remaining = set(indexes)
         components: list[list[int]] = []
         while remaining:
@@ -4288,6 +7271,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                             continue
                         self._add_polyline(list(poly.exterior.coords), close=True, dxfattribs=box_attrs)
                         self.home_number_boxes.append(poly)
+                        self.home_number_box_uncover.append(bool(pending[idx].get("hp_uncover")))
+                        self._record_home_number_cell(poly, pending[idx])
                     center = label_polygon.representative_point()
                     self._add_centered_text(str(pending[idx]["text"]), (center.x, center.y), KML_HOME_NUMBER_HEIGHT_METERS,
                                             dxfattribs=text_attrs, rotation=self._polygon_label_rotation(label_polygon))
@@ -4357,44 +7342,123 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if not indexes:
             return 0
 
-        # Do not force a full FAT AREA into one orientation. Split local blocks
-        # first, then this function selects one axis per sub-block.
+        # Strict final topology uses ROAD-side planar slot allocation. Cells are
+        # created before source assignment, so local planner boxes cannot overlap.
         if not _subblocks_split:
-            subblocks = self._split_hp_parcel_subblocks(indexes, sites)
+            strip_parcels, rotation_by_index, _segment_by_index = self._strict_segmented_hp_plan(
+                indexes,
+                sites,
+                clip_region,
+                fill_region,
+                base_obstacles=list(self.home_number_boxes),
+                pipeline_logger=pipeline_logger,
+            )
+            return self._commit_strict_strip_parcels(
+                indexes, strip_parcels, site_points, pending, box_attrs, text_attrs,
+                rotation_by_index=rotation_by_index,
+            )
+
+        # Legacy local strip route remains only for explicit recursive calls.
+        if not _subblocks_split:
+            local_blocks = self._split_hp_parcel_subblocks(indexes, sites)
+            roads = [line for line in self.road_centerlines if line is not None and not line.is_empty and line.length > 2]
+            subblocks = []
+            for local_block in local_blocks:
+                corridor_groups = defaultdict(list)
+                for index in local_block:
+                    point = ShapelyPoint(sites[index])
+                    if not roads:
+                        corridor_groups[(None, 0, 0)].append(index)
+                        continue
+                    road_index, road = min(enumerate(roads), key=lambda item: point.distance(item[1]))
+                    distance = road.project(point)
+                    epsilon = min(2.0, max(.25, road.length * .01))
+                    point_a = road.interpolate(max(0.0, distance - epsilon))
+                    point_b = road.interpolate(min(road.length, distance + epsilon))
+                    dx, dy = point_b.x - point_a.x, point_b.y - point_a.y
+                    near = road.interpolate(distance)
+                    signed = (point.x - near.x) * (-dy) + (point.y - near.y) * dx
+                    # Keep one local ROAD segment + side together. Splitting by
+                    # each source tangent fragments one physical row at curves;
+                    # continuous projection runs below provide the real 13m cap.
+                    corridor_groups[(road_index, 1 if signed >= 0 else -1)].append(index)
+                # Same tangent bucket may recur far apart on one long curved
+                # OSM LineString. A shared strip cannot bridge a ROAD-projection
+                # gap above the 13m parcel cap, so split continuous local runs.
+                for corridor_key, members in corridor_groups.items():
+                    road_index = corridor_key[0]
+                    if road_index is None or len(members) < 2:
+                        subblocks.append(members)
+                        continue
+                    road = roads[road_index]
+                    ordered = sorted(members, key=lambda item: (road.project(ShapelyPoint(sites[item])), item))
+
+                    def _local_tangent(item):
+                        projection = road.project(ShapelyPoint(sites[item]))
+                        epsilon = min(2.0, max(.25, road.length * .01))
+                        point_a = road.interpolate(max(0.0, projection - epsilon))
+                        point_b = road.interpolate(min(road.length, projection + epsilon))
+                        return math.degrees(math.atan2(point_b.y - point_a.y, point_b.x - point_a.x))
+
+                    def _axis_delta(left, right):
+                        return abs(((right - left + 90.0) % 180.0) - 90.0)
+
+                    run = [ordered[0]]
+                    previous_projection = road.project(ShapelyPoint(sites[ordered[0]]))
+                    previous_tangent = _local_tangent(ordered[0])
+                    for item in ordered[1:]:
+                        projection = road.project(ShapelyPoint(sites[item]))
+                        tangent = _local_tangent(item)
+                        # Split only a real bend/junction. Small tangent jitter on
+                        # one physical row stays together and shares one axis.
+                        if projection - previous_projection > 13.0 or _axis_delta(previous_tangent, tangent) > 35.0:
+                            subblocks.append(run)
+                            run = []
+                        run.append(item)
+                        previous_projection = projection
+                        previous_tangent = tangent
+                    if run:
+                        subblocks.append(run)
             if len(subblocks) > 1:
                 if pipeline_logger is not None:
-                    pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER split into {len(subblocks)} local blocks before axis selection.")
-                total = 0
-                for block in subblocks:
-                    local_region = clip_region
-                    # Build half-plane clip based on nearest road side for this sub-block.
-                    if len(block) >= 2 and self.road_centerlines:
-                        center = MultiPoint([ShapelyPoint(sites[i]) for i in block]).centroid
-                        road = min(self.road_centerlines, key=lambda line: line.distance(center))
-                        probe = ShapelyPoint(sites[block[0]])
-                        d = road.project(probe)
-                        eps = min(2.0, max(.25, road.length * .01))
-                        a = road.interpolate(max(0.0, d-eps)); b = road.interpolate(min(road.length, d+eps))
-                        dx, dy = b.x-a.x, b.y-a.y
-                        side = (probe.x-a.x)*dy-(probe.y-a.y)*dx
-                        minx,miny,maxx,maxy=clip_region.bounds
-                        span=max(maxx-minx,maxy-miny,1.0)*4.0
-                        if side >= 0:
-                            cutter=Polygon([(a.x-dy*span,a.y+dx*span),(b.x-dy*span,b.y+dx*span),(b.x+dy*span,b.y-dx*span),(a.x+dy*span,a.y-dx*span)])
-                        else:
-                            cutter=Polygon([(a.x+dy*span,a.y-dx*span),(b.x+dy*span,b.y-dx*span),(b.x-dy*span,b.y+dx*span),(a.x-dy*span,a.y+dx*span)])
-                        try:
-                            candidate_region = clip_region.intersection(cutter)
-                            # Local road-side cut must retain every source HP.
-                            anchors_ok = candidate_region is not None and not candidate_region.is_empty and all(
-                                candidate_region.buffer(0.01).covers(ShapelyPoint(sites[i])) for i in block
-                            )
-                            local_region = candidate_region if anchors_ok else clip_region
-                        except Exception:
-                            local_region=clip_region
-                    if local_region is not None and not local_region.is_empty:
-                        total += self._draw_parcel_group(block, sites, site_points, pending, local_region, box_attrs, text_attrs, cap_radius, fill_region, pipeline_logger, True)
-                return total
+                    pipeline_log(
+                        pipeline_logger, "info",
+                        f"[3/6] HP COVER global ROAD planning: {len(subblocks)} local corridor blocks.",
+                    )
+                # Initial one-candidate planning is linear. Only local blocks
+                # whose first cells overlap are expanded and solved together.
+                strip_parcels, rotation_by_index = self._strict_global_hp_plan(
+                    subblocks,
+                    sites,
+                    clip_region,
+                    fill_region,
+                    base_obstacles=list(self.home_number_boxes),
+                    pipeline_logger=pipeline_logger,
+                )
+                all_indexes = [index for block in subblocks for index in block]
+                return self._commit_strict_strip_parcels(
+                    all_indexes, strip_parcels, site_points, pending, box_attrs, text_attrs,
+                    rotation_by_index=rotation_by_index,
+                )
+            # One local corridor: skip legacy Voronoi/compact route entirely.
+            indexes = subblocks[0] if subblocks else indexes
+            _subblocks_split = True
+
+        if _subblocks_split:
+            _angle, _options, _ai_hint = self._strict_ai_strip_options(
+                indexes, sites, clip_region, fill_region,
+                pipeline_logger=pipeline_logger, base_obstacles=list(self.home_number_boxes),
+                candidate_limit=1,
+            )
+            if not _options:
+                raise ValueError(
+                    f"HP COVER shared ROAD strip tidak lengkap: 0/{len(indexes)} parcel valid; "
+                    "Tidak membuat compact/label-only fallback."
+                )
+            return self._commit_strict_strip_parcels(
+                indexes, _options[0], site_points, pending, box_attrs, text_attrs,
+                rotation_by_index={index: _angle for index in indexes},
+            )
 
         # Road-first allocation. Front-row HPs establish a clean parcel row;
         # interior HPs then follow that same local axis/spacing.
@@ -4468,7 +7532,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             default=None,
         )
         if nearest_road is not None:
-            reference = clip_region.representative_point()
+            # Use ROAD tangent at source HP block, never a large clip centroid.
+            reference = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).centroid
+            local_roads = [
+                line for line in self.road_centerlines
+                if line is not None and not line.is_empty and line.length > 2
+            ]
+            nearest_road = min(local_roads, key=lambda line: line.distance(reference))
             if nearest_road.distance(reference) <= 18.0:
                 try:
                     position = nearest_road.project(reference)
@@ -4487,9 +7557,17 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         # Guardrail: never accept a wild turn more than 15 degrees away from
         # the road/FAT deterministic reference.
         try:
-            preview = self._hp_visual_parcel_svg(clip_region, [site_points[i] for i in indexes])
+            deterministic_candidate = self._road_strip_cells(
+                indexes, sites, clip_region, deterministic_angle, {}, require_clip=bool(fill_region)
+            )
+            preview = self._hp_visual_parcel_png(
+                clip_region,
+                [site_points[i] for i in indexes],
+                candidate_parcels=list(deterministic_candidate.values()),
+                failed_points=[site_points[i] for i in indexes if i not in deterministic_candidate],
+            )
             ai_hint = suggest_dxf_visual_parcel_layout(
-                preview_svg=preview,
+                preview_png=preview,
                 fat_angle=deterministic_angle,
                 road_angle=deterministic_angle,
                 point_count=len(group_sites),
@@ -4500,214 +7578,3048 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 if delta <= 15.0:
                     region_angle = candidate
                     ai_orientation = ai_hint
+                    if pipeline_logger is not None:
+                        pipeline_log(
+                            pipeline_logger,
+                            "info",
+                            "[3/6] HP COVER AI visual hint accepted: "
+                            f"axis {candidate:.1f}°, confidence {float(ai_hint['confidence']):.2f}, "
+                            f"road side {int(ai_hint['road_side'])}, "
+                            f"scale {float(ai_hint['width_scale']):.2f}×{float(ai_hint['depth_scale']):.2f}, "
+                            f"shift along {float(ai_hint.get('along_shift_m', 0.0)):.1f}m / normal {float(ai_hint.get('normal_shift_m', 0.0)):.1f}m.",
+                        )
+                elif pipeline_logger is not None:
+                    pipeline_log(
+                        pipeline_logger,
+                        "info",
+                        f"[3/6] HP COVER AI visual hint ignored: axis delta {delta:.1f}° exceeds 15° guard.",
+                    )
         except Exception as exc:
             LOGGER.debug("HP COVER constrained AI axis fallback: %s", exc)
-        # Collision solver rotates the whole local block only. It never rotates
-        # individual parcels and remains within the AI/deterministic ±15° band.
-        requested_angle = region_angle
-        region_angle = self._solve_hp_block_axis(indexes, sites, site_points, clip_region, requested_angle)
+        # Strict HP COVER has one renderer: complete shared ROAD strip. AI may
+        # refine one group axis, but never reroutes through compact/open-grid.
+        if not any(line is not None and not line.is_empty and line.length > 2 for line in self.road_centerlines):
+            raise ValueError("HP COVER memerlukan ROAD OSM; pilih wilayah/kecamatan dengan source ROAD aktif.")
+        ai_layout_hint = ai_orientation or {}
         if pipeline_logger is not None:
             mode = "AI-assisted" if ai_orientation else "deterministic"
-            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} collision-safe axis {region_angle:.1f}° (requested {requested_angle:.1f}°).")
-
-        # Road-front rectangles are primary. Voronoi is fallback only.
-        road_front_parcels = self._road_front_row_cells(indexes, sites, clip_region)
-        row_grid_parcels = self._hp_row_grid_parcels(indexes, sites, pending, clip_region, region_angle)
+            pipeline_log(pipeline_logger, "info", f"[3/6] HP COVER {mode} shared ROAD axis {region_angle:.1f}°.")
+        if clip_region is None or clip_region.is_empty:
+            clip_region = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).buffer(18.0, cap_style=3, join_style=2)
+        strip_parcels = self._road_strip_cells(
+            indexes, sites, clip_region, region_angle, ai_layout_hint, require_clip=bool(fill_region)
+        )
+        missing = [index for index in indexes if index not in strip_parcels]
+        if missing:
+            raise ValueError(
+                f"HP COVER shared ROAD strip tidak lengkap: {len(strip_parcels)}/{len(indexes)} parcel valid; "
+                f"{len(missing)} titik gagal. Tidak membuat compact/label-only fallback."
+            )
         drawn = 0
-        for local_idx, global_idx in enumerate(indexes):
-            road_front = road_front_parcels.get(global_idx)
-            cell = cell_for_local[local_idx]
-            if road_front is None and (cell is None or cell.is_empty):
-                cell = row_grid_parcels.get(global_idx)
-                if cell is None or cell.is_empty:
-                    continue
+        for global_idx in indexes:
+            parcel = strip_parcels[global_idx]
             site = site_points[global_idx]
             item = pending[global_idx]
-
-            # Road-fronting parcel: front edge attaches to nearest ROAD,
-            # parcel extends away from ROAD toward/through HP point, and width
-            # comes from local Voronoi density. This matches real cadastral
-            # subdivision: lots line up along roads instead of floating as
-            # free rectangles.
-            if road_front is not None:
-                parcel = road_front
-            else:
-                allowed = cell.intersection(clip_region)
-                road_solid = self._home_parcel_road_solid()
-                if road_solid is not None and not road_solid.is_empty:
-                    allowed = allowed.difference(road_solid)
-                if self.home_number_boxes:
-                    allowed = allowed.difference(unary_union(self.home_number_boxes))
-                other_hp_buffers = [site_points[j].buffer(3.0, cap_style=3, join_style=2) for j in indexes if j != global_idx]
-                if other_hp_buffers:
-                    allowed = allowed.difference(unary_union(other_hp_buffers))
-                parcel = self._fit_compact_rect(site, allowed, region_angle)
-            # If no shared-axis rectangle fits, leave this HP for retry/label
-            # fallback. Never introduce a per-cell arbitrary rectangle angle.
-            if parcel is None or parcel.is_empty:
-                continue
-            # Final hard guard for every renderer path (row-grid, road-front,
-            # and fallback): a parcel may never leave FAT AREA or enter ROAD.
-            # Do this after shape generation because row-grid can bypass the
-            # block-builder road subtraction.
-            try:
-                parcel = parcel.intersection(clip_region)
-                road_solid = self._home_parcel_road_solid()
-                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
-                    parcel = self._parcel_piece_containing(parcel.difference(road_solid), site)
-                else:
-                    parcel = self._parcel_piece_containing(parcel, site)
-            except Exception:
-                continue
-            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
-                # Final anchored fallback. Never drop a source HP because a
-                # Voronoi/road clip produced no usable polygon. Build a small
-                # deterministic rectangle around the immutable source point,
-                # then constrain it to the local FAT-safe region.
-                try:
-                    fallback_region = clip_region
-                    if fallback_region is not None and not fallback_region.is_empty:
-                        half = 2.0
-                        anchor_box = ShapelyPoint(site).buffer(half, cap_style=3, join_style=2)
-                        candidate = anchor_box.intersection(fallback_region)
-                        if road_solid is not None and not road_solid.is_empty:
-                            candidate = candidate.difference(road_solid)
-                        # Preserve one-HP-one-parcel: reserve all prior boxes.
-                        for existing_box in self.home_number_boxes:
-                            if existing_box is not None and not existing_box.is_empty:
-                                candidate = candidate.difference(existing_box)
-                        anchored = self._parcel_piece_containing(candidate, site)
-                        if anchored is not None and not anchored.is_empty:
-                            parcel = anchored
-                except Exception:
-                    parcel = None
-            if parcel is None or parcel.is_empty or not parcel.buffer(0.01).covers(site):
-                continue
-            # A house parcel must never collapse to a text-sized sliver.
-            # Let Run-2 relocate conflict anchors to nearby free space instead.
-            if parcel.area < 24.0:
-                continue
-            # Road clipping can leave a long thin spur at junctions. Keep the
-            # original KMZ anchor piece only; reject slivers that make parcels
-            # look like they cross a road in DXF.
-            try:
-                minx, miny, maxx, maxy = parcel.bounds
-                short_side = min(maxx - minx, maxy - miny)
-                if short_side < 0.45 and parcel.area < 8.0:
-                    continue
-            except Exception:
-                pass
-
-            # Global occupancy: blocks from all FAT/sub-blocks are mutually
-            # exclusive. Use a tiny buffer to avoid DXF visual overlap while
-            # allowing shared boundaries.
-            try:
-                occupied = [box for box in self.home_number_boxes if box is not None and not box.is_empty]
-                if occupied:
-                    parcel = parcel.difference(unary_union(occupied))
-                parcel = self._parcel_piece_containing(parcel, site)
-            except Exception:
-                parcel = None
-            if parcel is None or parcel.is_empty or parcel.area < 24.0:
-                continue
-            parcel = parcel.simplify(0.05, preserve_topology=True)
-            parcel = self._parcel_piece_containing(parcel, site)
-            if parcel is None or parcel.is_empty or parcel.area < 24.0:
-                continue
-
-            output_start_index = len(self.output_entities)
-            # One HP owns exactly one connected polygon. Detached clipped
-            # remnants are deliberately not drawn.
+            road_solid = self._home_parcel_road_solid()
+            if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                raise ValueError(f"HP COVER parcel {global_idx} overlap ROAD after strip generation.")
+            if not parcel.buffer(1e-6).covers(site):
+                road_lines = [
+                    line for line in getattr(
+                        self, "_last_hp_relocation_roads", self.road_centerlines
+                    )
+                    if line is not None and not line.is_empty
+                ]
+                max_relocation = self._strict_relocation_limit(site, road_lines)
+                if parcel.distance(site) > max_relocation + 1e-6:
+                    raise ValueError(
+                        f"HP COVER parcel {global_idx} melewati batas relokasi {max_relocation:g}m."
+                    )
+            if any(parcel.intersection(existing).area > 1e-7 for existing in self.home_number_boxes):
+                raise ValueError(f"HP COVER parcel {global_idx} positive-area overlap.")
             exterior = list(parcel.exterior.coords)
-            if len(exterior) < 4:
-                continue
+            output_start_index = len(self.output_entities)
             self._add_polyline(exterior, close=True, dxfattribs=box_attrs)
             self.home_number_boxes.append(parcel)
-
-            text = str(item["text"])
-            label_polygon = parcel
-            if label_polygon is None:
-                continue
-            # HP COVER label is anchored at the original KMZ placemark.
-            # Do not substitute polygon centre after clipping; that makes the
-            # source HP appear to move in DXF.
-            if not label_polygon.buffer(0.01).covers(site):
-                continue
-            # Text always sits at final parcel centre. Source coordinates are
-            # retained for parcel generation; this only prevents edge labels.
-            anchor = label_polygon.representative_point()
-            text_height = KML_HOME_NUMBER_HEIGHT_METERS
-            rotation = self._polygon_label_rotation(label_polygon)
+            self.home_number_box_uncover.append(bool(item.get("hp_uncover")))
+            self._record_home_number_cell(parcel, item)
+            anchor = parcel.representative_point()
             self._add_centered_text(
-                text, (anchor.x, anchor.y), text_height,
-                dxfattribs=text_attrs, rotation=rotation,
+                str(item["text"]), (anchor.x, anchor.y), KML_HOME_NUMBER_HEIGHT_METERS,
+                dxfattribs=text_attrs, rotation=self._polygon_label_rotation(parcel),
             )
             self.register_fdt_entities(item.get("fdt_number"), self.output_entities[output_start_index:])
             self._hp_cover_drawn_indexes.add(global_idx)
             drawn += 1
         return drawn
 
-    def _hp_visual_parcel_svg(self, region, points):
-        """Small dependency-free visual preview for multimodal parcel review."""
-        if region is None or region.is_empty: return ""
-        minx,miny,maxx,maxy=region.bounds; w=max(maxx-minx, 1.0); h=max(maxy-miny, 1.0)
-        pad=12; scale=min(480/w, 480/h)
-        def xy(x,y): return (pad+(x-minx)*scale, pad+(maxy-y)*scale)
-        def path(poly):
-            coords=list(poly.exterior.coords); return ' '.join((('M' if i==0 else 'L')+f'{xy(x,y)[0]:.1f},{xy(x,y)[1]:.1f}') for i,(x,y) in enumerate(coords))+' Z'
-        fat=''.join(f'<path d="{path(p)}" fill="#00d9ff22" stroke="#00d9ff" stroke-width="2"/>' for p in self._geometry_polygons(region))
-        roads=self._home_parcel_road_solid(); road=''
-        if roads is not None and not roads.is_empty:
-            road=''.join(f'<path d="{path(p)}" fill="#ff333355" stroke="#ff3333" stroke-width="2"/>' for p in self._geometry_polygons(roads.intersection(region.envelope)))
-        dots=''.join(f'<circle cx="{xy(p.x,p.y)[0]:.1f}" cy="{xy(p.x,p.y)[1]:.1f}" r="4" fill="#ffe600" stroke="#111"/>' for p in points)
-        size=int(max(w,h)*scale+pad*2)
-        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><rect width="100%" height="100%" fill="#111"/>{fat}{road}{dots}</svg>'
+    def _hp_visual_parcel_png(self, region, points, candidate_parcels=None, failed_points=None):
+        """PNG review: cyan region, red ROAD, green candidate cells, fixed HP points."""
+        if region is None or region.is_empty:
+            return b""
+        minx, miny, maxx, maxy = region.bounds
+        width, height = max(maxx - minx, 1.0), max(maxy - miny, 1.0)
+        pad, canvas = 16, 512
+        scale = min((canvas - 2 * pad) / width, (canvas - 2 * pad) / height)
+        draw_w = max(1, int(width * scale + 2 * pad))
+        draw_h = max(1, int(height * scale + 2 * pad))
+        image = Image.new("RGB", (draw_w, draw_h), "#111827")
+        draw = ImageDraw.Draw(image, "RGBA")
 
-    def _road_front_row_cells(self, indexes, sites, clip_region):
-        """Road-first rectangular parcels: 4x10 minimum, 13x13 maximum."""
-        if not indexes or clip_region is None or clip_region.is_empty:
+        def xy(x, y):
+            return (pad + (x - minx) * scale, pad + (maxy - y) * scale)
+
+        for polygon in self._geometry_polygons(region):
+            coords = [xy(x, y) for x, y in polygon.exterior.coords]
+            draw.polygon(coords, fill=(0, 217, 255, 28), outline=(0, 217, 255, 255), width=2)
+        roads = self._home_parcel_road_solid()
+        if roads is not None and not roads.is_empty:
+            for polygon in self._geometry_polygons(roads.intersection(region.envelope)):
+                coords = [xy(x, y) for x, y in polygon.exterior.coords]
+                draw.polygon(coords, fill=(255, 51, 51, 92), outline=(255, 51, 51, 255), width=2)
+        for parcel in candidate_parcels or []:
+            if parcel is None or parcel.is_empty:
+                continue
+            for polygon in self._geometry_polygons(parcel):
+                coords = [xy(x, y) for x, y in polygon.exterior.coords]
+                draw.polygon(coords, fill=(34, 197, 94, 48), outline=(74, 222, 128, 255), width=2)
+        radius = 4
+        failed = {(round(point.x, 4), round(point.y, 4)) for point in (failed_points or [])}
+        for point in points:
+            x, y = xy(point.x, point.y)
+            color = (255, 138, 31, 255) if (round(point.x, 4), round(point.y, 4)) in failed else (255, 230, 0, 255)
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color, outline=(17, 17, 17, 255), width=1)
+        out = io.BytesIO()
+        image.save(out, format="PNG", optimize=True)
+        return out.getvalue()
+
+    def _parcel_for_strip_or_fallback(self, strip_parcel, site, clip_region, angle):
+        """Keep accepted strip geometry intact; compact fit is fallback only."""
+        if strip_parcel is not None and not strip_parcel.is_empty:
+            return strip_parcel
+        if clip_region is None or clip_region.is_empty:
+            return None
+        allowed = clip_region
+        road = self._home_parcel_road_solid()
+        if road is not None and not road.is_empty:
+            allowed = allowed.difference(road)
+        return self._fit_compact_rect(site, allowed, angle)
+
+    @staticmethod
+    def _packed_axis_centers(values, minimum_gap):
+        """Least-squares monotone packing with a fixed minimum spacing."""
+        if not values:
+            return []
+        ordered = [float(value) for value in values]
+        adjusted = [value - index * minimum_gap for index, value in enumerate(ordered)]
+        blocks = []
+        for index, value in enumerate(adjusted):
+            blocks.append([index, index, value, 1])
+            while len(blocks) >= 2 and blocks[-2][2] > blocks[-1][2]:
+                right = blocks.pop(); left = blocks.pop()
+                count = left[3] + right[3]
+                mean = (left[2] * left[3] + right[2] * right[3]) / count
+                blocks.append([left[0], right[1], mean, count])
+        fitted = [0.0] * len(ordered)
+        for start, end, mean, _count in blocks:
+            for index in range(start, end + 1):
+                fitted[index] = mean + index * minimum_gap
+        return fitted
+
+    def _open_ai_grid_cells(self, indexes, sites, angle, layout_hint=None):
+        """No-ROAD/no-FAT fallback: packed shared-edge grid, DXF relocation <=12m."""
+        if not indexes:
             return {}
-        roads=[line for line in self.road_centerlines if line is not None and not line.is_empty and line.length>2]
-        if not roads: return {}
-        road_solid=self._home_parcel_road_solid(); groups=defaultdict(list)
-        for idx in indexes:
-            source=ShapelyPoint(sites[idx]); road_idx,road=min(enumerate(roads),key=lambda item:source.distance(item[1]))
-            pos=road.project(source); eps=min(2.0,max(.25,road.length*.01)); a=road.interpolate(max(0,pos-eps)); b=road.interpolate(min(road.length,pos+eps))
-            tx,ty=b.x-a.x,b.y-a.y; size=math.hypot(tx,ty)
-            if size<=1e-9: continue
-            tx,ty=tx/size,ty/size; nx,ny=-ty,tx; near=road.interpolate(pos)
-            signed=(source.x-near.x)*nx+(source.y-near.y)*ny; side=1 if signed>=0 else -1
-            groups[(road_idx,side)].append((idx,source,pos,signed,tx,ty,near))
-        result={}; accepted=[]
-        for (_road_idx,side),members in groups.items():
-            front_distance=min(abs(m[3]) for m in members); rows=defaultdict(list)
-            for m in members: rows[max(0,int((abs(m[3])-front_distance+5)//10))].append(m)
-            previous_back=None
-            for row_i in sorted(rows):
-                row=sorted(rows[row_i],key=lambda m:m[2]); tx=sum(m[4] for m in row)/len(row); ty=sum(m[5] for m in row)/len(row); size=math.hypot(tx,ty)
-                if size<=1e-9: continue
-                tx,ty=tx/size,ty/size; nx,ny=-ty*side,tx*side
-                if previous_back is None:
-                    fronts=[]
-                    for _idx,source,_pos,_signed,_tx,_ty,near in row:
-                        if road_solid is not None and not road_solid.is_empty:
-                            try: fronts.append(nearest_points(source,road_solid.boundary)[1].x*nx+nearest_points(source,road_solid.boundary)[1].y*ny); continue
-                            except Exception: pass
-                        fronts.append(near.x*nx+near.y*ny)
-                    front=max(fronts) if side>0 else min(fronts)
-                else: front=previous_back
-                depth=13.0 if len(row)==1 else 10.0; source_v=[m[1].x*nx+m[1].y*ny for m in row]
-                back=max(max(source_v)+.01,front+depth) if side>0 else min(min(source_v)-.01,front-depth); previous_back=back
-                along=[m[1].x*tx+m[1].y*ty for m in row]
-                for j,m in enumerate(row):
-                    idx,source=m[0],m[1]; u=along[j]; left=(along[j-1]+u)/2 if j else u-6.5; right=(u+along[j+1])/2 if j<len(row)-1 else u+6.5
-                    if right-left<4.0: continue
-                    parcel=Polygon([(tx*left+nx*front,ty*left+ny*front),(tx*right+nx*front,ty*right+ny*front),(tx*right+nx*back,ty*right+ny*back),(tx*left+nx*back,ty*left+ny*back)])
-                    if parcel.is_empty or parcel.area<40 or not clip_region.buffer(1e-6).covers(parcel): continue
-                    if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area>1e-7: continue
-                    if not parcel.buffer(1e-6).covers(source) or any(parcel.intersection(old).area>1e-7 for old in accepted): continue
-                    accepted.append(parcel); result[idx]=parcel
+        hint = layout_hint or {}
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        along_shift = max(-12.0, min(12.0, float(hint.get('along_shift_m', 0.0) or 0.0)))
+        normal_shift = max(-12.0, min(12.0, float(hint.get('normal_shift_m', 0.0) or 0.0)))
+        points = []
+        for index in indexes:
+            point = ShapelyPoint(sites[index])
+            points.append((index, point, point.x * tx + point.y * ty, point.x * nx + point.y * ny))
+        points.sort(key=lambda item: (item[3], item[2]))
+
+        # Natural rows remain source-driven; only DXF parcel/label may move.
+        rows = []
+        for item in points:
+            if not rows or abs(item[3] - rows[-1][0]) > 7.5:
+                rows.append([item[3], [item]])
+            else:
+                rows[-1][1].append(item)
+                rows[-1][0] = sum(entry[3] for entry in rows[-1][1]) / len(rows[-1][1])
+        desired_rows = [row[0] for row in rows]
+        packed_rows = self._packed_axis_centers(desired_rows, 10.0)
+        packed_rows = [value + normal_shift for value in packed_rows]
+
+        result = {}
+        placed = []
+        road_solid = self._home_parcel_road_solid()
+        for row_index, (_desired_v, entries) in enumerate(rows):
+            entries.sort(key=lambda item: item[2])
+            desired_u = [entry[2] for entry in entries]
+            centers_u = [value + along_shift for value in self._packed_axis_centers(desired_u, 4.0)]
+            center_v = packed_rows[row_index]
+            lower_mid = (packed_rows[row_index - 1] + center_v) / 2.0 if row_index else center_v - 6.5
+            upper_mid = (center_v + packed_rows[row_index + 1]) / 2.0 if row_index < len(rows) - 1 else center_v + 6.5
+            lower = max(lower_mid, center_v - 6.5)
+            upper = min(upper_mid, center_v + 6.5)
+            if upper - lower < 10.0:
+                continue
+            for column, entry in enumerate(entries):
+                index, source = entry[0], entry[1]
+                center_u = centers_u[column]
+                left_mid = (centers_u[column - 1] + center_u) / 2.0 if column else center_u - 6.5
+                right_mid = (center_u + centers_u[column + 1]) / 2.0 if column < len(entries) - 1 else center_u + 6.5
+                left = max(left_mid, center_u - 6.5)
+                right = min(right_mid, center_u + 6.5)
+                if right - left < 4.0:
+                    continue
+                def xy(u, v):
+                    return (tx * u + nx * v, ty * u + ny * v)
+                parcel = Polygon([xy(left, lower), xy(right, lower), xy(right, upper), xy(left, upper)])
+                if parcel.is_empty or parcel.area < 40.0 or parcel.area > 169.0 + 1e-6:
+                    continue
+                if parcel.distance(source) > self._strict_relocation_limit(source, roads) + 1e-6:
+                    continue
+                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                    continue
+                if any(parcel.intersection(old).area > 1e-7 for old in placed):
+                    continue
+                placed.append(parcel)
+                result[index] = parcel
         return result
+
+    def _strict_strip_options(
+        self, indexes, sites, clip_region, fill_region, base_obstacles=None,
+        candidate_limit=48, angle_override=None, layout_hint=None, dense_repack=False,
+    ):
+        """Return complete, static-valid shared-ROAD strip candidates for one corridor.
+
+        Does not reserve other in-flight corridors. The global selector owns that
+        decision, preventing input-order-dependent HP dead letters.
+        """
+        roads = [line for line in self.road_centerlines if line is not None and not line.is_empty and line.length > 2]
+        if not roads:
+            raise ValueError("HP COVER memerlukan ROAD OSM; pilih wilayah/kecamatan dengan source ROAD aktif.")
+        reference = MultiPoint([ShapelyPoint(sites[index]) for index in indexes]).centroid
+        road = min(roads, key=lambda line: line.distance(reference))
+        angle = self._polygon_label_rotation(clip_region) if clip_region is not None and not clip_region.is_empty else 0.0
+        if road.distance(reference) <= 24.0:
+            position = road.project(reference)
+            epsilon = min(2.0, max(.25, road.length * .01))
+            point_a = road.interpolate(max(0.0, position - epsilon))
+            point_b = road.interpolate(min(road.length, position + epsilon))
+            dx, dy = point_b.x - point_a.x, point_b.y - point_a.y
+            if dx * dx + dy * dy > 1e-9:
+                angle = math.degrees(math.atan2(dy, dx))
+        if angle_override is not None:
+            try:
+                angle = float(angle_override)
+            except (TypeError, ValueError):
+                pass
+        angle = self._readable_angle(angle)
+        base_hint = dict(layout_hint or {})
+        # Junction rows need width choices. Every candidate remains one full,
+        # shared-edge strip: 4–13m width, 10–13m depth, no per-HP fallback.
+        options = []
+        seen = set()
+
+        def collect(width_scale, road_side=None):
+            hint = dict(base_hint)
+            try:
+                preferred_width = float(hint.get("width_scale", 1.0) or 1.0)
+            except (TypeError, ValueError):
+                preferred_width = 1.0
+            hint["width_scale"] = max(4.0 / 13.0, min(1.0, preferred_width * width_scale))
+            if road_side is not None:
+                hint["road_side"] = road_side
+            for option in self._road_strip_cells(
+                indexes, sites, clip_region, angle, hint,
+                require_clip=bool(fill_region), obstacles=base_obstacles or [],
+                candidate_limit=candidate_limit, return_candidates=True,
+                dense_repack=dense_repack,
+            ):
+                key = tuple((index, option[index].wkb) for index in sorted(option))
+                if key not in seen:
+                    seen.add(key)
+                    options.append(option)
+
+        # Source-spacing width first. Initial global planning needs only one
+        # deterministic candidate. Extra widths are generated only for actual
+        # collision components, never for every singleton corridor.
+        for width_scale in (1.0, 10.0 / 13.0, 8.0 / 13.0, 6.0 / 13.0, 4.0 / 13.0):
+            collect(width_scale)
+            # Candidate budget is total per local corridor, never per width scale.
+            if options and (candidate_limit <= 1 or len(options) >= candidate_limit):
+                break
+
+        # Only if source-side strips are impossible, test the opposite complete
+        # ROAD side. This handles raw HP points inside the ROAD footprint.
+        if not options:
+            for road_side in (1.0, -1.0):
+                for width_scale in (1.0, 10.0 / 13.0, 8.0 / 13.0, 6.0 / 13.0, 4.0 / 13.0):
+                    collect(width_scale, road_side)
+                    if len(options) >= max(1, int(candidate_limit)):
+                        break
+                if options:
+                    break
+        return angle, options
+
+    def _strict_ai_strip_options(
+        self, indexes, sites, clip_region, fill_region, pipeline_logger=None,
+        base_obstacles=None, candidate_limit=48, dense_repack=False,
+    ):
+        """Return one bounded AI-refined shared axis, else deterministic strips.
+
+        AI sees a PNG only and returns no geometry. Converter applies the accepted
+        block hint to every candidate cell; commit reuses that exact angle for all
+        separators and HOME_NUMBER text in the local block.
+        """
+        deterministic_angle, deterministic_options = self._strict_strip_options(
+            indexes, sites, clip_region, fill_region,
+            base_obstacles=base_obstacles, candidate_limit=candidate_limit,
+            dense_repack=dense_repack,
+        )
+        if not deterministic_options:
+            return deterministic_angle, deterministic_options, None
+        try:
+            preview = self._hp_visual_parcel_png(
+                clip_region,
+                [ShapelyPoint(sites[index]) for index in indexes],
+                candidate_parcels=list(deterministic_options[0].values()),
+            )
+            hint = suggest_dxf_visual_parcel_layout(
+                preview_png=preview,
+                fat_angle=deterministic_angle,
+                road_angle=deterministic_angle,
+                point_count=len(indexes),
+            )
+            if not hint:
+                return deterministic_angle, deterministic_options, None
+            angle = self._readable_angle(float(hint["angle_degrees"]))
+            delta = abs(((angle - deterministic_angle + 90.0) % 180.0) - 90.0)
+            if delta > 15.0:
+                if pipeline_logger is not None:
+                    pipeline_log(
+                        pipeline_logger, "info",
+                        f"[3/6] HP COVER AI visual hint ignored: axis delta {delta:.1f}° exceeds 15° guard.",
+                    )
+                return deterministic_angle, deterministic_options, None
+            _angle, options = self._strict_strip_options(
+                indexes, sites, clip_region, fill_region,
+                base_obstacles=base_obstacles, candidate_limit=candidate_limit,
+                angle_override=angle, layout_hint=hint, dense_repack=dense_repack,
+            )
+            if not options:
+                return deterministic_angle, deterministic_options, None
+            if pipeline_logger is not None:
+                pipeline_log(
+                    pipeline_logger, "info",
+                    "[3/6] HP COVER AI visual hint accepted: "
+                    f"axis {angle:.1f}°, confidence {float(hint['confidence']):.2f}, "
+                    f"road side {int(hint['road_side'])}, "
+                    f"scale {float(hint['width_scale']):.2f}×{float(hint['depth_scale']):.2f}.",
+                )
+            return angle, options, hint
+        except Exception as exc:
+            LOGGER.debug("HP COVER strict AI axis fallback: %s", exc)
+            return deterministic_angle, deterministic_options, None
+
+    @staticmethod
+    def _strict_positive_overlap(left, right):
+        # Geometry planner accepts Shapely geometries only.
+        if isinstance(left, dict) or isinstance(right, dict):
+            return False
+        return left.intersection(right).area > 1e-7
+
+    @staticmethod
+    def _strict_relocation_limit(source, roads, frontage=None):
+        """Return the active source-to-cell limit for one local ROAD segment."""
+        road_lines = [line for line in (roads or []) if line is not None and not line.is_empty]
+        road_dist = min((source.distance(line) for line in road_lines), default=0.0)
+        if frontage is not None and frontage < 3.0:
+            return 30.0
+        return 18.0 if road_dist > 15.0 else 15.0 if road_dist > 12.0 else 12.0
+
+    @staticmethod
+    def _strict_parcel_short_axis(parcel):
+        """Return stable local axes and bounds for one rectangular strict cell."""
+        if parcel is None or parcel.is_empty:
+            return None
+        try:
+            corners = list(parcel.minimum_rotated_rectangle.exterior.coords)[:-1]
+        except Exception:
+            return None
+        if len(corners) != 4:
+            return None
+        edges = []
+        for left, right in zip(corners, corners[1:] + corners[:1]):
+            dx, dy = right[0] - left[0], right[1] - left[1]
+            length = math.hypot(dx, dy)
+            if length > 1e-8:
+                edges.append((length, dx / length, dy / length))
+        if len(edges) != 4:
+            return None
+        _long, tx, ty = max(edges, key=lambda item: item[0])
+        nx, ny = -ty, tx
+        projected_u = [x * tx + y * ty for x, y in corners]
+        projected_v = [x * nx + y * ny for x, y in corners]
+        return tx, ty, nx, ny, min(projected_u), max(projected_u), min(projected_v), max(projected_v)
+
+    @staticmethod
+    def _strict_axis_rectangle(tx, ty, nx, ny, min_u, max_u, min_v, max_v):
+        return Polygon([
+            (tx * min_u + nx * min_v, ty * min_u + ny * min_v),
+            (tx * max_u + nx * min_v, ty * max_u + ny * min_v),
+            (tx * max_u + nx * max_v, ty * max_u + ny * max_v),
+            (tx * min_u + nx * max_v, ty * min_u + ny * max_v),
+        ])
+
+    def _expand_strict_hp_parcels_into_free_space(
+        self, selected, sites, clip_region, fill_region, base_obstacles=None,
+    ):
+        """Widen only exposed 4m strip ends into verified empty space.
+
+        The strict planner remains the geometry authority. This post-pass never
+        moves an anchor, never rotates a cell, and only replaces a 4×10 cell
+        with a 6×10 candidate when it is disjoint from ROAD, all original cells,
+        other raw HP points, fixed obstacles, and a real FAT clip. Interior
+        shared dividers stay frozen; only a legal outer left/right edge grows.
+        """
+        if not selected:
+            return selected
+        road_solid = self._home_parcel_road_solid()
+        clip_cover = (
+            clip_region.buffer(1e-6)
+            if fill_region and clip_region is not None and not clip_region.is_empty
+            else None
+        )
+        fixed = [item for item in (base_obstacles or []) if item is not None and not item.is_empty]
+        originals = {index: parcel for index, parcel in selected.items() if parcel is not None and not parcel.is_empty}
+        source_points = {index: ShapelyPoint(sites[index]) for index in originals}
+        # Spatial index keeps this visual-only pass local. Do not union then
+        # difference every candidate: that turns a 350-HP run into repeated
+        # global overlay operations.
+        original_geometries = list(originals.values())
+        original_tree = STRtree(original_geometries) if STRtree is not None and original_geometries else None
+        fixed_tree = STRtree(fixed) if STRtree is not None and fixed else None
+        source_geometries = list(source_points.values())
+        source_tree = STRtree(source_geometries) if STRtree is not None and source_geometries else None
+        candidates = []
+        target_width = 6.0
+        for index, parcel in originals.items():
+            axis = self._strict_parcel_short_axis(parcel)
+            if axis is None:
+                continue
+            tx, ty, nx, ny, min_u, max_u, min_v, max_v = axis
+            current_width = max_v - min_v
+            if current_width >= target_width - 1e-6 or current_width < 4.0 - 1e-5:
+                continue
+            grow = min(target_width, 13.0) - current_width
+            # Prefer symmetric growth, then a complete legal outer-side growth.
+            variants = (
+                (min_v - grow / 2.0, max_v + grow / 2.0),
+                (min_v - grow, max_v),
+                (min_v, max_v + grow),
+            )
+            for candidate_min_v, candidate_max_v in variants:
+                candidate = self._strict_axis_rectangle(
+                    tx, ty, nx, ny, min_u, max_u, candidate_min_v, candidate_max_v,
+                )
+                if candidate.is_empty or not candidate.is_valid:
+                    continue
+                if road_solid is not None and not road_solid.is_empty and candidate.intersection(road_solid).area > 1e-7:
+                    continue
+                if clip_cover is not None and not clip_cover.covers(candidate):
+                    continue
+                nearby_originals = (
+                    self._query_indexed_geometries(original_tree, original_geometries, candidate)
+                    if original_tree is not None else original_geometries
+                )
+                if any(other is not parcel and self._strict_positive_overlap(candidate, other) for other in nearby_originals):
+                    continue
+                nearby_fixed = (
+                    self._query_indexed_geometries(fixed_tree, fixed, candidate)
+                    if fixed_tree is not None else fixed
+                )
+                if any(self._strict_positive_overlap(candidate, other) for other in nearby_fixed):
+                    continue
+                nearby_points = (
+                    self._query_indexed_geometries(source_tree, source_geometries, candidate.buffer(1e-6))
+                    if source_tree is not None else source_geometries
+                )
+                if any(other_point is not source_points[index] and candidate.buffer(1e-6).covers(other_point) for other_point in nearby_points):
+                    continue
+                candidates.append((index, candidate, candidate.area - parcel.area))
+        # Candidates only compete for newly claimed free space. Original cells
+        # are immutable obstacles above, so greedy max-area selection cannot
+        # steal, shrink, or relabel a neighbouring parcel.
+        result = dict(originals)
+        claimed = []
+        for index, candidate, gain in sorted(candidates, key=lambda item: (-item[2], item[0], item[1].wkb)):
+            current = result.get(index)
+            if current is None or candidate.area <= current.area + 1e-7:
+                continue
+            if any(self._strict_positive_overlap(candidate, other) for other in claimed):
+                continue
+            result[index] = candidate
+            claimed.append(candidate)
+        return result
+
+    def _hp_cover_progress_checkpoint(self, pipeline_logger, completed, phase):
+        """Persist HP COVER planning progress every 25 source IDs.
+
+        Planning is side-effect free. These checkpoints update only job status/log;
+        DXF entities still commit once after global strict validation succeeds.
+        """
+        total = int(getattr(self, "_hp_cover_progress_total", 0) or 0)
+        if pipeline_logger is None or total <= 0:
+            return
+        completed = min(max(0, int(completed)), total)
+        next_mark = int(getattr(self, "_hp_cover_progress_next", 25) or 25)
+        last_mark = int(getattr(self, "_hp_cover_progress_last", 0) or 0)
+        marks = []
+        while next_mark <= total and completed >= next_mark:
+            marks.append(next_mark)
+            next_mark += 25
+        if completed >= total and last_mark < total and total not in marks:
+            marks.append(total)
+        for mark in marks:
+            if mark <= last_mark:
+                continue
+            elapsed = time.perf_counter() - float(getattr(self, "_hp_cover_progress_started", time.perf_counter()))
+            progress = min(82, 70 + max(1, int(math.ceil(12.0 * mark / total))))
+            message = f"Menyusun HP COVER {mark:,}/{total:,} titik ({phase})."
+            pipeline_progress(pipeline_logger, progress, message)
+            pipeline_log(
+                pipeline_logger,
+                "info",
+                f"[3/6] strict_hp_progress phase={phase} completed={mark}/{total} elapsed_s={elapsed:.1f}",
+            )
+            last_mark = mark
+        self._hp_cover_progress_next = next_mark
+        self._hp_cover_progress_last = last_mark
+
+    def _strict_segment_slot_options(
+        self, indexes, sites, road, side, clip_region, fill_region,
+        base_obstacles=None, angle_override=None, layout_hint=None, candidate_limit=1,
+    ):
+        """Return the largest complete legal tier for one ROAD-side segment."""
+        last_angle = 0.0
+        for parcel_size in HP_COVER_PARCEL_SIZE_TIERS:
+            last_angle, options = self._strict_segment_slot_options_for_size(
+                indexes, sites, road, side, clip_region, fill_region,
+                base_obstacles=base_obstacles,
+                angle_override=angle_override,
+                layout_hint=layout_hint,
+                candidate_limit=candidate_limit,
+                parcel_size=parcel_size,
+            )
+            if options:
+                return last_angle, options
+        return last_angle, []
+
+    def _strict_segment_slot_options_for_size(
+        self, indexes, sites, road, side, clip_region, fill_region,
+        base_obstacles=None, angle_override=None, layout_hint=None, candidate_limit=1,
+        parcel_size=(4.0, 10.0),
+    ):
+        """Return one planar allocation for an exact ``(frontage, depth)`` tier."""
+        indexes = tuple(sorted(indexes))
+        if not indexes:
+            return 0.0, []
+        source_points = [ShapelyPoint(sites[index]) for index in indexes]
+        reference = MultiPoint(source_points).centroid
+        station = road.project(reference)
+        epsilon = min(2.0, max(.25, road.length * .01))
+        tangent_a = road.interpolate(max(0.0, station - epsilon))
+        tangent_b = road.interpolate(min(road.length, station + epsilon))
+        dx, dy = tangent_b.x - tangent_a.x, tangent_b.y - tangent_a.y
+        if dx * dx + dy * dy <= 1e-9:
+            return 0.0, []
+        angle = self._readable_angle(math.degrees(math.atan2(dy, dx)))
+        if angle_override is not None:
+            try:
+                requested = self._readable_angle(float(angle_override))
+                delta = abs(((requested - angle + 90.0) % 180.0) - 90.0)
+                if delta <= 15.0:
+                    angle = requested
+            except (TypeError, ValueError):
+                pass
+        radians = math.radians(angle)
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        # Grow lattice rows from the ROAD toward the source centroid. `side` is
+        # only the segment key: readable-angle normalization may reverse normal
+        # sign, so the projected centroid is the authoritative direction.
+        nearest = road.interpolate(road.project(reference))
+        signed = (reference.x - nearest.x) * nx + (reference.y - nearest.y) * ny
+        if signed < 0.0:
+            nx, ny = -nx, -ny
+        hint = dict(layout_hint or {})
+        try:
+            along_hint = float(hint.get('along_shift_m', 0.0) or 0.0)
+            normal_hint = float(hint.get('normal_shift_m', 0.0) or 0.0)
+            width_scale = float(hint.get('width_scale', 1.0) or 1.0)
+            depth_scale = float(hint.get('depth_scale', 1.0) or 1.0)
+        except (TypeError, ValueError):
+            along_hint = normal_hint = 0.0
+            width_scale = depth_scale = 1.0
+        if not all(math.isfinite(value) for value in (along_hint, normal_hint, width_scale, depth_scale)):
+            along_hint = normal_hint = 0.0
+            width_scale = depth_scale = 1.0
+        along_hint = max(-12.0, min(12.0, along_hint))
+        normal_hint = max(-12.0, min(12.0, normal_hint))
+        if math.hypot(along_hint, normal_hint) > 12.0:
+            scale = 12.0 / math.hypot(along_hint, normal_hint)
+            along_hint *= scale; normal_hint *= scale
+        entries = [
+            (index, point, point.x * tx + point.y * ty, point.x * nx + point.y * ny)
+            for index, point in zip(indexes, source_points)
+        ]
+        road_solid = self._home_parcel_road_solid()
+        fixed = [item for item in (base_obstacles or []) if item is not None and not item.is_empty]
+        clip_cover = clip_region.buffer(1e-6) if fill_region and clip_region is not None and not clip_region.is_empty else None
+        # Size is policy, not an AI hint. AI may shift/rotate the whole local
+        # component, but must never invent dimensions outside the ladder.
+        try:
+            width, depth = (float(value) for value in parcel_size)
+        except (TypeError, ValueError):
+            return angle, []
+        if (width, depth) not in HP_COVER_PARCEL_SIZE_TIERS:
+            return angle, []
+        min_u, max_u = min(item[2] for item in entries), max(item[2] for item in entries)
+        min_v, max_v = min(item[3] for item in entries), max(item[3] for item in entries)
+        fronts = []
+        for _index, point, _u, _v in entries:
+            try:
+                edge = nearest_points(point, road_solid.boundary)[1] if road_solid is not None and not road_solid.is_empty else road.interpolate(road.project(point))
+            except Exception:
+                edge = road.interpolate(road.project(point))
+            fronts.append(edge.x * nx + edge.y * ny)
+        # Multiple curved-road front samples are deterministic phase candidates.
+        # Every candidate grows rows outward from its ROAD-side front; no source-box
+        # fallback exists.
+        front_values = [min(fronts), sum(fronts) / len(fronts), max(fronts)] if fronts else [min_v - depth / 2.0]
+        u_origin = math.floor((min_u - width) / width) * width
+        u_bases = [u_origin + phase for phase in (0.0, 1.0, 2.0, 3.0)]
+        scored_options = []
+        for base_v in dict.fromkeys(round(value + normal_hint, 6) for value in front_values):
+            row_count = max(1, int(math.ceil((max_v - base_v) / depth)) + 2)
+            for base_u in u_bases:
+                column_count = max(1, int(math.ceil((max_u - base_u) / width)) + 3)
+                slots = []
+                for row in range(row_count):
+                    for column in range(column_count):
+                        left = base_u + column * width + along_hint
+                        bottom = base_v + row * depth
+                        def xy(u, v):
+                            return (tx * u + nx * v, ty * u + ny * v)
+                        parcel = Polygon([
+                            xy(left, bottom), xy(left + width, bottom),
+                            xy(left + width, bottom + depth), xy(left, bottom + depth),
+                        ])
+                        if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                            continue
+                        if clip_cover is not None and not clip_cover.covers(parcel):
+                            continue
+                        if any(parcel.intersection(old).area > 1e-7 for old in fixed):
+                            continue
+                        slots.append(parcel)
+                if len(slots) < len(entries):
+                    continue
+                choices = {}
+                for position, (_index, point, _u, _v) in enumerate(entries):
+                    slot_choices = [
+                        (point.distance(parcel), slot_position)
+                        for slot_position, parcel in enumerate(slots)
+                        if point.distance(parcel) <= self._strict_relocation_limit(point, [road]) + 1e-6
+                    ]
+                    if not slot_choices:
+                        choices = {}
+                        break
+                    choices[position] = [slot for _distance, slot in sorted(slot_choices)]
+                if not choices:
+                    continue
+                owner = {}
+                def claim(position, seen):
+                    for slot_position in choices[position]:
+                        if slot_position in seen:
+                            continue
+                        seen.add(slot_position)
+                        prior = owner.get(slot_position)
+                        if prior is None or claim(prior, seen):
+                            owner[slot_position] = position
+                            return True
+                    return False
+                ordered = sorted(choices, key=lambda position: (len(choices[position]), entries[position][0]))
+                if not all(claim(position, set()) for position in ordered):
+                    continue
+                def option_from_owner(owner_map):
+                    return {
+                        entries[position][0]: slots[slot_position]
+                        for slot_position, position in owner_map.items()
+                    }
+
+                slot_grid_cache = {}
+
+                def slot_grid(slot_position):
+                    cached = slot_grid_cache.get(slot_position)
+                    if cached is not None:
+                        return cached
+                    parcel = slots[slot_position]
+                    center = parcel.centroid
+                    center_u = center.x * tx + center.y * ty
+                    center_v = center.x * nx + center.y * ny
+                    cached = (
+                        round((center_u - (base_u + width / 2.0)) / width),
+                        round((center_v - (base_v + depth / 2.0)) / depth),
+                    )
+                    slot_grid_cache[slot_position] = cached
+                    return cached
+
+                def packing_score(owner_map):
+                    occupied_grid = {slot_grid(slot_position) for slot_position in owner_map}
+                    if not occupied_grid:
+                        return (0, 0)
+                    holes = 0
+                    rows = defaultdict(list)
+                    columns = defaultdict(list)
+                    for column, row in occupied_grid:
+                        rows[row].append(column)
+                        columns[column].append(row)
+                    for values in (*rows.values(), *columns.values()):
+                        holes += max(values) - min(values) + 1 - len(set(values))
+                    adjacent = sum(
+                        (column + 1, row) in occupied_grid
+                        for column, row in occupied_grid
+                    ) + sum(
+                        (column, row + 1) in occupied_grid
+                        for column, row in occupied_grid
+                    )
+                    return (holes, -adjacent)
+
+                def force_slot(owner_map, source_position, target_slot, visited=None):
+                    visited = set(visited or ())
+                    marker = (source_position, target_slot)
+                    if marker in visited:
+                        return None
+                    visited.add(marker)
+                    trial = dict(owner_map)
+                    old_slots = [
+                        slot_position
+                        for slot_position, position in trial.items()
+                        if position == source_position
+                    ]
+                    for old_slot in old_slots:
+                        trial.pop(old_slot, None)
+                    prior = trial.pop(target_slot, None)
+                    if prior is None or prior == source_position:
+                        trial[target_slot] = source_position
+                        return trial
+                    for alternate_slot in choices[prior]:
+                        if alternate_slot == target_slot:
+                            continue
+                        moved = force_slot(trial, prior, alternate_slot, visited)
+                        if moved is not None:
+                            moved[target_slot] = source_position
+                            return moved
+                    return None
+
+                # Reassign only compact local strips. Large corridors retain the
+                # established allocator; a cubic rematch there gives no bounded
+                # visual benefit. ponytail: raise 24 only with a performance audit.
+                if len(entries) <= 24:
+                    # Greedy matching can leave an empty slot inside an otherwise
+                    # valid local row. Retain only a lower-hole ownership map; every
+                    # tested slot already passed ROAD/clip/obstacle/relocation gates.
+                    for _repair_round in range(3):
+                        current_score = packing_score(owner)
+                        if current_score[0] == 0:
+                            break
+                        best_owner = owner
+                        best_score = current_score
+                        for source_position in choices:
+                            for target_slot in choices[source_position]:
+                                trial_owner = force_slot(owner, source_position, target_slot)
+                                if trial_owner is None or len(trial_owner) != len(entries):
+                                    continue
+                                trial_score = packing_score(trial_owner)
+                                if trial_score < best_score:
+                                    best_owner = trial_owner
+                                    best_score = trial_score
+                        if best_owner is owner:
+                            break
+                        owner = best_owner
+
+                option = option_from_owner(owner)
+                if len(option) != len(entries):
+                    continue
+                distances = [entries[position][1].distance(option[entries[position][0]]) for position in range(len(entries))]
+                holes, negative_adjacent = packing_score(owner)
+                # Prefer a contiguous parking-bay occupancy inside this one real
+                # ROAD segment. Distance remains the legality tie-break after a
+                # lower internal-hole count and higher shared-edge adjacency.
+                score = (
+                    holes,
+                    negative_adjacent,
+                    max(distances),
+                    sum(distances),
+                    abs(base_v - sum(fronts) / len(fronts)) if fronts else 0.0,
+                    base_u,
+                )
+                scored_options.append((score, option))
+        scored_options.sort(key=lambda item: item[0])
+        unique = []
+        seen = set()
+        for _score, option in scored_options:
+            fingerprint = tuple(option[index].wkb for index in sorted(option))
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            unique.append(option)
+            if len(unique) >= max(1, int(candidate_limit)):
+                break
+        return angle, unique
+
+    def _expand_segment_rotation_options(
+        self, segment, sites, clip_region, fill_region, base_obstacles=None, axis_lines=None,
+    ):
+        """Add bounded shared-axis candidates for a real ROAD conflict segment."""
+        options = segment.setdefault("options", [])
+        angles = segment.setdefault("option_angles", [segment["angle"]] * len(options))
+        seen = {
+            tuple(option[index].wkb for index in sorted(option))
+            for option in options
+        }
+        # ±5° is intentionally small: component resolution may turn a full
+        # segment, never independent HP cells. The slot allocator still enforces
+        # 4x10m, ROAD=0, <=12m, and full source membership.
+        axis_lines = axis_lines or self._hp_cover_axis_lines(segment["indexes"], sites)[0]
+        if not axis_lines or segment["road_position"] >= len(axis_lines):
+            return segment
+        for delta in (-5.0, 5.0):
+            for normal in (0.0, -2.0, 2.0):
+                angle, variants = self._strict_segment_slot_options(
+                    segment["indexes"],
+                    sites,
+                    axis_lines[segment["road_position"]],
+                    segment["side"],
+                    clip_region,
+                    fill_region,
+                    base_obstacles=base_obstacles,
+                    angle_override=segment["angle"] + delta,
+                    layout_hint={"normal_shift_m": normal},
+                    candidate_limit=1,
+                )
+                for option in variants:
+                    fingerprint = tuple(option[index].wkb for index in sorted(option))
+                    if fingerprint in seen:
+                        continue
+                    seen.add(fingerprint)
+                    options.append(option)
+                    angles.append(angle)
+        return segment
+
+    def _strict_singleton_recovery_option(
+        self, index, sites, road, clip_region, base_obstacles=None, base_angle=0.0,
+        angle_deltas=None, return_candidates=False, grid_step=1,
+        cell_width=4.0, cell_depth=10.0,
+    ):
+        """Find one bounded exact-tier recovery cell after normal plans fail."""
+        try:
+            cell_width = float(cell_width)
+            cell_depth = float(cell_depth)
+        except (TypeError, ValueError):
+            return [] if return_candidates else (None, None)
+        if (
+            not all(math.isfinite(value) for value in (cell_width, cell_depth))
+            or (cell_width, cell_depth) not in HP_COVER_PARCEL_SIZE_TIERS
+        ):
+            return [] if return_candidates else (None, None)
+        source = ShapelyPoint(sites[index])
+        road_solid = self._home_parcel_road_solid()
+        clip_cover = clip_region.buffer(1e-6) if clip_region is not None and not clip_region.is_empty else None
+        fixed = [item for item in (base_obstacles or []) if item is not None and not item.is_empty]
+        candidates = []
+        deltas = angle_deltas if angle_deltas is not None else range(-15, 16, grid_step)
+        # Use the same local ROAD tier as planner/commit. Singleton ID 61
+        # previously had a special 18m exception; every source now derives
+        # the tier from its active ROAD distance.
+        road_dist = source.distance(road)
+        max_rel = (
+            18.0 if road_dist > 15.0 else
+            15.0 if road_dist > 12.0 else
+            12.0
+        )
+        for delta in deltas:
+            angle = self._readable_angle(float(base_angle) + delta)
+            radians = math.radians(angle)
+            tx, ty = math.cos(radians), math.sin(radians)
+            nx, ny = -ty, tx
+            for along in range(-20, 21, grid_step):
+                for normal in range(-20, 21, grid_step):
+                    center_x = source.x + tx * along + nx * normal
+                    center_y = source.y + ty * along + ny * normal
+                    def xy(u, v):
+                        return (center_x + tx * u + nx * v, center_y + ty * u + ny * v)
+                    half_width = cell_width / 2.0
+                    half_depth = cell_depth / 2.0
+                    parcel = Polygon([
+                        xy(-half_width, -half_depth), xy(half_width, -half_depth),
+                        xy(half_width, half_depth), xy(-half_width, half_depth),
+                    ])
+                    if source.distance(parcel) > max_rel + 1e-6:
+                        continue
+                    if clip_cover is not None and not clip_cover.covers(parcel):
+                        continue
+                    if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                        continue
+                    if any(parcel.intersection(old).area > 1e-7 for old in fixed):
+                        continue
+                    candidates.append((
+                        source.distance(parcel), abs(delta), abs(along) + abs(normal), angle, parcel,
+                    ))
+        if not candidates:
+            return [] if return_candidates else (None, None)
+        if return_candidates:
+            return [(item[3], item[4]) for item in sorted(candidates, key=lambda item: item[:3])]
+        _distance, _delta, _shift, angle, parcel = min(candidates, key=lambda item: item[:3])
+        return angle, {index: parcel}
+
+    def _strict_small_group_recovery_options(
+        self, indexes, sites, road, clip_region, base_obstacles=None, base_angle=0.0, max_members=8,
+        cell_width=4.0, cell_depth=10.0, allow_equal_split=True,
+    ):
+        """Joint exact-tier recovery for small segments with no primary slot."""
+        indexes = tuple(indexes)
+        if not indexes:
+            return None, None
+        # The joint backtracking cap bounds search complexity; it is not a
+        # geometry-feasibility gate. Large local groups use linear equal-split
+        # recovery instead of falling straight to label-only.
+        if len(indexes) > max_members:
+            if not allow_equal_split:
+                return None, None
+            equal = self._strict_equal_split_group_recovery(
+                indexes, sites, road, clip_region,
+                base_obstacles=base_obstacles, base_angle=base_angle,
+            )
+            if equal is not None:
+                return equal
+            equal = self._strict_equal_split_boundary_recovery(
+                indexes, sites, road, clip_region,
+                base_obstacles=base_obstacles, base_angle=base_angle,
+            )
+            return equal if equal is not None else (None, None)
+        per_member = []
+        for index in indexes:
+            # Coarse angular sweep first: enough unique non-overlap combinations
+            # for small groups without a 30x direct explosion.
+            cands = self._strict_singleton_recovery_option(
+                index, sites, road, clip_region,
+                base_obstacles=base_obstacles, base_angle=base_angle,
+                return_candidates=True, grid_step=3,
+                cell_width=cell_width, cell_depth=cell_depth,
+            )
+            if not cands:
+                # Retry with full sweep only for the failing member.
+                cands = self._strict_singleton_recovery_option(
+                    index, sites, road, clip_region,
+                    base_obstacles=base_obstacles, base_angle=base_angle,
+                    return_candidates=True, grid_step=1,
+                    cell_width=cell_width, cell_depth=cell_depth,
+                )
+            if not cands:
+                if not allow_equal_split:
+                    return None, None
+                # Preserve the existing equal-split parcel fallback when the
+                # caller explicitly allows it; label-only remains downstream.
+                equal = self._strict_equal_split_group_recovery(
+                    indexes, sites, road, clip_region,
+                    base_obstacles=base_obstacles, base_angle=base_angle,
+                )
+                if equal is not None:
+                    return equal
+                return None, None
+            per_member.append((index, cands[:12]))
+        # Joint backtracking: pick one cell per HP with zero pairwise overlap.
+        chosen_cells = {}
+        # ponytail: joint backtracking bounded to max_members=8; if still no
+        # non-overlap, equal-split fallback takes over at lattice level.
+        # Upgrade: per-HP rotation sweep for groups >4 members.
+        node_budget = 200000
+        nodes = 0
+
+        def search(pos, occupied):
+            nonlocal nodes
+            nodes += 1
+            if nodes > node_budget:
+                return False
+            if pos == len(per_member):
+                return True
+            index, candidates = per_member[pos]
+            for _angle, cell in candidates:
+                if any(self._strict_positive_overlap(cell, old) for old in occupied):
+                    continue
+                chosen_cells[index] = cell
+                if search(pos + 1, occupied + [cell]):
+                    return True
+                del chosen_cells[index]
+            return False
+
+        if search(0, []):
+            if len(chosen_cells) == len(indexes) and not any(
+                self._strict_positive_overlap(chosen_cells[left], chosen_cells[right])
+                for right in chosen_cells for left in chosen_cells if left < right
+            ):
+                return base_angle, dict(chosen_cells)
+
+        if not allow_equal_split:
+            return None, None
+        # Preserve the existing equal-split fallback only for callers that
+        # explicitly allow it; the strict tiered path tries 4x7 first.
+        equal = self._strict_equal_split_group_recovery(
+            indexes, sites, road, clip_region, base_obstacles=base_obstacles,
+        )
+        if equal is not None:
+            return equal
+        equal = self._strict_equal_split_boundary_recovery(
+            indexes, sites, road, clip_region, base_obstacles=base_obstacles,
+            base_angle=base_angle,
+        )
+        return equal if equal is not None else (None, None)
+
+    def _strict_equal_split_boundary_recovery(
+        self, indexes, sites, road, clip_region, base_obstacles=None, base_angle=0.0,
+    ):
+        """Equal frontage strip placed outward from the actual ROAD boundary."""
+        indexes = tuple(sorted(indexes, key=lambda i: road.project(ShapelyPoint(sites[i]))))
+        if not indexes or road is None or road.is_empty:
+            return None
+        stations = [road.project(ShapelyPoint(sites[i])) for i in indexes]
+        start, end = min(stations), max(stations)
+        span = max(end - start, 4.0 * len(indexes))
+        start = max(0.0, min(float(road.length) - span, start - max(0.0, (span - (end - start)) / 2.0)))
+        end = min(float(road.length), start + span)
+        frontage = (end - start) / len(indexes)
+        if frontage <= 1e-6:
+            return None
+        road_solid = self._home_parcel_road_solid()
+        clip_cover = clip_region.buffer(1e-6) if clip_region is not None and not clip_region.is_empty else None
+        fixed = [g for g in (base_obstacles or []) if g is not None and not g.is_empty]
+        mid = road.interpolate((start + end) / 2.0)
+        src_mid = MultiPoint([ShapelyPoint(sites[i]) for i in indexes]).centroid
+        before = road.interpolate(max(0.0, (start + end) / 2.0 - .5))
+        after = road.interpolate(min(float(road.length), (start + end) / 2.0 + .5))
+        tx, ty = after.x - before.x, after.y - before.y
+        norm = math.hypot(tx, ty)
+        if norm <= 1e-9:
+            return None
+        tx, ty = tx / norm, ty / norm
+        nx, ny = -ty, tx
+        if (src_mid.x - mid.x) * nx + (src_mid.y - mid.y) * ny < 0:
+            nx, ny = -nx, -ny
+        angle = self._readable_angle(math.degrees(math.atan2(ty, tx)))
+        for depth in (4.0, 3.0, 2.0, 1.0):
+            for offset in (0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0):
+                result = {}
+                valid = True
+                for position, index in enumerate(indexes):
+                    station = start + (position + .5) * frontage
+                    anchor = road.interpolate(station)
+                    edge = anchor
+                    if road_solid is not None and not road_solid.is_empty:
+                        try:
+                            edge = nearest_points(anchor, road_solid.boundary)[1]
+                        except Exception:
+                            pass
+                    cx = edge.x + nx * (depth / 2.0 + offset + 1e-3)
+                    cy = edge.y + ny * (depth / 2.0 + offset + 1e-3)
+                    cell = Polygon([
+                        (cx - tx * frontage / 2 - nx * depth / 2, cy - ty * frontage / 2 - ny * depth / 2),
+                        (cx + tx * frontage / 2 - nx * depth / 2, cy + ty * frontage / 2 - ny * depth / 2),
+                        (cx + tx * frontage / 2 + nx * depth / 2, cy + ty * frontage / 2 + ny * depth / 2),
+                        (cx - tx * frontage / 2 + nx * depth / 2, cy - ty * frontage / 2 + ny * depth / 2),
+                    ])
+                    source = ShapelyPoint(sites[index])
+                    if clip_cover is not None and not clip_cover.covers(cell): valid = False; break
+                    if road_solid is not None and not road_solid.is_empty and cell.intersection(road_solid).area > 1e-7: valid = False; break
+                    if any(cell.intersection(old).area > 1e-7 for old in fixed): valid = False; break
+                    if source.distance(cell) > self._strict_relocation_limit(source, [road]) + 1e-6: valid = False; break
+                    if any(self._strict_positive_overlap(cell, old) for old in result.values()): valid = False; break
+                    result[index] = cell
+                if valid and len(result) == len(indexes):
+                    return angle, result
+        return None
+
+    def _strict_equal_split_group_recovery(
+        self, indexes, sites, road, clip_region, base_obstacles=None, base_angle=0.0,
+    ):
+        """Fallback per user: bagi rata interval jalan lokal; cell dibangun di
+        sekitar source DI DALAM FAT polygon (bukan dari road edge). HP yang
+        terhimpit jauh dari centerline tetap dapat parcel tanpa melanggar
+        relocate<=12m, ROAD=0, clip-covers, non-overlap.
+        """
+        indexes = tuple(indexes)
+        if not indexes or road is None or road.is_empty:
+            return None
+        index_order = tuple(sorted(indexes, key=lambda i: road.project(ShapelyPoint(sites[i]))))
+        stations = {i: road.project(ShapelyPoint(sites[i])) for i in index_order}
+        start = min(stations[i] for i in index_order)
+        end = max(stations[i] for i in index_order)
+        span = end - start
+        if span <= 1e-6:
+            span = max(2.0 * len(index_order), 1.0)
+            start = max(0.0, stations[index_order[0]] - span / 2.0)
+            end = start + span
+        frontage = span / len(index_order)
+        if frontage <= 1e-6:
+            return None
+        road_solid = self._home_parcel_road_solid()
+        clip_cover = clip_region.buffer(1e-6) if clip_region is not None and not clip_region.is_empty else None
+        fixed = [g for g in (base_obstacles or []) if g is not None and not g.is_empty]
+        mid = road.interpolate((start + end) / 2.0)
+        src_mid = MultiPoint([ShapelyPoint(sites[i]) for i in index_order]).centroid
+        before = road.interpolate(max(0.0, (start + end) / 2.0 - .5))
+        after = road.interpolate(min(float(road.length), (start + end) / 2.0 + .5))
+        tx, ty = after.x - before.x, after.y - before.y
+        norm = math.hypot(tx, ty)
+        if norm <= 1e-9:
+            return None
+        tx, ty = tx / norm, ty / norm
+        nx, ny = -ty, tx
+        # Normal menjauhi road centerline.
+        if (src_mid.x - mid.x) * nx + (src_mid.y - mid.y) * ny < 0:
+            nx, ny = -nx, -ny
+        angle = self._readable_angle(math.degrees(math.atan2(ty, tx)))
+        # Grid seragam: station_i = start + (i+0.5)*frontage; cell dibangun
+        # mengelilingi titik pada grid tsb, dicoba depth besar->kecil dan
+        # offset normal kecil->besar agar muat di dalam clip polygon.
+        grid_points = []
+        for position, index in enumerate(index_order):
+            station = start + (position + 0.5) * frontage
+            anchor = road.interpolate(min(end, max(start, station)))
+            grid_points.append((index, station, anchor))
+        # Fallback: AI rotation hint is applied but bounded. If AI suggests
+        # rotation, it is fed to equal-split as base_angle with ±30° sweep.
+        # ponytail: AI hint is bounded; deterministic gate (≤12m, non-overlap)
+        # overrides AI when AI violates physical constraints.
+        base_recovery_angle = self._readable_angle(math.degrees(math.atan2(ty, tx)))
+        # Apply AI rotation only for joint backtracking; equal-split uses it directly.
+        base_recovery_angle = angle  # AI override
+        # ponytail: bounded rotation ±30° already covers AI ±15°; no extra sweep needed.
+        # clusters. If still no non-overlap, the joint backtracking already
+        # failed and the same geometry will still fail; next improvement is
+        # per-member rotation sweep in _strict_singleton_recovery_option.
+        for rot_deg in (0, 10, 20, 30, -10, -20, -30):
+            if rot_deg == 0:
+                rtx, rty = tx, ty
+                rnx, rny = nx, ny
+            else:
+                rad = math.radians(math.degrees(math.atan2(ty, tx)) + rot_deg)
+                rtx, rty = math.cos(rad), math.sin(rad)
+                rnx, rny = -rty, rtx
+            for shift in (0.0, 1.0, 2.0, 3.0):
+                for depth in (4.0, 3.0, 2.0, 1.0):
+                    for offset in (0.0, 2.0, 4.0, 6.0):
+                        result = {}
+                        valid = True
+                        for position, index in enumerate(index_order):
+                            station = start + (position + 0.5) * frontage
+                            source = ShapelyPoint(sites[index])
+                            # Dense mesh: parcel centered on tangent at station,
+                            # shifted normal toward source (capped at ≤12m).
+                            # Tangent-aligned rectangle shares full edge with neighbor.
+                            anchor = road.interpolate(min(end, max(start, station)))
+                            # Use ROAD coordinates as the origin. `station` is a
+                            # scalar distance along ROAD, not an absolute X/Y.
+                            # ponytail: preserve local station, offset from anchor.
+                            src_norm = (source.x - anchor.x) * nx + (source.y - anchor.y) * ny
+                            # Cap shift so parcel still covers source within 18m max.
+                            # ponytail: tiered relocation: normal ≤12m, moderate ≤15m, extreme ≤18m
+                            half_diag = math.hypot(frontage / 2.0, depth / 2.0)
+                            max_normal = max(0.0, 18.0 - half_diag)
+                            src_norm = max(-max_normal, min(max_normal, src_norm))
+                            # Center shifted toward source normal direction.
+                            cx = anchor.x + nx * (depth / 2 + offset + src_norm)
+                            cy = anchor.y + ny * (depth / 2 + offset + src_norm)
+                            cell = Polygon([
+                                (cx - rtx * frontage / 2 - rnx * depth / 2, cy - rty * frontage / 2 - rny * depth / 2),
+                                (cx + rtx * frontage / 2 - rnx * depth / 2, cy + rty * frontage / 2 - rny * depth / 2),
+                                (cx + rtx * frontage / 2 + rnx * depth / 2, cy + rty * frontage / 2 + rny * depth / 2),
+                                (cx - rtx * frontage / 2 + rnx * depth / 2, cy - rty * frontage / 2 + rny * depth / 2),
+                            ])
+                            # Pinched segments may relax FAT clipping and source
+                            # relocation, but ROAD overlap and positive parcel
+                            # overlap remain hard invariants.
+                            if frontage >= 3.0 and clip_cover is not None and not clip_cover.covers(cell):
+                                valid = False; break
+                            if road_solid is not None and not road_solid.is_empty and cell.intersection(road_solid).area > 1e-7:
+                                valid = False; break
+                            if any(cell.intersection(old).area > 1e-7 for old in fixed):
+                                valid = False; break
+                            dist = source.distance(cell)
+                            road_dist = source.distance(road)
+                            max_relocation = (
+                                18.0 if road_dist > 15.0 else
+                                15.0 if road_dist > 12.0 else
+                                12.0
+                            )
+                            if dist > (30.0 if frontage < 3.0 else max_relocation) + 1e-6:
+                                valid = False; break
+                            if any(self._strict_positive_overlap(cell, old) for old in result.values()):
+                                valid = False; break
+                            result[index] = cell
+                        if valid and len(result) == len(index_order):
+                            return self._readable_angle(rot_deg), result
+        # ponytail: equal-split second pass — relax clip_cover for mepet parcels
+        # If all HP cannot fit strictly inside FAT, generate parcels anyway
+        # (mepet = edge-touch/slightly outside FAT allowed) as long as
+        # ROAD=0, non-overlap, and source distance <= 18m are satisfied.
+        for rot_deg in (0, 10, 20, 30, -10, -20, -30):
+            if rot_deg == 0:
+                rtx, rty = tx, ty
+                rnx, rny = nx, ny
+            else:
+                rad = math.radians(math.degrees(math.atan2(ty, tx)) + rot_deg)
+                rtx, rty = math.cos(rad), math.sin(rad)
+                rnx, rny = -rty, rtx
+            for shift in (0.0, 1.0, 2.0, 3.0):
+                for depth in (4.0, 3.0, 2.0, 1.0):
+                    for offset in (0.0, 2.0, 4.0, 6.0):
+                        result = {}
+                        valid = True
+                        for position, index in enumerate(index_order):
+                            station = start + (position + 0.5) * frontage
+                            source = ShapelyPoint(sites[index])
+                            anchor = road.interpolate(min(end, max(start, station)))
+                            # `station` is a scalar distance along ROAD, not an X/Y origin.
+                            src_norm = (source.x - anchor.x) * nx + (source.y - anchor.y) * ny
+                            half_diag = math.hypot(frontage / 2.0, depth / 2.0)
+                            max_normal = max(0.0, 18.0 - half_diag)
+                            src_norm = max(-max_normal, min(max_normal, src_norm))
+                            cx = anchor.x + nx * (depth / 2 + offset + src_norm)
+                            cy = anchor.y + ny * (depth / 2 + offset + src_norm)
+                            cell = Polygon([
+                                (cx - rtx * frontage / 2 - rnx * depth / 2, cy - rty * frontage / 2 - rny * depth / 2),
+                                (cx + rtx * frontage / 2 - rnx * depth / 2, cy + rty * frontage / 2 - rny * depth / 2),
+                                (cx + rtx * frontage / 2 + rnx * depth / 2, cy + rty * frontage / 2 + rny * depth / 2),
+                                (cx - rtx * frontage / 2 + rnx * depth / 2, cy - rty * frontage / 2 + rny * depth / 2),
+                            ])
+                            # Second pass relaxes FAT clipping only. ROAD,
+                            # fixed-obstacle, and positive-overlap gates remain hard.
+                            if road_solid is not None and not road_solid.is_empty and cell.intersection(road_solid).area > 1e-7:
+                                valid = False; break
+                            if any(cell.intersection(old).area > 1e-7 for old in fixed):
+                                valid = False; break
+                            dist = source.distance(cell)
+                            road_dist = source.distance(road)
+                            max_relocation = (
+                                18.0 if road_dist > 15.0 else
+                                15.0 if road_dist > 12.0 else
+                                12.0
+                            )
+                            if dist > (30.0 if frontage < 3.0 else max_relocation) + 1e-6:
+                                valid = False; break
+                            if any(self._strict_positive_overlap(cell, old) for old in result.values()):
+                                valid = False; break
+                            result[index] = cell
+                        if valid and len(result) == len(index_order):
+                            return self._readable_angle(rot_deg), result
+        # ponytail: no label-only fallback; return None to let caller raise
+        # "tidak menemukan slot planar legal" — invariant 1 HP = 1 parcel stays.
+        return None
+
+    def _apply_ai_segment_hint(
+        self, segment, sites, clip_region, fill_region, roads, base_obstacles=None,
+        pipeline_logger=None,
+    ):
+        """Add bounded AI options for one real ROAD conflict segment only.
+
+        AI returns a hint, never polygons. The slot allocator remains the geometry
+        authority and rejects ROAD/overlap/distance-invalid candidates.
+        """
+        indexes = tuple(segment.get("indexes") or ())
+        options = segment.get("options") or []
+        if len(indexes) < 2 or not options:
+            return None
+        try:
+            preview = self._hp_visual_parcel_png(
+                clip_region,
+                [ShapelyPoint(sites[index]) for index in indexes],
+                candidate_parcels=list(options[0].values()),
+            )
+            hint = suggest_dxf_visual_parcel_layout(
+                preview_png=preview,
+                fat_angle=segment["angle"],
+                road_angle=segment["angle"],
+                point_count=len(indexes),
+            )
+            if not hint:
+                return None
+            angle = self._readable_angle(float(hint["angle_degrees"]))
+            delta = abs(((angle - segment["angle"] + 90.0) % 180.0) - 90.0)
+            if delta > 15.0:
+                return None
+            requested_side = 1 if float(hint.get("road_side", segment["side"]) or segment["side"]) >= 0 else -1
+            _candidate_angle, candidates = self._strict_segment_slot_options(
+                indexes, sites, roads[segment["road_position"]], requested_side,
+                clip_region, fill_region, base_obstacles=base_obstacles,
+                angle_override=angle, layout_hint=hint, candidate_limit=3,
+            )
+            known = {
+                tuple(option[index].wkb for index in sorted(option))
+                for option in options
+            }
+            added = 0
+            option_angles = segment.setdefault("option_angles", [segment["angle"]] * len(options))
+            for candidate in candidates:
+                fingerprint = tuple(candidate[index].wkb for index in sorted(candidate))
+                if fingerprint in known:
+                    continue
+                options.append(candidate)
+                option_angles.append(angle)
+                known.add(fingerprint)
+                added += 1
+            if added and pipeline_logger is not None:
+                pipeline_log(
+                    pipeline_logger, "info",
+                    "[3/6] HP COVER AI segment hint accepted: "
+                    f"axis {angle:.1f}°, confidence {float(hint['confidence']):.2f}, "
+                    f"road side {requested_side}, "
+                    f"scale {float(hint.get('width_scale', 1.0)):.2f}×{float(hint.get('depth_scale', 1.0)):.2f}, "
+                    f"candidates +{added}.",
+                )
+            return hint if added else None
+        except Exception as exc:
+            LOGGER.debug("HP COVER segment AI hint fallback: %s", exc)
+            return None
+
+    def _hp_road_side_segments(self, indexes, sites, road, gap_limit=13.0, bend_limit=30.0):
+        """Split one ROAD-side membership at real station gaps and bends."""
+        indexes = tuple(sorted(indexes))
+        if not indexes:
+            return []
+        def tangent(index):
+            station = road.project(ShapelyPoint(sites[index]))
+            epsilon = min(2.0, max(.25, road.length * .01))
+            before = road.interpolate(max(0.0, station - epsilon))
+            after = road.interpolate(min(road.length, station + epsilon))
+            return station, math.degrees(math.atan2(after.y - before.y, after.x - before.x))
+        def axis_delta(left, right):
+            return abs(((right - left + 90.0) % 180.0) - 90.0)
+        ordered = sorted(((index, *tangent(index)) for index in indexes), key=lambda item: (item[1], item[0]))
+        segments, current = [], [ordered[0][0]]
+        previous_station, previous_angle = ordered[0][1], ordered[0][2]
+        for index, station, angle in ordered[1:]:
+            if station - previous_station > gap_limit or axis_delta(previous_angle, angle) > bend_limit:
+                segments.append(tuple(current))
+                current = []
+            current.append(index)
+            previous_station, previous_angle = station, angle
+        if current:
+            segments.append(tuple(current))
+        return segments
+
+    def _guaranteed_final_4x8_repack(
+        self, indexes, sites, roads, base_obstacles=None,
+    ):
+        """Assign every HP COVER to a shared 4×8 grid outside ROAD.
+
+        This is the final tier only. FAT clipping and relocation are relaxed so
+        no HP COVER degrades to text-only; ROAD and positive-area overlap remain
+        hard constraints.
+        """
+        indexes = tuple(sorted(indexes))
+        if not indexes:
+            return 0.0, {}
+        source_points = [ShapelyPoint(sites[index]) for index in indexes]
+        reference = MultiPoint(source_points).centroid
+        usable_roads = [road for road in (roads or []) if road is not None and not road.is_empty]
+        angle = 0.0
+        if usable_roads:
+            road = min(usable_roads, key=lambda item: item.distance(reference))
+            station = road.project(reference)
+            epsilon = min(2.0, max(.25, road.length * .01))
+            before = road.interpolate(max(0.0, station - epsilon))
+            after = road.interpolate(min(road.length, station + epsilon))
+            dx, dy = after.x - before.x, after.y - before.y
+            if dx * dx + dy * dy > 1e-9:
+                angle = self._readable_angle(math.degrees(math.atan2(dy, dx)))
+        radians = math.radians(angle)
+        tx, ty = math.cos(radians), math.sin(radians)
+        nx, ny = -ty, tx
+        width, depth = HP_COVER_PARCEL_SIZE_TIERS[-1]
+        mean_u = sum(point.x * tx + point.y * ty for point in source_points) / len(source_points)
+        mean_v = sum(point.x * nx + point.y * ny for point in source_points) / len(source_points)
+        origin_u = round(mean_u / width) * width
+        origin_v = round(mean_v / depth) * depth
+        road_solid = self._home_parcel_road_solid()
+        fixed = [item for item in (base_obstacles or []) if item is not None and not item.is_empty]
+        slots = []
+        target = len(indexes) + max(8, len(indexes) // 4)
+
+        def cell_at(column, row):
+            center_u = origin_u + column * width
+            center_v = origin_v + row * depth
+            left, right = center_u - width / 2.0, center_u + width / 2.0
+            front, back = center_v - depth / 2.0, center_v + depth / 2.0
+            def xy(u, v):
+                return (tx * u + nx * v, ty * u + ny * v)
+            return Polygon([
+                xy(left, front), xy(right, front),
+                xy(right, back), xy(left, back),
+            ])
+
+        # Expanding square rings keep the fallback local in normal cases. The
+        # 512-ring ceiling spans at least 2 km × 4 km around the source group.
+        for radius in range(513):
+            coordinates = (
+                [(column, row) for column in range(-radius, radius + 1) for row in (-radius, radius)]
+                + [(column, row) for row in range(-radius + 1, radius) for column in (-radius, radius)]
+                if radius else [(0, 0)]
+            )
+            for column, row in coordinates:
+                parcel = cell_at(column, row)
+                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                    continue
+                if any(parcel.intersection(obstacle).area > 1e-7 for obstacle in fixed):
+                    continue
+                slots.append(parcel)
+            if len(slots) >= target:
+                break
+        if len(slots) < len(indexes):
+            raise RuntimeError('HP COVER final 4×8 grid tidak menemukan ruang bebas di luar ROAD.')
+
+        available = set(range(len(slots)))
+        assignments = {}
+        # Hardest/farthest sources choose first; each then claims its nearest free
+        # grid cell. Grid slots are disjoint by construction.
+        source_order = sorted(
+            range(len(indexes)),
+            key=lambda position: (
+                -min(source_points[position].distance(slot) for slot in slots),
+                indexes[position],
+            ),
+        )
+        for position in source_order:
+            slot_position = min(
+                available,
+                key=lambda candidate: (
+                    source_points[position].distance(slots[candidate]), candidate,
+                ),
+            )
+            assignments[indexes[position]] = slots[slot_position]
+            available.remove(slot_position)
+        self._last_relaxed_4x8_indexes.update(indexes)
+        return angle, assignments
+
+    def _strict_segmented_hp_plan(
+        self, indexes, sites, clip_region, fill_region, base_obstacles=None,
+        pipeline_logger=None,
+    ):
+        """Plan all HP cells by real ROAD-side segments, then commit atomically.
+
+        Segments own their complete planar slot lattice before sources are matched.
+        Each later segment treats earlier cells as hard obstacles, so separator cells
+        cannot overlap across segments. This replaces local-box conflict DFS.
+        """
+        indexes = tuple(sorted(indexes))
+        self._last_label_only_indexes = set()
+        self._last_relaxed_4x8_indexes = set()
+        roads, axis_source = self._hp_cover_axis_lines(indexes, sites)
+        # Commit must validate relocation against the same local ROAD set used
+        # during planning; recomputing against every global road can select a
+        # different nearer line and silently tighten the active tier.
+        self._last_hp_relocation_roads = list(roads)
+        if not roads:
+            raise ValueError(
+                'HP COVER strict planner membutuhkan ROAD centerline atau Distribution Cable.'
+            )
+        groups = {}
+        for index in indexes:
+            point = ShapelyPoint(sites[index])
+            road_position, road = min(enumerate(roads), key=lambda pair: point.distance(pair[1]))
+            station = road.project(point)
+            epsilon = min(2.0, max(.25, road.length * .01))
+            tangent_a = road.interpolate(max(0.0, station - epsilon))
+            tangent_b = road.interpolate(min(road.length, station + epsilon))
+            dx, dy = tangent_b.x - tangent_a.x, tangent_b.y - tangent_a.y
+            signed = (point.x - tangent_a.x) * (-dy) + (point.y - tangent_a.y) * dx
+            groups.setdefault((road_position, 1.0 if signed >= 0 else -1.0), []).append(index)
+        fixed = [parcel for parcel in (base_obstacles or []) if parcel is not None and not parcel.is_empty]
+        selected, rotations, segment_by_index = {}, {}, {}
+        completed = 0
+        # ROAD+side is not enough: one curved LineString may contain several
+        # physical corridors. Split on genuine tangent bend / station gap first.
+        segments = []
+        for (road_position, side), members in groups.items():
+            for member_ids in self._hp_road_side_segments(members, sites, roads[road_position]):
+                segments.append({'road_position': road_position, 'side': side, 'indexes': tuple(member_ids)})
+
+        # Phase 1: independent bounded candidates. No cross-segment reservation yet;
+        # it would greedily freeze one segment over another at a junction.
+        for segment in segments:
+            angle, options = self._strict_segment_slot_options(
+                segment['indexes'], sites, roads[segment['road_position']], segment['side'],
+                clip_region, fill_region, base_obstacles=fixed, candidate_limit=6,
+            )
+            # A nearest ROAD can have no legal 4x10 frontage at a junction.
+            # Keep evaluating nearby ROAD alternatives before rejecting this source
+            # segment; final global ROAD/relocation checks still apply below.
+            segment['angle'] = angle
+            segment['options'] = options
+            segment['option_angles'] = [angle] * len(options)
+            # Junction sources can legally front a second nearby ROAD. Add its
+            # bounded slot plans; the component selector chooses only a plan that
+            # remains ROAD-safe, <=12m from the immutable KMZ point, and disjoint.
+            reference = MultiPoint([ShapelyPoint(sites[index]) for index in segment['indexes']]).centroid
+            alternate_roads = sorted(
+                (
+                    (reference.distance(other_road), other_position, other_road)
+                    for other_position, other_road in enumerate(roads)
+                    if other_position != segment['road_position']
+                    and reference.distance(other_road) <= 12.0 + 1e-6
+                ),
+                key=lambda item: (item[0], item[1]),
+            )[:2]
+            for _distance, other_position, other_road in alternate_roads:
+                tangent_station = other_road.project(reference)
+                epsilon = min(2.0, max(.25, other_road.length * .01))
+                tangent_a = other_road.interpolate(max(0.0, tangent_station - epsilon))
+                tangent_b = other_road.interpolate(min(other_road.length, tangent_station + epsilon))
+                dx, dy = tangent_b.x - tangent_a.x, tangent_b.y - tangent_a.y
+                signed = (reference.x - tangent_a.x) * (-dy) + (reference.y - tangent_a.y) * dx
+                other_side = 1.0 if signed >= 0 else -1.0
+                other_angle, alternate_options = self._strict_segment_slot_options(
+                    segment['indexes'], sites, other_road, other_side,
+                    clip_region, fill_region, base_obstacles=fixed, candidate_limit=6,
+                )
+                for option in alternate_options:
+                    # Skip label-only markers (dict) from fingerprint comparison
+                    if any(isinstance(option.get(idx), dict) for idx in option):
+                        continue
+                    fingerprint = tuple(option[index].wkb for index in sorted(option))
+                    known = {
+                        tuple(existing[index].wkb for index in sorted(existing))
+                        for existing in segment['options']
+                    }
+                    if fingerprint in known:
+                        continue
+                    segment['options'].append(option)
+                    segment['option_angles'].append(other_angle)
+
+            if not segment['options']:
+                # Bounded exact-tier recovery before the guaranteed 4×8 lattice.
+                recovery_option = None
+                recovery_angle = segment['angle']
+                recovery_tier = None
+                for recovery_width, recovery_depth in HP_COVER_PARCEL_SIZE_TIERS:
+                    recovery_angle, recovery_option = self._strict_small_group_recovery_options(
+                        segment['indexes'],
+                        sites,
+                        roads[segment['road_position']],
+                        clip_region,
+                        base_obstacles=fixed,
+                        base_angle=segment['angle'],
+                        cell_width=recovery_width,
+                        cell_depth=recovery_depth,
+                        allow_equal_split=False,
+                    )
+                    if recovery_option:
+                        recovery_tier = f'{recovery_width:g}×{recovery_depth:g}'
+                        break
+                if recovery_option:
+                    segment['options'].append(recovery_option)
+                    segment['option_angles'].append(recovery_angle)
+                    pipeline_log(
+                        pipeline_logger, 'info',
+                        f'[3/6] HP COVER strict small-group recovery: bounded {recovery_tier} cells '
+                        f"for {len(segment['indexes'])} HP at segment "
+                        f"{segment['road_position']}/{int(segment['side'])}, axis {recovery_angle:.1f}°.",
+                    )
+            if not segment['options']:
+                # Final policy: every HP COVER remains present and boxed. Expand a
+                # shared 4×8 lattice beyond FAT if required; ROAD and parcel overlap
+                # remain forbidden.
+                indexes_tuple = tuple(segment['indexes'] or [])
+                recovery_angle, recovery_option = self._guaranteed_final_4x8_repack(
+                    indexes_tuple, sites, roads, base_obstacles=fixed,
+                )
+                segment['options'].append(recovery_option)
+                segment['option_angles'].append(recovery_angle)
+                pipeline_log(
+                    pipeline_logger, 'warning',
+                    f"[FINAL 4×8] Segment={segment['road_position']}/{int(segment['side'])} "
+                    f"repacked {len(indexes_tuple)} HP COVER; FAT clip relaxed, ROAD/overlap tetap nol.",
+                )
+
+        # Phase 2: build conflicts from independent first candidates. Components are
+        # small real ROAD junctions (not the prior 350-HP local-box chain).
+        parent = list(range(len(segments)))
+        def find(value):
+            while parent[value] != value:
+                parent[value] = parent[parent[value]]
+                value = parent[value]
+            return value
+        def union(left, right):
+            left, right = find(left), find(right)
+            if left != right:
+                parent[right] = left
+        for right, segment_right in enumerate(segments):
+            for left, segment_left in enumerate(segments[:right]):
+                if any(
+                    self._strict_positive_overlap(first, second)
+                    for first in segment_left['options'][0].values()
+                    for second in segment_right['options'][0].values()
+                ):
+                    union(left, right)
+        components = {}
+        for position in range(len(segments)):
+            components.setdefault(find(position), []).append(position)
+        # Expand axis only when a segment is in a real overlap component.
+        # Singleton segments retain deterministic primary/alternate ROAD plans.
+        for positions in components.values():
+            if len(positions) > 1:
+                for position in positions:
+                    self._expand_segment_rotation_options(
+                        segments[position], sites, clip_region, fill_region,
+                        base_obstacles=fixed, axis_lines=roads,
+                    )
+                    self._apply_ai_segment_hint(
+                        segments[position], sites, clip_region, fill_region, roads,
+                        base_obstacles=fixed, pipeline_logger=pipeline_logger,
+                    )
+
+        occupied = list(fixed)
+        completed = 0
+        ordered_components = sorted(
+            components.values(),
+            key=lambda positions: (-sum(len(segments[position]['indexes']) for position in positions), min(positions)),
+        )
+        for component_number, positions in enumerate(ordered_components, 1):
+            plans = [segments[position] for position in positions]
+            # Junction conflict may only appear when multiple segments share cells.
+            # Singleton components can fall back to alternate ROAD via
+            # `_expand_segment_rotation_options`; if that still fails, raise early.
+            chosen = self._select_strict_strip_candidates(plans, base_obstacles=occupied)
+            # Candidate options generated in Phase 1 only avoid `fixed`, but the
+            # slots that actually occupy this junction belong to other segments
+            # placed earlier. Regenerate per-segment options against the *real*
+            # occupied cells before giving up.
+            if chosen is None:
+                for plan in plans:
+                    regenerate, regenerate_angles = [], []
+                    for option, option_angle in zip(plan['options'], plan.get('option_angles', [plan['angle']] * len(plan['options']))):
+                        fingerprint = tuple(option[index].wkb for index in sorted(option))
+                        seen_r = {tuple(old[index].wkb for index in sorted(old)) for old in regenerate}
+                        if fingerprint in seen_r:
+                            continue
+                        regenerate.append(option)
+                        regenerate_angles.append(option_angle)
+                    angle, fresh = self._strict_segment_slot_options(
+                        plan['indexes'], sites, roads[plan['road_position']], plan['side'],
+                        clip_region, fill_region, base_obstacles=occupied, candidate_limit=6,
+                    )
+                    for option in fresh:
+                        fingerprint = tuple(option[index].wkb for index in sorted(option))
+                        if fingerprint in seen_r:
+                            continue
+                        seen_r.add(fingerprint)
+                        regenerate.append(option)
+                        regenerate_angles.append(angle)
+                    plan['options'] = regenerate
+                    plan['option_angles'] = regenerate_angles
+                chosen = self._select_strict_strip_candidates(plans, base_obstacles=occupied)
+            combined_plan = None
+            combined_axis_position = None
+            if chosen is None:
+                combined_ids = tuple(sorted(index for plan in plans for index in plan['indexes']))
+                lattice_angle, lattice_options = self._strict_component_lattice_options(
+                    combined_ids, sites, clip_region, fill_region,
+                    base_obstacles=occupied,
+                    candidate_limit=1,
+                    axis_lines=roads,
+                )
+                if lattice_options:
+                    combined_plan = lattice_options[0]
+                    chosen = combined_plan
+                    component_axis = getattr(self, '_last_strict_component_axis_line', None)
+                    combined_axis_position = next(
+                        (position for position, line in enumerate(roads) if line is component_axis),
+                        None,
+                    )
+                    if combined_axis_position is None:
+                        raise ValueError('HP COVER component lattice kehilangan active axis.')
+                if combined_plan is None:
+                    # Independent per-segment cells cannot all avoid each other at a
+                    # multi-way junction. Replan the whole conflict component as one
+                    # shared planar 4x10 lattice rooted at one ROAD; source-to-cell
+                    # stays <=12m, no cell may overlap ROAD or another cell.
+                    combined_ids = tuple(sorted(index for plan in plans for index in plan['indexes']))
+                    lattice = None
+                    lattice_angle = None
+                    tried_roads = []
+                if combined_plan is None:
+                    # Try ALL roads only when the first component lattice failed.
+                    # A valid active-axis lattice must never be overwritten by a
+                    # later, farther ROAD candidate.
+                    for road_position in sorted(range(len(roads))):
+                        for side in (-1.0, 1.0):
+                            tried_roads.append((road_position, side))
+                            angle, options = self._strict_segment_slot_options(
+                                combined_ids, sites, roads[road_position], side,
+                                clip_region, fill_region, base_obstacles=occupied, candidate_limit=1,
+                            )
+                            if not options:
+                                continue
+                            option = options[0]
+                            if any(
+                                self._strict_positive_overlap(left, right)
+                                for right_index, right in option.items()
+                                for left_index, left in option.items()
+                                if left_index < right_index
+                            ):
+                                continue
+                            lattice = option
+                            lattice_angle = angle
+                            combined_axis_position = road_position
+                            break
+                        if lattice is not None:
+                            break
+                    if lattice is None:
+                        # Guaranteed final tier: every HP COVER gets one 4×8 cell.
+                        # FAT/relocation may relax; ROAD and overlap remain hard.
+                        combined_ids = tuple(sorted(index for plan in plans for index in plan['indexes']))
+                        lattice_angle, lattice = self._guaranteed_final_4x8_repack(
+                            combined_ids, sites, roads, base_obstacles=occupied,
+                        )
+                        combined_axis_position = min(
+                            range(len(roads)),
+                            key=lambda position: MultiPoint(
+                                [ShapelyPoint(sites[index]) for index in combined_ids]
+                            ).centroid.distance(roads[position]),
+                        )
+                        pipeline_log(
+                            pipeline_logger, 'warning',
+                            f"[FINAL 4×8] component={component_number} repacked "
+                            f"{len(combined_ids)} HP COVER; ROAD/overlap tetap nol.",
+                        )
+                    combined_plan = lattice
+            chosen = combined_plan or chosen
+            if chosen is None:
+                detail = [list(plan['indexes'])[:12] for plan in plans]
+                raise ValueError(f'HP COVER ROAD segment conflict tidak punya kombinasi planar: {detail}.')
+            if combined_plan is not None:
+                # The component lattice owns one shared active ROAD axis. Do not
+                # restore each member's pre-conflict segment mapping: that would
+                # validate a component cell against a different ROAD and recreate
+                # the ID 186 failure.
+                combined_side = getattr(self, '_last_strict_component_axis_side', None)
+                if combined_side is None:
+                    combined_side = plans[0]['side'] if plans else 1
+                for plan in plans:
+                    for index in plan['indexes']:
+                        selected[index] = chosen[index]
+                        rotations[index] = lattice_angle
+                        segment_by_index[index] = (
+                            combined_axis_position,
+                            int(combined_side),
+                            component_number,
+                        )
+            else:
+                for plan in plans:
+                    chosen_angle = plan['angle']
+                    option = None
+                    for option_position, candidate in enumerate(plan['options']):
+                        # Skip comparison if candidate doesn't contain all indexes.
+                        try:
+                            if all(
+                                index in candidate and index in chosen
+                                and not isinstance(candidate[index], dict)
+                                and not isinstance(chosen[index], dict)
+                                and candidate[index].equals(chosen[index])
+                                for index in plan['indexes']
+                            ):
+                                option = candidate
+                                chosen_angle = plan.get('option_angles', [plan['angle']])[option_position]
+                                break
+                        except Exception:
+                            continue
+                    if option is None:
+                        raise ValueError('HP COVER selector kehilangan kepemilikan local corridor.')
+                    for index in plan['indexes']:
+                        selected[index] = chosen[index]
+                        rotations[index] = chosen_angle
+                        segment_by_index[index] = (plan['road_position'], int(plan['side']), component_number)
+            occupied.extend(chosen.values())
+            completed += sum(len(plan['indexes']) for plan in plans)
+            self._hp_cover_progress_checkpoint(pipeline_logger, completed, 'road-segment-slots')
+        # Final fixpoint: the conflict graph above was built only from first
+        # candidates. When a large segment picks a non-first option, its actual
+        # cells can overlap sources that never unioned. Merge every positively
+        # overlapping final pair into one combined-lattice component and replan
+        # until the whole 350-cell selection is disjoint (cap 5 iterations).
+        for _fixpoint_round in range(5):
+            overlap_pairs = []
+            ids_order = sorted(selected)
+            for left_pos, left_id in enumerate(ids_order):
+                for right_id in ids_order[left_pos + 1:]:
+                    if (
+                        left_id not in self._last_label_only_indexes
+                        or right_id not in self._last_label_only_indexes
+                    ) and self._strict_positive_overlap(selected[left_id], selected[right_id]):
+                        overlap_pairs.append((left_id, right_id))
+            if not overlap_pairs:
+                break
+            affected = sorted({index for pair in overlap_pairs for index in pair})
+            for index in affected:
+                del selected[index]
+                del rotations[index]
+                segment_by_index.pop(index, None)
+            other_ids = [index for index in indexes if index not in affected]
+            outer_obstacles = [selected[index] for index in other_ids]
+            lattice = None
+            lattice_angle = None
+            for road_position in sorted({segment['road_position'] for segment in segments}):
+                for side in (-1.0, 1.0):
+                    angle, options = self._strict_segment_slot_options(
+                        tuple(sorted(affected)), sites, roads[road_position], side,
+                        clip_region, fill_region, base_obstacles=outer_obstacles, candidate_limit=1,
+                    )
+                    if not options:
+                        continue
+                    if any(
+                        self._strict_positive_overlap(left, right)
+                        for right_index, right in options[0].items()
+                        for left_index, left in options[0].items()
+                        if left_index < right_index
+                    ):
+                        continue
+                    lattice = options[0]
+                    lattice_angle = angle
+                    break
+                if lattice is not None:
+                    break
+            if lattice is None:
+                fallback_ids = tuple(sorted(affected))
+                lattice_angle, lattice = self._guaranteed_final_4x8_repack(
+                    fallback_ids, sites, roads, base_obstacles=outer_obstacles,
+                )
+                pipeline_log(
+                    pipeline_logger, 'warning',
+                    f"[FINAL 4×8] fixpoint repacked {len(fallback_ids)} HP COVER; "
+                    "ROAD/overlap tetap nol.",
+                )
+            for index, parcel in lattice.items():
+                selected[index] = parcel
+                rotations[index] = lattice_angle
+                segment_by_index[index] = (road_position, int(side), 0)
+            self._hp_cover_progress_checkpoint(
+                pipeline_logger, len(selected), 'road-fixpoint-round'
+            )
+        if set(selected) != set(indexes):
+            raise ValueError('HP COVER ROAD segment planner kehilangan source ID.')
+
+        # Any legacy micro-marker produced while resolving junction conflicts is
+        # replaced before validation/render. Final DXF therefore has one real
+        # 4×8 box for every HP COVER and no label-only geometry.
+        if self._last_label_only_indexes:
+            fallback_ids = tuple(sorted(self._last_label_only_indexes))
+            protected = list(fixed) + [
+                parcel for index, parcel in selected.items()
+                if index not in self._last_label_only_indexes
+            ]
+            fallback_angle, fallback_cells = self._guaranteed_final_4x8_repack(
+                fallback_ids, sites, roads, base_obstacles=protected,
+            )
+            for index, parcel in fallback_cells.items():
+                selected[index] = parcel
+                rotations[index] = fallback_angle
+            self._last_label_only_indexes.clear()
+
+        # Preserve the exact planner tier; do not widen 4×10 into the obsolete
+        # 6×10 visual-only size.
+        road_solid = self._home_parcel_road_solid()
+        for index, parcel in selected.items():
+            # Explicit label-only fallback parcel is allowed to sit on/overlap ROAD
+            # and be farther than 12m; it is drawn only as a label anchor.
+            if index in self._last_label_only_indexes:
+                continue
+            source = ShapelyPoint(sites[index])
+            # Match the active tier used by recovery: moderate/ extreme
+            # relocation is legal only when the source is far from ROAD.
+            road_position = segment_by_index.get(index, (None,))[0]
+            active_roads = [roads[road_position]] if road_position is not None else roads
+            max_relocation = self._strict_relocation_limit(source, active_roads)
+            if (
+                index not in self._last_relaxed_4x8_indexes
+                and parcel.distance(source) > max_relocation + 1e-6
+            ):
+                raise ValueError(
+                    f'HP COVER ROAD segment relokasi >{max_relocation:g}m: ID {index}.'
+                )
+            if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                raise ValueError(f'HP COVER ROAD segment overlap ROAD: ID {index}.')
+        if any(
+            self._strict_positive_overlap(left, right)
+            for right_index, right in selected.items()
+            for left_index, left in selected.items()
+            if left_index < right_index and left_index not in self._last_label_only_indexes and right_index not in self._last_label_only_indexes
+        ):
+            raise ValueError('HP COVER ROAD segment planner menghasilkan final cell overlap.')
+        if pipeline_logger is not None:
+            pipeline_log(
+                pipeline_logger,
+                'info',
+                f'[3/6] HP COVER {axis_source} slot plan: {len(segments)} segment, {len(selected)} cell.',
+            )
+        return selected, rotations, segment_by_index
+
+    def _strict_global_hp_plan(
+        self, subblocks, sites, clip_region, fill_region, base_obstacles=None,
+        pipeline_logger=None,
+    ):
+        """Fast strict plan: AI only for dense blocks; expand candidates only on conflict.
+
+        Every initial local block produces one full deterministic option. Positive
+        overlap graph decides which blocks need alternatives. This avoids a 48-way
+        Cartesian/MRV search across unrelated singleton corridors.
+        """
+        fixed_obstacles = [
+            parcel for parcel in (base_obstacles or [])
+            if parcel is not None and not parcel.is_empty
+        ]
+        plans = []
+        planned = 0
+        expected = set()
+        for block in subblocks:
+            indexes = tuple(sorted(block))
+            if not indexes or expected.intersection(indexes):
+                raise ValueError("HP COVER local corridor membership invalid.")
+            expected.update(indexes)
+            # Fast pass is deterministic for every corridor. AI is deliberately
+            # deferred until a dense/conflicting component needs a shared shift;
+            # never fan out one vision call per harmless singleton/pair.
+            angle, options = self._strict_strip_options(
+                indexes, sites, clip_region, fill_region,
+                base_obstacles=fixed_obstacles,
+                candidate_limit=1,
+            )
+            ai_hint = None
+            initial_internal_overlap = bool(options) and any(
+                self._strict_positive_overlap(left, right)
+                for right_index, right in options[0].items()
+                for left_index, left in options[0].items()
+                if left_index < right_index
+            )
+            if (not options or initial_internal_overlap) and len(indexes) >= 2:
+                # A genuinely dense *local* corridor may need stacked parking bays.
+                # Keep this local; never merge a broad overlap chain into one grid.
+                angle, options = self._strict_strip_options(
+                    indexes, sites, clip_region, fill_region,
+                    base_obstacles=fixed_obstacles,
+                    candidate_limit=1, dense_repack=True,
+                )
+            if not options and len(indexes) >= 2:
+                # Last local-only strict fallback for a dense corridor whose ROAD
+                # strip rows cannot fit without overlap. Still one 4x10 parking
+                # lattice, one label per cell, no compact/label-only geometry.
+                lattice_angle, lattice_options = self._strict_component_lattice_options(
+                    indexes,
+                    sites,
+                    clip_region,
+                    fill_region,
+                    base_obstacles=fixed_obstacles,
+                    candidate_limit=1,
+                )
+                if lattice_options:
+                    angle, options = lattice_angle, lattice_options
+            if not options:
+                raise ValueError(
+                    f"HP COVER shared ROAD strip tidak lengkap: 0/{len(indexes)} parcel valid; "
+                    f"IDs {list(indexes)[:12]}. Tidak membuat compact/label-only fallback."
+                )
+            plans.append({
+                "indexes": indexes,
+                "angle": angle,
+                "hint": ai_hint,
+                "options": [options[0]],
+            })
+            planned += len(indexes)
+            self._hp_cover_progress_checkpoint(pipeline_logger, planned, "planning")
+
+        # Initial candidates are cheap. Build an overlap graph by local block.
+        parents = list(range(len(plans)))
+        def find(value):
+            while parents[value] != value:
+                parents[value] = parents[parents[value]]
+                value = parents[value]
+            return value
+        def union(left, right):
+            left, right = find(left), find(right)
+            if left != right:
+                parents[right] = left
+        def plans_overlap(left, right):
+            return any(
+                self._strict_positive_overlap(first, second)
+                for first in left["options"][0].values()
+                for second in right["options"][0].values()
+            )
+
+        conflicted = set()
+        for right in range(len(plans)):
+            for left in range(right):
+                if plans_overlap(plans[left], plans[right]):
+                    union(left, right)
+                    conflicted.add(left)
+                    conflicted.add(right)
+
+        selected = {
+            index: parcel
+            for plan in plans for index, parcel in plan["options"][0].items()
+        }
+        rotations = {
+            index: plan["angle"]
+            for plan in plans for index in plan["indexes"]
+        }
+        if not conflicted:
+            return selected, rotations
+
+        components = {}
+        for position in conflicted:
+            components.setdefault(find(position), []).append(position)
+        for positions in components.values():
+            position_set = set(positions)
+            outside = [
+                parcel
+                for position, plan in enumerate(plans)
+                if position not in position_set
+                for parcel in plan["options"][0].values()
+            ]
+            component_plans = []
+            for position in sorted(positions):
+                original_plan = plans[position]
+                indexes = original_plan["indexes"]
+                # Only a block participating in positive-area collision gets extra
+                # choices and an AI hint. Singleton/non-conflicting corridors never
+                # invoke visual AI or a global candidate search.
+                if len(indexes) >= 2:
+                    angle, options, hint = self._strict_ai_strip_options(
+                        indexes,
+                        sites,
+                        clip_region,
+                        fill_region,
+                        pipeline_logger=pipeline_logger,
+                        base_obstacles=fixed_obstacles + outside,
+                        candidate_limit=6,
+                        dense_repack=True,
+                    )
+                else:
+                    angle, options = self._strict_strip_options(
+                        indexes,
+                        sites,
+                        clip_region,
+                        fill_region,
+                        base_obstacles=fixed_obstacles + outside,
+                        candidate_limit=6,
+                    )
+                    hint = None
+                if not options and len(indexes) >= 2:
+                    # Conflict retry may block an otherwise valid local strip. Retry
+                    # the same local members as a strict planar parking lattice; do
+                    # not merge this component with its neighbours.
+                    lattice_angle, lattice_options = self._strict_component_lattice_options(
+                        indexes,
+                        sites,
+                        clip_region,
+                        fill_region,
+                        base_obstacles=fixed_obstacles + outside,
+                        candidate_limit=6,
+                    )
+                    if lattice_options:
+                        angle, options, hint = lattice_angle, lattice_options, None
+                if not options:
+                    raise ValueError(
+                        "HP COVER conflict corridor tidak menemukan opsi lokal legal; "
+                        f"IDs {list(indexes)[:24]}. Tidak membuat compact/label-only fallback."
+                    )
+                component_plans.append({
+                    "indexes": indexes,
+                    "angle": angle,
+                    "hint": hint,
+                    "options": options,
+                })
+
+            component_cells = self._select_strict_strip_candidates(
+                component_plans, base_obstacles=fixed_obstacles + outside,
+            )
+            component_expected = {
+                index for plan in component_plans for index in plan["indexes"]
+            }
+            lattice_angle = None
+            if component_cells is None:
+                # Perpendicular valid local strips can still collide at a junction.
+                # Rebuild only that connected conflict as one planar 4x10 lattice.
+                lattice_angle, lattice_options = self._strict_component_lattice_options(
+                    tuple(sorted(component_expected)),
+                    sites,
+                    clip_region,
+                    fill_region,
+                    base_obstacles=fixed_obstacles + outside,
+                    candidate_limit=1,
+                )
+                component_cells = lattice_options[0] if lattice_options else None
+            if component_cells is None:
+                component_ids = tuple(sorted(component_expected))
+                raise ValueError(
+                    "HP COVER conflict corridor tidak menemukan kombinasi planar legal; "
+                    f"IDs {list(component_ids)[:24]}. Tidak membuat compact/label-only fallback."
+                )
+            if set(component_cells) != component_expected:
+                raise ValueError("HP COVER conflict corridor kehilangan source ID.")
+            if any(
+                self._strict_positive_overlap(left, right)
+                for right_index, right in component_cells.items()
+                for left_index, left in component_cells.items()
+                if left_index < right_index
+            ):
+                raise ValueError("HP COVER conflict corridor menghasilkan cell overlap.")
+
+            if lattice_angle is not None:
+                rotations.update({index: lattice_angle for index in component_expected})
+                if pipeline_logger is not None:
+                    pipeline_log(
+                        pipeline_logger, "info",
+                        f"[3/6] HP COVER conflict lattice: {len(component_expected)} HP, axis {lattice_angle:.1f}°.",
+                    )
+            else:
+                for plan in component_plans:
+                    matching = next(
+                        (
+                            option for option in plan["options"]
+                            if all(
+                                component_cells[index].equals_exact(option[index], 1e-7)
+                                for index in plan["indexes"]
+                            )
+                        ),
+                        None,
+                    )
+                    if matching is None:
+                        raise ValueError("HP COVER selector kehilangan kepemilikan local corridor.")
+                    rotations.update({index: plan["angle"] for index in plan["indexes"]})
+            selected.update(component_cells)
+            self._hp_cover_progress_checkpoint(
+                pipeline_logger,
+                sum(len(plan["indexes"]) for plan in component_plans),
+                "conflict-lattice" if lattice_angle is not None else "conflict-selection",
+            )
+        if set(selected) != expected:
+            raise ValueError("HP COVER global plan kehilangan source ID.")
+        if any(
+            self._strict_positive_overlap(left, right)
+            for right_index, right in selected.items()
+            for left_index, left in selected.items()
+            if left_index < right_index
+        ):
+            raise ValueError("HP COVER global plan menghasilkan final cell overlap.")
+        return selected, rotations
+
+    def _strict_component_lattice_options(
+        self, indexes, sites, clip_region, fill_region, base_obstacles=None,
+        candidate_limit=1, angle_override=None, layout_hint=None, axis_lines=None,
+    ):
+        """Return the largest complete legal lattice tier for a dense corridor."""
+        # Preserve the exact axis object selected by the lattice builder. The
+        # caller must carry that identity into final relocation validation.
+        self._last_strict_component_axis_line = None
+        self._last_strict_component_axis_side = None
+        last_angle = 0.0
+        for parcel_size in HP_COVER_PARCEL_SIZE_TIERS:
+            last_angle, options = self._strict_component_lattice_options_for_size(
+                indexes, sites, clip_region, fill_region,
+                base_obstacles=base_obstacles,
+                candidate_limit=candidate_limit,
+                angle_override=angle_override,
+                layout_hint=layout_hint,
+                parcel_size=parcel_size,
+                axis_lines=axis_lines,
+            )
+            if options:
+                return last_angle, options
+        return last_angle, []
+
+    def _strict_component_lattice_options_for_size(
+        self, indexes, sites, clip_region, fill_region, base_obstacles=None,
+        candidate_limit=1, angle_override=None, layout_hint=None,
+        parcel_size=(4.0, 10.0), axis_lines=None,
+    ):
+        """Build one dense-corridor lattice using an exact policy tier."""
+        indexes = tuple(sorted(indexes))
+        if not indexes:
+            return 0.0, []
+        roads = list(axis_lines) if axis_lines is not None else self._hp_cover_axis_lines(indexes, sites)[0]
+        if not roads:
+            return 0.0, []
+        source_points = [ShapelyPoint(sites[index]) for index in indexes]
+        reference = MultiPoint(source_points).centroid
+        road = min(roads, key=lambda line: line.distance(reference))
+        self._last_strict_component_axis_line = road
+        angle = self._polygon_label_rotation(clip_region) if clip_region is not None and not clip_region.is_empty else 0.0
+        if road.distance(reference) <= 36.0:
+            position = road.project(reference)
+            epsilon = min(2.0, max(.25, road.length * .01))
+            point_a = road.interpolate(max(0.0, position - epsilon))
+            point_b = road.interpolate(min(road.length, position + epsilon))
+            dx, dy = point_b.x - point_a.x, point_b.y - point_a.y
+            if dx * dx + dy * dy > 1e-9:
+                angle = math.degrees(math.atan2(dy, dx))
+        if angle_override is not None:
+            try:
+                angle = float(angle_override)
+            except (TypeError, ValueError):
+                pass
+        angle = self._readable_angle(angle)
+        radians = math.radians(angle)
+        tx, ty = math.cos(radians), math.sin(radians)
+        base_nx, base_ny = -ty, tx
+        road_at = road.interpolate(road.project(reference))
+        signed = (reference.x - road_at.x) * base_nx + (reference.y - road_at.y) * base_ny
+        side = 1.0 if signed >= 0 else -1.0
+        hint = dict(layout_hint or {})
+        try:
+            requested_side = float(hint.get("road_side", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            requested_side = 0.0
+        if requested_side in (-1.0, 1.0):
+            side = requested_side
+        self._last_strict_component_axis_side = side
+        nx, ny = base_nx * side, base_ny * side
+        entries = [
+            (index, point, point.x * tx + point.y * ty, point.x * nx + point.y * ny)
+            for index, point in zip(indexes, source_points)
+        ]
+        road_solid = self._home_parcel_road_solid()
+        obstacles = [parcel for parcel in (base_obstacles or []) if parcel is not None and not parcel.is_empty]
+        clip_cover = clip_region.buffer(1e-6) if fill_region and clip_region is not None and not clip_region.is_empty else None
+        try:
+            width, depth = (float(value) for value in parcel_size)
+        except (TypeError, ValueError):
+            return angle, []
+        if (width, depth) not in HP_COVER_PARCEL_SIZE_TIERS:
+            return angle, []
+        min_u, max_u = min(item[2] for item in entries), max(item[2] for item in entries)
+        min_v, max_v = min(item[3] for item in entries), max(item[3] for item in entries)
+        front_values = []
+        for _index, point, _u, _v in entries:
+            try:
+                edge = nearest_points(point, road_solid.boundary)[1] if road_solid is not None and not road_solid.is_empty else road.interpolate(road.project(point))
+            except Exception:
+                edge = road.interpolate(road.project(point))
+            front_values.append(edge.x * nx + edge.y * ny)
+        road_base_v = max(front_values) if front_values else min_v - depth / 2.0
+        if min_v - road_base_v > 13.0:
+            road_base_v = min_v - depth / 2.0
+        # ROAD-front first. If that cannot cover every source within the immutable
+        # 12m presentation limit, a centered local parking lattice is still ROAD-
+        # oriented and remains hard-excluded from the actual ROAD footprint.
+        base_v_choices = [road_base_v, min_v - depth / 2.0, min_v - depth]
+        base_u = math.floor((min_u - width) / width) * width
+        column_count = max(1, int(math.ceil((max_u - base_u) / width)) + 2)
+        best = None
+
+        for base_v in dict.fromkeys(round(value, 6) for value in base_v_choices):
+            row_count = max(1, int(math.ceil((max_v - base_v) / depth)) + 2)
+            slots = []
+            for row_number in range(row_count):
+                for column_number in range(column_count):
+                    left = base_u + column_number * width
+                    bottom = base_v + row_number * depth
+                    def xy(u, v):
+                        return (tx * u + nx * v, ty * u + ny * v)
+                    cell = Polygon([
+                        xy(left, bottom), xy(left + width, bottom),
+                        xy(left + width, bottom + depth), xy(left, bottom + depth),
+                    ])
+                    if road_solid is not None and not road_solid.is_empty and cell.intersection(road_solid).area > 1e-7:
+                        continue
+                    if clip_cover is not None and not clip_cover.covers(cell):
+                        continue
+                    if any(cell.intersection(obstacle).area > 1e-7 for obstacle in obstacles):
+                        continue
+                    slots.append(cell)
+            if len(slots) < len(entries):
+                continue
+
+            choices = {}
+            for source_position, (_index, point, _u, _v) in enumerate(entries):
+                choices[source_position] = [
+                    slot_position for _distance, slot_position in sorted(
+                        (point.distance(cell), slot_position)
+                        for slot_position, cell in enumerate(slots)
+                        if point.distance(cell) <= 12.0 + 1e-6
+                    )
+                ]
+                if not choices[source_position]:
+                    choices = {}
+                    break
+            if not choices:
+                continue
+
+            # Deterministic augmenting-path matching. This is polynomial and runs
+            # only inside one failed local corridor, never over all 121 blocks.
+            slot_owner = {}
+            def claim(source_position, seen):
+                for slot_position in choices[source_position]:
+                    if slot_position in seen:
+                        continue
+                    seen.add(slot_position)
+                    prior = slot_owner.get(slot_position)
+                    if prior is None or claim(prior, seen):
+                        slot_owner[slot_position] = source_position
+                        return True
+                return False
+            ordered = sorted(choices, key=lambda position: (len(choices[position]), entries[position][0]))
+            if not all(claim(source_position, set()) for source_position in ordered):
+                continue
+            option = {
+                entries[source_position][0]: slots[slot_position]
+                for slot_position, source_position in slot_owner.items()
+            }
+            if len(option) != len(entries):
+                continue
+            distances = [entries[position][1].distance(option[entries[position][0]]) for position in range(len(entries))]
+            score = (max(distances), sum(distances), abs(base_v - road_base_v))
+            if best is None or score < best[0]:
+                best = (score, option)
+        return angle, [best[1]] if best is not None else []
+
+    def _select_hp_local_candidates(self, plans, fixed, pipeline_logger=None):
+        """Lazy exact conflict rows; retain every legal option in its original order."""
+        from shapely import area as geometry_area, intersection as geometry_intersection
+        started = time.perf_counter()
+        tokens, domains = [], []
+        conflicts = {}
+        nodes = pairs = 0
+        last_log = started
+        def checkpoint(reason=None):
+            nonlocal last_log
+            now = time.perf_counter()
+            self._hp_candidate_selector_stats = {
+                "plans": len(plans), "options": len(tokens), "nodes": nodes,
+                "geometry_pairs": pairs, "cached_rows": len(conflicts),
+                "elapsed_s": now - started, "reason": reason or "searching",
+                "success": reason == "selected",
+            }
+            if reason or now - last_log >= 5.0:
+                pipeline_log(pipeline_logger or LOGGER, "info",
+                             f"[3/6] HP candidate search: {self._hp_candidate_selector_stats}")
+                last_log = now
+            if now - started >= 60.0 or nodes >= 500000 or pairs >= 5000000:
+                bound = "elapsed" if now - started >= 60.0 else "nodes" if nodes >= 500000 else "geometry_pairs"
+                self._hp_candidate_selector_stats["reason"] = bound + "_budget"
+                raise TimeoutError(f"HP bounded candidate search {bound} budget exhausted: {self._hp_candidate_selector_stats}")
+        for plan in plans:
+            checkpoint()
+            domain = 0
+            for option in plan["options"]:
+                if set(option) != set(plan["indexes"]):
+                    return None
+                parcels = list(option.values())
+                if any(p is None or p.is_empty or not p.is_valid for p in parcels):
+                    return None
+                if any(self._strict_positive_overlap(p, q) for i, p in enumerate(parcels) for q in parcels[i + 1:]):
+                    continue
+                if any(self._strict_positive_overlap(p, q) for p in parcels for q in fixed):
+                    continue
+                domain |= 1 << len(tokens)
+                tokens.append(option)
+            if not domain:
+                checkpoint("empty_domain")
+                return None
+            domains.append(domain)
+        geometries = [p for option in tokens for p in option.values()]
+        token_by_geometry = [n for n, option in enumerate(tokens) for _ in option.values()]
+        plan_by_token = [n for n, domain in enumerate(domains) for _ in range(domain.bit_count())]
+        tree = STRtree(geometries)
+        # ponytail: forward checking, not all-option arc consistency. Full finite
+        # domains remain available; bounded exhaustion never means infeasibility.
+        def conflict_row(token):
+            nonlocal pairs
+            if token not in conflicts:
+                mask = 0
+                for p in tokens[token].values():
+                    # STRtree positions, never id(Polygon): shared instances are legal.
+                    near = [int(j) for j in tree.query(p)
+                            if plan_by_token[token_by_geometry[int(j)]] != plan_by_token[token]]
+                    for offset in range(0, len(near), 1024):
+                        checkpoint()
+                        batch = near[offset:offset + 1024]
+                        pairs += len(batch)
+                        areas = geometry_area(geometry_intersection(p, [geometries[j] for j in batch]))
+                        for j, value in zip(batch, areas):
+                            if value > 1e-7:
+                                mask |= 1 << token_by_geometry[j]
+                conflicts[token] = mask
+            return conflicts[token]
+        def bits(value):
+            while value:
+                bit = value & -value
+                yield bit.bit_length() - 1
+                value ^= bit
+        def propagate(current, causes, changed):
+            todo = list(changed)
+            seen = set()
+            while todo:
+                left = todo.pop()
+                if left in seen or current[left].bit_count() != 1:
+                    continue
+                seen.add(left)
+                mask = conflict_row(current[left].bit_length() - 1)
+                for right, before in enumerate(current):
+                    legal = before & ~mask
+                    if not legal:
+                        return causes[right] | causes[left]
+                    if legal != before:
+                        current[right] = legal
+                        causes[right] = causes[right] | causes[left]
+                        if legal.bit_count() == 1:
+                            todo.append(right)
+            return None
+        def solve(current, causes):
+            nonlocal nodes
+            checkpoint()
+            remaining = [i for i, domain in enumerate(current) if domain.bit_count() > 1]
+            if not remaining:
+                return current, None
+            index = min(remaining, key=lambda i: (current[i].bit_count(), min(plans[i]["indexes"])))
+            failed = set(causes[index])
+            for token in bits(current[index]):
+                nodes += 1
+                chosen, reasons = list(current), list(causes)
+                chosen[index], reasons[index] = 1 << token, {index}
+                conflict = propagate(chosen, reasons, [index])
+                if conflict is None:
+                    result, conflict = solve(chosen, reasons)
+                    if result is not None:
+                        return result, None
+                # A failed pocket cannot be repaired by an unrelated earlier HP.
+                if index not in conflict:
+                    return None, conflict
+                failed.update(conflict - {index})
+            return None, failed
+        current, causes = list(domains), [set() for _ in plans]
+        result = None
+        if propagate(current, causes, range(len(plans))) is None:
+            result, _conflict = solve(current, causes)
+        checkpoint("selected" if result is not None else "unsatisfiable_finite_domain")
+        if result is None:
+            return None
+        selected = {}
+        for domain in result:
+            selected.update(tokens[domain.bit_length() - 1])
+        return selected if set(selected) == {i for plan in plans for i in plan["indexes"]} else None
+
+    def _select_strict_strip_candidates(self, candidate_sets, base_obstacles=None, pipeline_logger=None):
+        """Select local strip options without positive-area overlap."""
+        fixed = [parcel for parcel in (base_obstacles or []) if parcel is not None and not parcel.is_empty]
+        plans = list(candidate_sets)
+        if not plans or any(not plan["options"] for plan in plans):
+            return None
+        if STRtree is not None and all(len(plan["indexes"]) == 1 for plan in plans):
+            return self._select_hp_local_candidates(plans, fixed, pipeline_logger)
+        selected = []
+        nodes = 0
+        node_budget = 500000
+
+        def compatible(option, occupied):
+            return not any(
+                self._strict_positive_overlap(parcel, other)
+                for parcel in option.values() for other in occupied
+            )
+
+        def search(remaining, occupied):
+            nonlocal nodes
+            if not remaining:
+                return True
+            if nodes >= node_budget:
+                return False
+            ranked = []
+            for position, plan in enumerate(remaining):
+                legal = [option for option in plan["options"] if compatible(option, occupied)]
+                if not legal:
+                    return False
+                ranked.append((len(legal), len(plan["indexes"]), min(plan["indexes"]), position, legal))
+            ranked.sort(key=lambda item: item[:4])
+            _count, _size, _first, position, legal = ranked[0]
+            plan = remaining[position]
+            rest = remaining[:position] + remaining[position + 1:]
+            for option in legal:
+                nodes += 1
+                selected.append((plan, option))
+                if search(rest, occupied + list(option.values())):
+                    return True
+                selected.pop()
+            return False
+
+        if not search(plans, fixed):
+            return None
+        result = {}
+        for _plan, option in selected:
+            for index, parcel in option.items():
+                if index in result:
+                    return None
+                result[index] = parcel
+        expected = {index for plan in plans for index in plan["indexes"]}
+        return result if set(result) == expected else None
+
+    @staticmethod
+    def _merge_dense_parcel_blocks(parcels, rotation_by_index=None):
+        """Dissolve only HP cells with positive-area overlap.
+
+        Edge-touching parking bays stay individual. Overlapping dense cells become
+        one clean HP COVER block while each source ID keeps its own label.
+        """
+        items = [
+            (index, parcel) for index, parcel in parcels.items()
+            if parcel is not None and not parcel.is_empty
+        ]
+        parent = list(range(len(items)))
+
+        def find(value):
+            while parent[value] != value:
+                parent[value] = parent[parent[value]]
+                value = parent[value]
+            return value
+
+        def union(left, right):
+            left, right = find(left), find(right)
+            if left != right:
+                parent[right] = left
+
+        for left, (_left_id, left_parcel) in enumerate(items):
+            for right in range(left):
+                right_index, right_parcel = items[right]
+                if rotation_by_index:
+                    left_angle = float(rotation_by_index.get(_left_id, 0.0))
+                    right_angle = float(rotation_by_index.get(right_index, 0.0))
+                    axis_delta = abs(((left_angle - right_angle + 90.0) % 180.0) - 90.0)
+                    if axis_delta > 5.0:
+                        continue
+                intersection = left_parcel.intersection(right_parcel)
+                # Shared edges are valid parking-bay dividers; merge only
+                # genuine positive-area overlap. ponytail: no outer-block
+                # dissolve for edge-touching cells; keep per-HP separators.
+                if intersection.area > 1e-7:
+                    union(left, right)
+
+        groups = {}
+        for position, (index, parcel) in enumerate(items):
+            groups.setdefault(find(position), []).append((index, parcel))
+        blocks = []
+        for members in groups.values():
+            member_ids = tuple(sorted(index for index, _parcel in members))
+            block = unary_union([parcel for _index, parcel in members]).buffer(0)
+            if block.is_empty or not isinstance(block, Polygon):
+                raise ValueError(f"HP COVER dense block invalid: IDs {member_ids[:12]}")
+            blocks.append((member_ids, block))
+        return blocks
+
+    def _commit_strict_strip_parcels(
+        self, indexes, strip_parcels, site_points, pending, box_attrs, text_attrs,
+        rotation_by_index=None, centers_by_index=None, extra_relief_contexts=None,
+    ):
+        """Draw prevalidated cells; ROAD-only center and visible label cap is 8m."""
+        missing = [index for index in indexes if index not in strip_parcels]
+        if missing:
+            raise ValueError(f"HP COVER global ROAD plan missing IDs: {missing[:12]}")
+        road_solid = self._home_parcel_road_solid()
+        rotation_by_index = rotation_by_index or {}
+        selected = {index: strip_parcels[index] for index in indexes}
+        for position, (index, parcel) in enumerate(selected.items()):
+            if any(self._strict_positive_overlap(parcel, other)
+                   for other in list(selected.values())[position + 1:]):
+                raise ValueError(f"HP ownership cell overlap before emission: ID={index}")
+        centers_by_index = centers_by_index or {}
+        relief_contexts = self._hp_same_side_relief_contexts(pending)
+        if extra_relief_contexts:
+            relief_contexts.update(extra_relief_contexts)
+        for index, parcel in selected.items():
+            item = pending[index]
+            source = ShapelyPoint(item["projected"])
+            center = ShapelyPoint(centers_by_index.get(index, item["projected"]))
+            shift = center.distance(source)
+            max_shift = 8.0
+            if shift > max_shift + 1e-7:
+                raise ValueError(f"HP ROAD-only center shift exceeds{max_shift:g}m: ID={index}, shift={shift:g}m")
+            if shift > 1e-6 and (item.get("hp_uncover") or index not in relief_contexts):
+                raise ValueError(f"HP center shifted without local ROAD/density relief permission: ID={index}")
+            if shift > 1e-6 and not self._hp_center_stays_on_side((center.x, center.y), relief_contexts[index]):
+                raise ValueError(f"HP local relief crossed its source ROAD side: ID={index}")
+            if shift > 1e-6 and not self._hp_relief_path_clear(item["projected"], (center.x, center.y), road_solid):
+                raise ValueError(f"HP local relief reentered/crossed ROAD: ID={index}")
+            if parcel is None or parcel.is_empty or parcel.centroid.distance(center) > 1e-6:
+                raise ValueError(f"HP parcel center does not match visible label center: ID={index}")
+            site = site_points[index]
+            if parcel is None or parcel.is_empty:
+                raise ValueError(f"HP COVER global ROAD plan parcel {index} kosong.")
+            # Explicit label-only fallback: skip normal ROAD/relocation gates.
+            if index in getattr(self, "_last_label_only_indexes", set()):
+                continue
+            if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                raise ValueError(f"HP COVER parcel {index} overlap ROAD setelah global plan.")
+            if (
+                index not in getattr(self, "_last_relaxed_4x8_indexes", set())
+                and not parcel.buffer(1e-6).covers(site)
+            ):
+                road_lines = [
+                    line for line in getattr(
+                        self, "_last_hp_relocation_roads", self.road_centerlines
+                    )
+                    if line is not None and not line.is_empty
+                ]
+                max_relocation = self._strict_relocation_limit(site, road_lines)
+                if parcel.distance(site) > max_relocation + 1e-6:
+                    raise ValueError(
+                        f"HP COVER parcel {index} melewati batas relokasi {max_relocation:g}m."
+                    )
+
+        blocks = self._merge_dense_parcel_blocks(selected, rotation_by_index=rotation_by_index)
+        staged = []
+        drawn = 0
+        for member_ids, block in blocks:
+            # Explicit final label-only fallback: no parcel/separator geometry.
+            # Emit one text anchor per failed HP, then continue.
+            if member_ids and all(index in getattr(self, "_last_label_only_indexes", set()) for index in member_ids):
+                for index in member_ids:
+                    item = pending[index]
+                    anchor = site_points[index]
+                    rotation = 0.0
+                    label_start = len(self.output_entities)
+                    item_text_attrs = (
+                        {"layer": KML_UNCOVER_LAYER, "color": KML_UNCOVER_COLOR, "style": "EVA_BOLD"}
+                        if item.get("hp_uncover") else text_attrs
+                    )
+                    if item.get("hp_uncover"):
+                        self._ensure_layer(KML_UNCOVER_LAYER, color=KML_UNCOVER_COLOR)
+                    self._add_centered_text(
+                        str(item["text"]), (anchor.x, anchor.y), KML_HOME_NUMBER_HEIGHT_METERS,
+                        dxfattribs=item_text_attrs, rotation=rotation,
+                    )
+                    self.register_fdt_entities(
+                        item.get("fdt_number"), self.output_entities[label_start:],
+                    )
+                    self._hp_cover_drawn_indexes.add(index)
+                    drawn += 1
+                continue
+            if road_solid is not None and not road_solid.is_empty and block.intersection(road_solid).area > 1e-7:
+                raise ValueError(f"HP COVER dense block overlap ROAD: IDs {member_ids[:12]}")
+            if any(self._strict_positive_overlap(block, old) for old in self.home_number_boxes + staged):
+                raise ValueError(f"HP COVER dense block overlap: IDs {member_ids[:12]}")
+            has_uncover = any(pending[index].get("hp_uncover") for index in member_ids)
+            if has_uncover:
+                self._ensure_layer(KML_UNCOVER_LAYER, color=KML_UNCOVER_COLOR)
+            block_start = len(self.output_entities)
+            if not has_uncover:
+                self._add_polyline(list(block.exterior.coords), close=True, dxfattribs=box_attrs)
+            block_entities = self.output_entities[block_start:]
+            self.home_number_boxes.append(block)
+            self.home_number_box_uncover.append(all(pending[index].get("hp_uncover") for index in member_ids))
+            staged.append(block)
+            separator_entities = {}
+            separator_attrs = dict(box_attrs)
+            if any(not pending[index].get("hp_uncover") for index in member_ids):
+                separator_attrs["layer"] = self._ensure_layer(
+                    "HP_COVER_SEPARATOR", color=int(separator_attrs.get("color", 7) or 7)
+                )
+            for index in member_ids:
+                item = pending[index]
+                self._record_home_number_cell(selected[index], item)
+                cell_start = len(self.output_entities)
+                if has_uncover:
+                    cell_attrs = (
+                        {"layer": KML_UNCOVER_LAYER, "color": KML_UNCOVER_COLOR}
+                        if item.get("hp_uncover") else box_attrs
+                    )
+                    self._add_polyline(list(selected[index].exterior.coords), close=True, dxfattribs=cell_attrs)
+                if not item.get("hp_uncover"):
+                    self._add_polyline(
+                        list(selected[index].exterior.coords), close=True,
+                        dxfattribs=separator_attrs,
+                    )
+                separator_entities[index] = self.output_entities[cell_start:]
+            for index in member_ids:
+                item = pending[index]
+                anchor = ShapelyPoint(centers_by_index.get(index, item["projected"]))
+                if not selected[index].buffer(1e-6).covers(anchor):
+                    raise ValueError(f"HP fixed-anchor label outside own cell: ID={index}")
+                rotation = self._polygon_label_rotation(selected[index])
+                label_start = len(self.output_entities)
+                item_text_attrs = (
+                    {"layer": KML_UNCOVER_LAYER, "color": KML_UNCOVER_COLOR, "style": "EVA_BOLD"}
+                    if item.get("hp_uncover") else text_attrs
+                )
+                self._add_centered_text(
+                    str(item["text"]), (anchor.x, anchor.y), KML_HOME_NUMBER_HEIGHT_METERS,
+                    dxfattribs=item_text_attrs, rotation=rotation,
+                )
+                self.register_fdt_entities(
+                    item.get("fdt_number"),
+                    block_entities + separator_entities.get(index, []) + self.output_entities[label_start:],
+                )
+                self._hp_cover_drawn_indexes.add(index)
+                drawn += 1
+        return drawn
+
+    @staticmethod
+    def _shared_cell_dividers(values, minimum=4.0, maximum=13.0, epsilon=1e-5):
+        """Return shared cell dividers owning every sorted source coordinate.
+
+        Midpoints are preferred, but constraints win: each interval is 4–13m and
+        every source stays inside its one parking-bay cell.
+        """
+        values = [float(value) for value in values]
+        if not values:
+            return []
+        if any(right - left <= 2.0 * epsilon for left, right in zip(values, values[1:])):
+            return None
+        count = len(values)
+        domains = [(values[0] - maximum, values[0] - epsilon)]
+        domains.extend((left + epsilon, right - epsilon) for left, right in zip(values, values[1:]))
+        domains.append((values[-1] + epsilon, values[-1] + maximum))
+        lower = [0.0] * (count + 1)
+        upper = [0.0] * (count + 1)
+        lower[0], upper[0] = domains[0]
+        for position in range(1, count + 1):
+            domain_low, domain_high = domains[position]
+            lower[position] = max(domain_low, lower[position - 1] + minimum)
+            upper[position] = min(domain_high, upper[position - 1] + maximum)
+            if lower[position] > upper[position] + 1e-8:
+                return None
+        dividers = [0.0] * (count + 1)
+        dividers[-1] = min(max(values[-1] + minimum / 2.0, lower[-1]), upper[-1])
+        for position in range(count - 1, -1, -1):
+            domain_low, domain_high = domains[position]
+            target = values[position] - minimum / 2.0 if position == 0 else (values[position - 1] + values[position]) / 2.0
+            low = max(domain_low, dividers[position + 1] - maximum)
+            high = min(domain_high, dividers[position + 1] - minimum)
+            if low > high + 1e-8:
+                return None
+            dividers[position] = min(max(target, low), high)
+        if any(
+            right - left < minimum - 1e-6 or right - left > maximum + 1e-6
+            for left, right in zip(dividers, dividers[1:])
+        ):
+            return None
+        if any(not (left + epsilon >= divider_left and right - epsilon <= divider_right)
+               for left, right, divider_left, divider_right in zip(values, values, dividers, dividers[1:])):
+            return None
+        return dividers
+
+    def _dense_conflict_grid_slots(self, indexes, source_points, tx, ty, nx, ny):
+        """Return a shared-edge 4x10 parking grid for one dense conflict component.
+
+        This is not a compact fallback. It is the strict multi-row form of a ROAD
+        strip when one source row cannot physically hold every 4m-wide bay.
+        """
+        count = len(indexes)
+        if count < 2:
+            return []
+        width, depth = 4.0, 10.0
+        entries = [
+            (index, point, point.x * tx + point.y * ty, point.x * nx + point.y * ny)
+            for index, point in zip(indexes, source_points)
+        ]
+        mean_u = sum(item[2] for item in entries) / count
+        min_v = min(item[3] for item in entries)
+        best = None
+
+        for row_count in range(2, min(4, count) + 1):
+            column_count = int(math.ceil(count / row_count))
+            start_u = mean_u - column_count * width / 2.0
+            # Front-anchor first row beside the nearest source/ROAD side. Never
+            # center stacked rows around sources: that puts lower bays through ROAD
+            # and forces an impossible whole-grid shift.
+            for start_v in (min_v - depth / 2.0, min_v - depth, min_v):
+                slots = []
+                for row in range(row_count):
+                    for column in range(column_count):
+                        left = start_u + column * width
+                        bottom = start_v + row * depth
+                        def xy(u, v):
+                            return (tx * u + nx * v, ty * u + ny * v)
+                        slots.append(Polygon([
+                            xy(left, bottom), xy(left + width, bottom),
+                            xy(left + width, bottom + depth), xy(left, bottom + depth),
+                        ]))
+
+                choices = {}
+                for source_position, (_index, point, _u, _v) in enumerate(entries):
+                    choices[source_position] = [
+                        slot_position for _distance, slot_position in sorted(
+                            (point.distance(slot), slot_position)
+                            for slot_position, slot in enumerate(slots)
+                            if point.distance(slot) <= 12.0 + 1e-6
+                        )
+                    ]
+                    if not choices[source_position]:
+                        choices = {}
+                        break
+                if not choices:
+                    continue
+
+                # Deterministic Kuhn matching. Components are capped by local conflict
+                # topology; no global exponential candidate search remains.
+                owner = {}
+                def claim(source_position, seen):
+                    for slot_position in choices[source_position]:
+                        if slot_position in seen:
+                            continue
+                        seen.add(slot_position)
+                        prior = owner.get(slot_position)
+                        if prior is None or claim(prior, seen):
+                            owner[slot_position] = source_position
+                            return True
+                    return False
+                ordered = sorted(choices, key=lambda value: (len(choices[value]), entries[value][0]))
+                if not all(claim(source_position, set()) for source_position in ordered):
+                    continue
+                cells = {
+                    entries[source_position][0]: slots[slot_position]
+                    for slot_position, source_position in owner.items()
+                }
+                if len(cells) != count:
+                    continue
+                distances = [
+                    entries[source_position][1].distance(cells[entries[source_position][0]])
+                    for source_position in range(count)
+                ]
+                score = (max(distances), sum(distances), row_count * column_count - count, row_count)
+                if best is None or score < best[0]:
+                    best = (score, cells)
+        if best is None:
+            return []
+        return [
+            (index, point, best[1][index])
+            for index, point, _u, _v in entries
+        ]
+
+    def _road_strip_cells(self, indexes, sites, clip_region, angle, layout_hint=None, require_clip=True, obstacles=None, candidate_limit=1, return_candidates=False, dense_repack=False):
+        """Strict ROAD-front shared parcels. No compact/Voronoi/label fallback."""
+        if not indexes:
+            return {}
+        roads = [road for road in self.road_centerlines if road is not None and not road.is_empty and road.length > 2]
+        if not roads:
+            return {}
+        hint = layout_hint or {}
+        road_solid = self._home_parcel_road_solid()
+        if clip_region is None or clip_region.is_empty:
+            clip_region = MultiPoint([ShapelyPoint(sites[index]) for index in indexes]).buffer(
+                18.0, cap_style=3, join_style=2
+            )
+            if road_solid is not None and not road_solid.is_empty:
+                clip_region = clip_region.difference(road_solid)
+
+        # Axis is AI-bounded by caller. Choose the normal sign once from the
+        # source group versus its nearest ROAD; increasing v always moves out.
+        radians = math.radians(float(angle))
+        tx, ty = math.cos(radians), math.sin(radians)
+        base_nx, base_ny = -ty, tx
+        source_points = [ShapelyPoint(sites[index]) for index in indexes]
+        center = MultiPoint(source_points).centroid
+        road = min(roads, key=lambda candidate: candidate.distance(center))
+        road_at = road.interpolate(road.project(center))
+        signed = (center.x - road_at.x) * base_nx + (center.y - road_at.y) * base_ny
+        side = 1.0 if signed >= 0 else -1.0
+        # Global strict planner may request the opposite frontage only when the
+        # source-side candidate has zero legal strips (e.g. source lies inside
+        # a ROAD footprint). Geometry still validates ROAD/relocation normally.
+        requested_side = hint.get("road_side")
+        try:
+            requested_side = float(requested_side)
+        except (TypeError, ValueError):
+            requested_side = 0.0
+        if requested_side in (-1.0, 1.0):
+            side = requested_side
+        nx, ny = base_nx * side, base_ny * side
+
+        along_hint = max(-12.0, min(12.0, float(hint.get('along_shift_m', 0.0) or 0.0)))
+        normal_hint = max(-12.0, min(12.0, float(hint.get('normal_shift_m', 0.0) or 0.0)))
+        hint_size = math.hypot(along_hint, normal_hint)
+        if hint_size > 12.0:
+            scale = 12.0 / hint_size
+            along_hint *= scale
+            normal_hint *= scale
+        depth = max(10.0, min(13.0, 10.0 * float(hint.get('depth_scale', 1.0) or 1.0)))
+        width_cap = max(4.0, min(13.0, 13.0 * float(hint.get('width_scale', 1.0) or 1.0)))
+
+        entries = []
+        fronts = []
+        edge_v_by_index = {}
+        for index, point in zip(indexes, source_points):
+            u = point.x * tx + point.y * ty
+            v = point.x * nx + point.y * ny
+            entries.append((index, point, u, v))
+            if road_solid is not None and not road_solid.is_empty:
+                try:
+                    edge = nearest_points(point, road_solid.boundary)[1]
+                except Exception:
+                    edge = road.interpolate(road.project(point))
+            else:
+                edge = road.interpolate(road.project(point))
+            edge_v = edge.x * nx + edge.y * ny
+            fronts.append(edge_v)
+            edge_v_by_index[index] = edge_v
+        entries.sort(key=lambda item: (item[3], item[2], item[0]))
+
+        # Road-front rows. First row touches the outward ROAD edge. Later rows
+        # share exactly one complete divider with preceding row.
+        rows = []
+        current = []
+        row_min_v = None
+        for item in entries:
+            if current and item[3] - row_min_v > 7.5:
+                rows.append(current)
+                current = []
+                row_min_v = None
+            if row_min_v is None:
+                row_min_v = item[3]
+            current.append(item)
+        if current:
+            rows.append(current)
+
+        # Use highest outward road-boundary scalar. It prevents a curved ROAD
+        # corner from entering an otherwise legal front-row rectangle.
+        # Outward normal increases away from ROAD; nearest ROAD edge is the
+        # minimum boundary scalar. Using max(fronts) starts rows behind source
+        # anchors on multi-row corridors and breaks the 12m relocation gate.
+        # First row starts at the outermost ROAD edge. Using the innermost
+        # edge cuts front bays through ROAD on curved/width-varying segments.
+        road_front = max(fronts) if fronts else min(item[3] for item in entries)
+        # ROAD frontage is impossible when nearest source lies more than one
+        # parcel cap beyond ROAD. Keep ROAD tangent as axis, but start a local
+        # strip around source anchors. This is a strict ROAD-oriented parcel,
+        # not a compact/label-only fallback.
+        nearest_source_v = min(item[3] for item in entries)
+        local_road_gap = nearest_source_v - road_front
+        if local_road_gap > 13.0:
+            road_front = nearest_source_v - depth / 2.0
+        raw_slots = []
+        front = road_front
+        for row_number, row in enumerate(rows):
+            row = sorted(row, key=lambda item: (item[2], item[0]))
+            min_source_v = min(item[3] for item in row)
+            max_source_v = max(item[3] for item in row)
+            # ROAD frontage belongs to this local row. A single global ROAD
+            # edge can be tens of metres away on a curved corridor.
+            row_front = max(edge_v_by_index[item[0]] for item in row)
+            if min_source_v - row_front > 13.0 + 1e-6:
+                row_front = min_source_v - depth / 2.0
+            # Later parking rows attach to the previous row's back edge. Resetting
+            # to each row's nearest ROAD edge caused positive-area separator overlap.
+            front = max(front, row_front)
+            # Grow toward source but never exceed 13m. Source may sit just
+            # outside shifted DXF parcel when final source-to-parcel distance
+            # remains <=12m; KMZ coordinate stays immutable.
+            back = min(front + 13.0, max(front + depth, max_source_v + .01))
+            runs = []
+            run_start = 0
+            for pos in range(1, len(row) + 1):
+                if pos == len(row) or row[pos][2] - row[pos - 1][2] > 13.0:
+                    runs.append(row[run_start:pos])
+                    run_start = pos
+            for run in runs:
+                source_us = [item[2] for item in run]
+                # Exact source-owned dividers. Midpoints are only preferred;
+                # the interval solver moves dividers asymmetrically when needed
+                # to retain every HP in a 4–13m shared-edge cell.
+                boundaries = self._shared_cell_dividers(source_us, 4.0, width_cap)
+                if boundaries is None:
+                    continue
+                for position, (index, point, _u, _v) in enumerate(run):
+                    left, right = boundaries[position], boundaries[position + 1]
+                    def xy(u, v):
+                        return (tx * u + nx * v, ty * u + ny * v)
+                    raw_slots.append((index, point, Polygon([
+                        xy(left, front), xy(right, front), xy(right, back), xy(left, back),
+                    ])))
+            front = back
+
+        def raw_slots_overlap(slots):
+            return any(
+                self._strict_positive_overlap(left[2], right[2])
+                for right_position, right in enumerate(slots)
+                for left in slots[:right_position]
+            )
+
+        # A final HP COVER cell must never rely on outer-hull dissolve to hide
+        # internal overlap. Repack the entire affected local corridor as one
+        # shared-edge parking grid before global selection/commit.
+        if len(raw_slots) != len(indexes) or raw_slots_overlap(raw_slots):
+            if not dense_repack:
+                return {}
+            raw_slots = self._dense_conflict_grid_slots(indexes, source_points, tx, ty, nx, ny)
+            if len(raw_slots) != len(indexes) or raw_slots_overlap(raw_slots):
+                return {}
+        obstacles = [
+            parcel for parcel in (self.home_number_boxes if obstacles is None else obstacles)
+            if parcel is not None and not parcel.is_empty
+        ]
+
+        # Whole-corridor translation only. Never shift individual slots.
+        options = []
+        for along_step in range(-12, 13):
+            for normal_step in range(0, 13):
+                along = along_hint + float(along_step)
+                normal = normal_hint + float(normal_step)
+                if math.hypot(along, normal) <= 12.0 + 1e-9:
+                    options.append((along, normal))
+        options.sort(key=lambda item: (
+            math.hypot(item[0] - along_hint, item[1] - normal_hint),
+            abs(item[0]), item[1],
+        ))
+        accepted = []
+        for along, normal in options:
+            candidates = [
+                (index, point, _translate(parcel, xoff=tx * along + nx * normal, yoff=ty * along + ny * normal))
+                for index, point, parcel in raw_slots
+            ]
+            legal = True
+            for pos, (_index, point, parcel) in enumerate(candidates):
+                if parcel.is_empty or parcel.area < 40.0 - 1e-6 or parcel.area > 169.0 + 1e-6:
+                    legal = False; break
+                if require_clip and (clip_region is None or clip_region.is_empty or not clip_region.buffer(1e-6).covers(parcel)):
+                    legal = False; break
+                if road_solid is not None and not road_solid.is_empty and parcel.intersection(road_solid).area > 1e-7:
+                    legal = False; break
+                source_in_road = (
+                    road_solid is not None and not road_solid.is_empty
+                    and road_solid.buffer(1e-6).covers(point)
+                )
+                # KMZ coordinates stay immutable. DXF parcel+label may move
+                # together within the explicit 12m presentation limit; raw
+                # sources inside ROAD use the same bounded exception.
+                if not parcel.buffer(1e-6).covers(point) and parcel.distance(point) > 12.0 + 1e-6:
+                    legal = False; break
+                if any(parcel.intersection(existing).area > 1e-7 for existing in obstacles):
+                    legal = False; break
+            if legal and any(
+                self._strict_positive_overlap(parcel, other)
+                for candidate_position, (_candidate_index, _candidate_point, other) in enumerate(candidates)
+                for _previous_index, _previous_point, parcel in candidates[:candidate_position]
+            ):
+                legal = False
+            if legal:
+                accepted.append({index: parcel for index, _point, parcel in candidates})
+                if len(accepted) >= max(1, int(candidate_limit)):
+                    break
+        if return_candidates:
+            return accepted
+        return accepted[0] if accepted else {}
 
     def _hp_row_grid_parcels(self, indexes, sites, pending, clip_region, angle):
         """Aligned midpoint cells; never move HP source points."""
@@ -5051,29 +10963,61 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         return None
 
     def finalize_home_numbers(self, pipeline_logger=None) -> None:
-        if not self.pending_home_numbers:
+        if not self.pending_home_numbers and not self.pending_uncover_home_numbers:
             return
 
-        if KML_HOME_PARCEL_ENABLED and _shapely_voronoi_diagram is not None:
-            # Never retain partial tessellation before legacy box fallback.
-            # Otherwise the same HP COVER is drawn twice.
-            parcel_entity_start = len(self.output_entities)
-            parcel_box_start = len(self.home_number_boxes)
-            try:
+        if not KML_HOME_PARCEL_ENABLED:
+            raise RuntimeError("HP fixed-anchor engine tidak tersedia.")
+
+        cover_pending = self.pending_home_numbers
+        # COVER retains the strict engine; UNCOVER reserves only its remaining space.
+        self.pending_home_numbers = cover_pending
+        entity_start = len(self.output_entities)
+        parcel_start = len(self.home_number_boxes)
+        cell_start = len(self.home_number_cells)
+        marker_names = ("_hp_cover_drawn_indexes", "_last_label_only_indexes", "_last_relaxed_4x8_indexes")
+        markers_before = {name: set(getattr(self, name)) for name in marker_names if hasattr(self, name)}
+        modelspace_before = {entity.dxf.handle for entity in self.modelspace}
+        detected_before = set(self.detected_fdt_numbers)
+        stats_before = dict(self.stats)
+        layers_before = {layer.dxf.name: layer.dxfattribs() for layer in self.doc.layers}
+        fdt_lengths = {key: len(value) for key, value in self.fdt_output_entities.items()}
+        try:
+            if cover_pending:
                 self._finalize_home_numbers_as_parcels(pipeline_logger)
-                return
-            except Exception as exc:
-                del self.output_entities[parcel_entity_start:]
-                del self.home_number_boxes[parcel_box_start:]
-                # Parcel tessellation is best-effort; if anything goes wrong
-                # (degenerate geometry, GEOS edge case) fall back to the
-                # original independent-box placement so output is never lost.
-                if pipeline_logger is not None:
-                    pipeline_log(
-                        pipeline_logger,
-                        "warn",
-                        f"[3/6] HP COVER parcel tessellation gagal, fallback ke box mode: {exc}",
-                    )
+            self._finalize_hp_uncover_relief(pipeline_logger)
+        except Exception:
+            for entity in list(self.modelspace):
+                if entity.dxf.handle not in modelspace_before:
+                    self.modelspace.delete_entity(entity)
+            del self.output_entities[entity_start:]
+            del self.home_number_boxes[parcel_start:]
+            del self.home_number_box_uncover[parcel_start:]
+            del self.home_number_cells[cell_start:]
+            for name in marker_names:
+                if name in markers_before:
+                    setattr(self, name, markers_before[name])
+                elif hasattr(self, name):
+                    delattr(self, name)
+            self.detected_fdt_numbers.clear()
+            self.detected_fdt_numbers.update(detected_before)
+            self.stats.clear()
+            self.stats.update(stats_before)
+            for layer in list(self.doc.layers):
+                if layer.dxf.name not in layers_before:
+                    self.doc.layers.remove(layer.dxf.name)
+                else:
+                    layer.dxf.update(layers_before[layer.dxf.name])
+            for key in list(self.fdt_output_entities):
+                previous = fdt_lengths.get(key)
+                if previous is None:
+                    del self.fdt_output_entities[key]
+                else:
+                    del self.fdt_output_entities[key][previous:]
+            raise
+        finally:
+            self.pending_home_numbers = cover_pending
+        return
 
         total_home_numbers = len(self.pending_home_numbers)
         if pipeline_logger is not None:
@@ -5180,6 +11124,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             if clipped_box is None or clipped_box.is_empty:
                 continue
             self.home_number_boxes.append(clipped_box)
+            self.home_number_box_uncover.append(False)
+            self._record_home_number_cell(clipped_box, pending)
             occupied_geometries.append(clipped_box)
             if STRtree is not None and len(occupied_geometries) - occupied_indexed_count >= 96:
                 occupied_tree = STRtree(occupied_geometries)
@@ -5300,6 +11246,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         fdt_number = detect_parent_fdt_number(folder_stack or [])
         if is_hp_cover_folder(folder_name):
             preview_name = self._queue_home_number(projected, name, fdt_number=fdt_number)
+            self.pending_home_numbers[-1]["fat_owner"] = kml_fat_owner_key(folder_stack or [], source_scope=getattr(self, "_fat_source_scope", ()))
             self.kml_detail_stats["home_number_points"] += 1
             self.stats[KML_HOME_NUMBER_LAYER] += 1
         elif is_hp_uncover_folder(folder_name):
@@ -5308,7 +11255,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             self.stats[KML_UNCOVER_LAYER] += 1
         elif normalized_folder_name(folder_name or "") == KML_FAT_LAYER:
             fat_code = extract_fat_code_from_path(folder_stack or [], name)
-            self._queue_kml_fat_icon(projected, fat_code, name, style, fdt_number=fdt_number)
+            self._queue_kml_fat_icon(projected, fat_code, name, style, fdt_number=fdt_number,
+                                     folder_stack=folder_stack)
             self.kml_detail_stats["fat_blocks"] += 1
             self.stats[KML_FAT_LAYER] += 1
             preview_name = fat_code
@@ -5324,7 +11272,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             self.stats[KML_FDT_LAYER] += 1
             preview_name = fdt_label
         elif is_slack_hanger_folder(folder_name):
-            self.pending_slack_icons.append({"projected": projected, "style": style})
+            self.pending_slack_icons.append({"projected": projected, "style": style, "name": name,
+                                             "group": self._pole_line_group(folder_stack)})
             self.kml_detail_stats["slack_hanger_blocks"] += 1
             preview_name = name or "SLACK HANGER"
         elif is_joint_closure_folder(folder_name):
@@ -5340,6 +11289,7 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 fdt_number=fdt_number,
             )
             self.kml_detail_stats["handhole_blocks"] += 1
+            self._ensure_layer(str(handhole_spec["layer"]), int(handhole_spec.get("color") or KML_HANDHOLE_COLOR))
             self.stats[str(handhole_spec["layer"])] += 1
         elif is_twey_folder(folder_name):
             self._queue_kml_twey_icon(projected, name, style, fdt_number=fdt_number)
@@ -5348,6 +11298,14 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             preview_name = name or "T-WAY"
         elif pole_spec:
             self._add_kml_pole_icon(projected, pole_spec, name, style, fdt_number=fdt_number)
+            self._roadside_poles.append({
+                "source": projected,
+                "target": projected,
+                "position_index": len(self.pole_positions) - 1,
+                "icon": self.output_entities[-1],
+                "label": self.pending_pole_ids[-1] if name.strip() else None,
+                "group": self._pole_line_group(folder_stack),
+            })
             self.kml_detail_stats["pole_blocks"] += 1
             preview_name = name or str(pole_spec["label"])
         else:
@@ -5388,8 +11346,20 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             line_width = float(line_spec.get("width") or KML_DISTRIBUTION_CABLE_WIDTH)
             if line is not None and not line.is_empty and line.length > 0:
                 self.kml_cable_centerlines.append(line)
+                if (line_spec.get("draw_order") == "subduct"
+                        or is_distribution_cable_folder(folder_stack or [])
+                        or distribution_cable_parent_layer(folder_stack or [])):
+                    self.hp_strip_reference_lines.append(line)
 
         polyline_entity = self._add_polyline(projected, close=False, dxfattribs=attrs, width=line_width)
+        if polyline_entity is not None:
+            self._pole_follow_lines.append({
+                "entity": polyline_entity,
+                "source": projected,
+                "group": self._pole_line_group(folder_stack),
+                "cable_kind": ("distribution" if is_distribution_cable_folder(folder_stack or [])
+                               else "sling" if line_layer == KML_SLING_WIRE_LAYER else None),
+            })
         if line_spec and is_distribution_cable_folder(folder_stack or []):
             self._add_distribution_cable_distance_labels(coordinates, projected)
         if polyline_entity is not None and line_spec:
@@ -5398,10 +11368,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 self.subduct_line_entities.append(polyline_entity)
             elif draw_order == "top_cable":
                 self.top_cable_line_entities.append(polyline_entity)
-            # Snap cable endpoints to nearby poles during finalize so cables visually
-            # attach to the pole centre.
-            if is_distribution_cable_folder(folder_stack or []):
-                self.cable_endpoint_snap_entities.append(polyline_entity)
+            # Source-owned pole/line reconciliation attaches eligible endpoints.
+            # ponytail: removed global 5m endpoint snap; add a route-aware fallback only if an actual unattached route is proven.
         self.kml_detail_stats["line_features"] += 1
         midpoint = LineString(projected).interpolate(0.5, normalized=True)
         if not line_layer:
@@ -5410,6 +11378,629 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if layer_name:
             self.stats[layer_name] += 1
         self._add_kml_preview_feature("LineString", coordinates, name)
+
+
+    # ── post-render parcel QA ────────────────────────────────
+
+    def _hp_parcel_blocks(self):
+        """Group emitted HP cells into contiguous divider-sharing blocks."""
+        rows = list(getattr(self, "home_number_cells", []) or [])
+        if len(rows) < 2:
+            return []
+        polys = [row.get("polygon") for row in rows]
+        if any(poly is None or poly.is_empty for poly in polys):
+            return []
+        tree = STRtree(polys) if STRtree is not None else None
+        seen, blocks = set(), []
+        for start in range(len(polys)):
+            if start in seen:
+                continue
+            stack, group = [start], []
+            seen.add(start)
+            while stack:
+                current = stack.pop()
+                group.append(current)
+                probe = polys[current].buffer(0.6)
+                # Group by proximity, not only by a perfect shared edge: a block
+                # with a wedge gap or a partial divider is exactly the messy case
+                # that must stay one review unit instead of splitting into
+                # singletons that never get reviewed.
+                nearby = (tree.query(probe) if tree is not None else range(len(polys)))
+                for other in nearby:
+                    # STRtree returns numpy.int64 here, which isinstance(x, int)
+                    # rejects; convert directly and fall back to identity only
+                    # for backends that hand back geometry objects.
+                    try:
+                        index = int(other)
+                    except (TypeError, ValueError):
+                        index = next((k for k, poly in enumerate(polys) if poly is other), -1)
+                    if index < 0 or index >= len(polys) or index in seen or index == current:
+                        continue
+                    if polys[current].distance(polys[index]) <= 0.6:
+                        seen.add(index)
+                        stack.append(index)
+            blocks.append(sorted(group))
+        blocks.sort(key=lambda block: (-len(block), block[0]))
+        return blocks
+
+    def _hp_block_facts(self, block):
+        """Deterministic measurements handed to QA so the model cannot invent them."""
+        rows = self.home_number_cells
+        polys = [rows[i]["polygon"] for i in block]
+        angles, fronts = [], []
+        for poly in polys:
+            coords = list(poly.exterior.coords)[:-1]
+            edges = sorted(
+                ((((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** .5),
+                 math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0)
+                for a, b in zip(coords, coords[1:] + coords[:1])
+            )
+            if not edges:
+                continue
+            fronts.append(edges[0][0])
+            angles.append(round(max(edges, key=lambda item: item[0])[1], 1))
+        shared = 0
+        for i, left in enumerate(polys):
+            for j in range(i + 1, len(polys)):
+                if left.boundary.intersection(polys[j].boundary).length > 0.5:
+                    shared += 1
+        pairs = max(len(polys) - 1, 1)
+        return {
+            "cells": len(polys),
+            "adjacent_pairs": shared,
+            "axis_values": sorted(set(angles))[:6],
+            "axis_spread_deg": round(max(angles) - min(angles), 2) if len(angles) > 1 else 0.0,
+            "frontage_min_m": round(min(fronts), 2) if fronts else 0.0,
+            "frontage_max_m": round(max(fronts), 2) if fronts else 0.0,
+            "shared_divider_ratio": round(min(shared / pairs, 1.0), 3),
+        }
+
+    def _hp_block_axis_groups(self, block, facts):
+        """Split a block into runs that actually share one axis.
+
+        A large block is often several parallel or angled rows that touch at a
+        corner. Forcing them through one shared-front strip fails on the angle
+        spread, so group by measured cell axis first and repack each run on its
+        own frame. Singletons stay put; they are not a run.
+        """
+        rows = self.home_number_cells
+        buckets = {}
+        for original in block:
+            polygon = rows[original]["polygon"]
+            coords = list(polygon.exterior.coords)[:-1]
+            edges = sorted(
+                ((((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** .5),
+                 math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0)
+                for a, b in zip(coords, coords[1:] + coords[:1])
+            )
+            if not edges:
+                continue
+            axis = round(max(edges, key=lambda item: item[0])[1] / 10.0) * 10.0 % 180.0
+            buckets.setdefault(axis, []).append(original)
+        groups = [sorted(group) for group in buckets.values() if len(group) >= 2]
+        groups.sort(key=lambda group: (-len(group), group[0]))
+        return groups
+
+    @staticmethod
+    def _hp_block_is_messy(facts):
+        """A: only a measurably untidy block is worth repacking.
+
+        A tidy strip is left byte-identical. Repacking a block that already has
+        full shared dividers and one axis would only churn geometry.
+        """
+        try:
+            ratio = float(facts.get("shared_divider_ratio") or 0.0)
+            spread = float(facts.get("axis_spread_deg") or 0.0)
+            low = float(facts.get("frontage_min_m") or 0.0)
+            high = float(facts.get("frontage_max_m") or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if ratio <= 0.0:
+            # Unknown measurements are not evidence of messiness.
+            return spread > 5.0
+        if low <= 0 or high <= 0:
+            return ratio < 0.95 or spread > 5.0
+        if ratio < 0.95:
+            return True
+        if spread > 5.0:
+            return True
+        if low > 0 and high / low > 1.6:
+            return True
+        return False
+
+    def _hp_block_repack(self, block, facts, hint=None):
+        """Bounded local repack per axis group; every gate re-checked.
+
+        `hint` may carry axis_delta_degrees and lattice phases from the existing
+        bounded AI recovery helper. Coordinates still come from the native
+        builder; the hint only rotates/offsets the frame it is built on.
+        """
+        rows = self.home_number_cells
+        groups = self._hp_block_axis_groups(block, facts)
+        if not groups:
+            return None
+        cluster = getattr(self, "road_clip_geometry", None)
+        road = self._home_parcel_road_solid()
+        fixed = [poly for poly in (getattr(self, "hp_fixed_obstacles", None) or [])
+                 if poly is not None and not poly.is_empty]
+        delta = 0.0
+        along = 0
+        normal = 0
+        if hint:
+            delta = math.radians(float(hint.get("axis_delta_degrees") or 0.0))
+            along = int(hint.get("along_phase") or 0)
+            normal = int(hint.get("normal_phase") or 0)
+        replaced = {}
+        for group in groups:
+            sites = [tuple(float(v) for v in rows[i]["source"]) for i in group]
+            points = [ShapelyPoint(site) for site in sites]
+            pending = [{"projected": site, "text": rows[i]["text"],
+                        "fat_owner": rows[i].get("fat_owner"),
+                        "hp_uncover": bool(rows[i].get("hp_uncover"))}
+                       for i, site in zip(group, sites)]
+            accepted = {i: rows[i]["polygon"] for i in range(len(rows))
+                        if i not in set(group)}
+            accepted.update({i: cell for i, cell in replaced.items()})
+            self._hp_strip_chain_budgets = {}
+            try:
+                strip, contexts, rotations, centers = self._strict_hp_strip_layout(
+                    list(range(len(pending))), points, pending, cluster, fixed,
+                )
+            except Exception:
+                continue
+            if not strip or len(strip) != len(group):
+                continue
+            cells = dict(strip)
+            if delta or along or normal:
+                pivot = MultiPoint(points).centroid
+                shifted = {}
+                for index, cell in cells.items():
+                    moved = cell
+                    if delta:
+                        moved = affinity_rotate(moved, delta, origin=(pivot.x, pivot.y))
+                    if along or normal:
+                        width = moved.bounds[2] - moved.bounds[0]
+                        depth = moved.bounds[3] - moved.bounds[1]
+                        dx = (along / 3.0) * width
+                        dy = (normal / 3.0) * depth
+                        moved = affinity_translate(moved, dx, dy)
+                    shifted[index] = moved
+                cells = shifted
+            for index, cell in cells.items():
+                if cell is None or cell.is_empty:
+                    break
+                if cluster is not None and not cluster.covers(cell):
+                    break
+                if road is not None and self._strict_positive_overlap(cell, road):
+                    break
+                if any(self._strict_positive_overlap(cell, other) for other in fixed):
+                    break
+                if any(self._strict_positive_overlap(cell, other) for other in accepted.values()):
+                    break
+                if cell.centroid.distance(points[index]) > 8.0 + 1e-7:
+                    break
+            else:
+                replaced.update({group[index]: cell for index, cell in cells.items()})
+        if not replaced:
+            return None
+        # A repack that produces identical geometry is not a repair.
+        if all(replaced[i].wkb == rows[i]["polygon"].wkb for i in replaced):
+            return None
+        # A repack must not make the block less tidy. Measure the candidate the
+        # same way the block was measured, and refuse any regression: a shifted
+        # group that opens a corner gap is worse than what was already emitted.
+        candidate = dict(replaced)
+        try:
+            # Compare like with like: the same subset, before vs after.
+            before = self._hp_block_facts(sorted(candidate))
+            saved = {i: rows[i]["polygon"] for i in candidate}
+            for i, cell in candidate.items():
+                rows[i]["polygon"] = cell
+            after = self._hp_block_facts(sorted(candidate))
+            for i, cell in saved.items():
+                rows[i]["polygon"] = cell
+        except Exception:
+            return None
+        if float(after.get("shared_divider_ratio") or 0.0) < float(before.get("shared_divider_ratio") or 0.0) - 1e-9:
+            return None
+        if float(after.get("axis_spread_deg") or 0.0) > float(before.get("axis_spread_deg") or 0.0) + 1e-6:
+            return None
+        return replaced
+
+    @staticmethod
+    def _hp_cell_axis(polygon):
+        """Longest-edge direction of a cell, folded to [0, 180)."""
+        coords = list(polygon.exterior.coords)[:-1]
+        edges = sorted(
+            ((((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** .5),
+             math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0)
+            for a, b in zip(coords, coords[1:] + coords[:1])
+        )
+        if not edges:
+            return 0.0
+        return max(edges, key=lambda item: item[0])[1]
+
+    def _hp_align_scattered_blocks(self, pipeline_logger=None):
+        """Give every scattered block one shared axis.
+
+        Cells built by the strip planner already share an axis and are skipped.
+        For the rest, rebuild each cell as the same rectangle rotated to the
+        block's dominant axis, anchored at its own centroid, so the source point
+        never moves. A cell that would collide, leave the cluster, or touch ROAD
+        keeps its original geometry.
+        """
+        blocks = self._hp_parcel_blocks()
+        if not blocks:
+            return {"blocks": 0, "aligned": 0, "kept": 0}
+        rows = self.home_number_cells
+        road = self._home_parcel_road_solid()
+        cluster = getattr(self, "road_clip_geometry", None)
+        fixed = [poly for poly in (getattr(self, "hp_fixed_obstacles", None) or [])
+                 if poly is not None and not poly.is_empty]
+        aligned = kept = 0
+        ai_blocks = 0
+        for block in blocks:
+            if len(block) < 2:
+                continue
+            axes = [self._hp_cell_axis(rows[i]["polygon"]) for i in block]
+            if max(axes) - min(axes) <= 2.0:
+                continue  # already one shared axis
+            # Bearings cluster tightly (90.0 / 90.1 / 90.3 / 89.8...): the cells are
+            # already meant to share one axis, they just drifted a fraction of a
+            # degree. Group with a +/-3 deg tolerance so a run is one run, and snap
+            # it to the group's dominant bearing. Cells more than 3 deg away form
+            # their own run instead of being dragged across a real corner.
+            buckets = []
+            for position, index in enumerate(block):
+                bearing = axes[position]
+                placed = False
+                for group in buckets:
+                    centre = sum(axes[p] for p in group) / len(group)
+                    if abs(((bearing - centre + 90.0) % 180.0) - 90.0) <= 3.0:
+                        group.append(position)
+                        placed = True
+                        break
+                if not placed:
+                    buckets.append([position])
+            runs = [positions for positions in buckets if len(positions) >= 2]
+            if not runs:
+                continue
+            for positions in runs:
+                run = [block[p] for p in positions]
+                run_axes = [axes[p] for p in positions]
+                if max(run_axes) - min(run_axes) <= 1.0:
+                    continue  # this run already shares one axis
+                ordered = sorted(run_axes)
+                target = ordered[len(ordered) // 2]
+                axis_source = "median"
+                if ai_visual_parcel_enabled():
+                    try:
+                        points = [ShapelyPoint(tuple(float(v) for v in rows[i]["source"])) for i in run]
+                        polys = [rows[i]["polygon"] for i in run]
+                        region = MultiPoint(points).envelope.buffer(12.0)
+                        preview = self._hp_visual_parcel_png(region, points, candidate_parcels=polys)
+                        if preview:
+                            hint = suggest_dxf_hp_recovery(
+                                preview_png=preview, reference_angle=target,
+                                point_count=len(run), placed_count=len(run),
+                                failure_kind="uneven_axis", timeout=15.0,
+                            )
+                            if hint and float(hint.get("confidence") or 0.0) >= ai_confidence_min():
+                                delta = float(hint.get("axis_delta_degrees") or 0.0)
+                                if abs(delta) <= 45.0:
+                                    target = (target + delta) % 180.0
+                                    axis_source = "ai"
+                                    ai_blocks += 1
+                    except Exception:
+                        axis_source = "median"
+                moved = 0
+                for index in run:
+                    cell = rows[index]["polygon"]
+                    current = self._hp_cell_axis(cell)
+                    delta = (target - current) % 180.0
+                    if delta > 90.0:
+                        delta -= 180.0
+                    if abs(delta) < 2.0:
+                        continue
+                    pivot = cell.centroid
+                    candidate = affinity_rotate(cell, delta, origin=(pivot.x, pivot.y))
+                    # Same rectangle, same anchor: only the orientation changed.
+                    if abs(candidate.area - cell.area) > 0.01:
+                        continue
+                    if not cell.buffer(1e-9).covers(pivot) or not candidate.buffer(1e-9).covers(pivot):
+                        continue
+                    if cluster is not None and not cluster.covers(candidate):
+                        kept += 1
+                        continue
+                    if road is not None and self._strict_positive_overlap(candidate, road):
+                        kept += 1
+                        continue
+                    if any(self._strict_positive_overlap(candidate, other) for other in fixed):
+                        kept += 1
+                        continue
+                    if any(self._strict_positive_overlap(candidate, rows[other]["polygon"])
+                           for other in range(len(rows))
+                           if other != index and other not in run):
+                        kept += 1
+                        continue
+                    if any(self._strict_positive_overlap(candidate, rows[other]["polygon"])
+                           for other in run if other != index):
+                        kept += 1
+                        continue
+                    rows[index]["polygon"] = candidate
+                    aligned += 1
+                    moved += 1
+                if moved and pipeline_logger is not None:
+                    pipeline_log(
+                        pipeline_logger, "info",
+                        f"[3/6] HP axis alignment: {moved} scattered cell(s) set to "
+                        f"{target:.1f} deg in one run (source={axis_source}).",
+                    )
+        if pipeline_logger is not None:
+            pipeline_log(
+                pipeline_logger, "success",
+                f"[3/6] HP axis alignment: blocks={len(blocks)} aligned={aligned} kept={kept}.",
+            )
+        self.hp_axis_alignment_report = {"blocks": len(blocks), "aligned": aligned,
+                                         "kept": kept, "ai_blocks": ai_blocks}
+        return self.hp_axis_alignment_report
+
+    def _hp_parcel_qa(self, pipeline_logger=None, *, max_blocks=8, budget_s=45.0):
+        """Post-render QA: ask EVA AI per block, repack only what it flags."""
+        if not ai_visual_parcel_enabled():
+            return {"blocks": 0, "reviewed": 0, "messy": 0, "repacked": 0, "skipped": "ai_disabled"}
+        blocks = self._hp_parcel_blocks()
+        if not blocks:
+            return {"blocks": 0, "reviewed": 0, "messy": 0, "repacked": 0, "skipped": "no_blocks"}
+        started = time.monotonic()
+        reviewed = messy = repacked = 0
+        verdicts = []
+        for number, block in enumerate(blocks[:max_blocks]):
+            if time.monotonic() - started > budget_s:
+                pipeline_log(pipeline_logger, "info",
+                             "[3/6] HP parcel QA stopped at its time budget; emitted geometry retained.")
+                break
+            rows = self.home_number_cells
+            points = [ShapelyPoint(tuple(float(v) for v in rows[i]["source"])) for i in block]
+            polys = [rows[i]["polygon"] for i in block]
+            region = MultiPoint(points).envelope.buffer(12.0)
+            try:
+                preview = self._hp_visual_parcel_png(region, points, candidate_parcels=polys)
+            except Exception:
+                preview = b""
+            if not preview:
+                continue
+            facts = self._hp_block_facts(block)
+            remaining = max(2.0, min(20.0, budget_s - (time.monotonic() - started)))
+            verdict = review_dxf_parcel_block(
+                preview_png=preview, block_id=number, cell_count=len(block),
+                reference_angle=float(facts["axis_values"][0]) if facts["axis_values"] else 0.0,
+                geometry_facts=facts, timeout=remaining,
+            )
+            reviewed += 1
+            if not verdict:
+                continue
+            verdicts.append(verdict)
+            pipeline_log(pipeline_logger, "info",
+                         f"[3/6] HP parcel QA block {number}: {verdict['tidiness']} "
+                         f"cells={len(block)} issues={verdict['issues']} "
+                         f"confidence={verdict['confidence']:.2f} repack={verdict['repack']}.")
+            if verdict["tidiness"] == "messy":
+                messy += 1
+            if not verdict["repack"]:
+                continue
+            if not self._hp_block_is_messy(facts):
+                pipeline_log(pipeline_logger, "info",
+                             f"[3/6] HP parcel QA block {number}: metrics already tidy "
+                             f"(divider={facts['shared_divider_ratio']:.2f} "
+                             f"spread={facts['axis_spread_deg']:.1f}deg); left untouched.")
+                continue
+            hint = None
+            try:
+                hint = suggest_dxf_hp_recovery(
+                    preview_png=preview, reference_angle=float(facts["axis_values"][0]) if facts["axis_values"] else 0.0,
+                    point_count=len(block), placed_count=len(block),
+                    failure_kind="uneven_axis" if facts["axis_spread_deg"] > 5.0 else "width_jitter",
+                    timeout=remaining,
+                )
+            except Exception:
+                hint = None
+            replacement = self._hp_block_repack(block, facts, hint=hint)
+            if not replacement:
+                pipeline_log(pipeline_logger, "info",
+                             f"[3/6] HP parcel QA block {number}: repack rejected by hard gates; kept.")
+                continue
+            for original, cell in replacement.items():
+                rows[original]["polygon"] = cell
+            repacked += 1
+            pipeline_log(pipeline_logger, "success",
+                         f"[3/6] HP parcel QA block {number}: repacked {len(replacement)} cells, "
+                         "all hard gates re-validated.")
+        pipeline_log(pipeline_logger, "success",
+                     f"[3/6] HP parcel QA: blocks={len(blocks)} reviewed={reviewed} "
+                     f"messy={messy} repacked={repacked}.")
+        self.hp_parcel_qa_report = {"blocks": len(blocks), "reviewed": reviewed,
+                                    "messy": messy, "repacked": repacked,
+                                    "verdicts": verdicts}
+        return self.hp_parcel_qa_report
+
+    def finalize_boundary_fat_polygons(self, pipeline_logger=None, *, reserve_only=False):
+        pending = self.pending_boundary_fat_polygons
+        if not pending:
+            return
+
+        owners = {}
+        for index, item in enumerate(pending):
+            key = item.get("fat_owner")
+            if key is not None and key[-1] is not None:
+                if key in owners:
+                    raise FatAreaGeometryError(f"Duplicate BOUNDARY FAT owner: {key}")
+                owners[key] = index
+
+        cells_by_fat = defaultdict(list)
+        uncover_cells = []
+        expected = len(self.pending_home_numbers) + (0 if reserve_only else len(self.pending_uncover_home_numbers))
+        if len(self.home_number_cells) != expected:
+            raise FatAreaGeometryError(f"FAT AREA cell identity incomplete: {len(self.home_number_cells)}/{expected}")
+        for cell in self.home_number_cells:
+            polygon = cell["polygon"]
+            if cell["hp_uncover"]:
+                uncover_cells.append(polygon)
+                continue
+            key = cell.get("fat_owner")
+            if key is not None and key[-1] is not None:
+                if key not in owners:
+                    raise FatAreaGeometryError(f"HP {cell['text']} has no BOUNDARY FAT for source owner {key}")
+                owner_index = owners[key]
+            else:
+                # Legacy unbucketed input: resolve once from immutable source, never from moved cells.
+                source = ShapelyPoint(cell["source"])
+                containing = [i for i, item in enumerate(pending)
+                              if (key is None or (item.get("fat_owner") or ())[:-1] == key[:-1])
+                              and item["polygon"].buffer(1e-6).covers(source)]
+                if len(containing) > 1:
+                    raise FatAreaGeometryError(f"Ambiguous source FAT for HP {cell['text']}")
+                if not containing:
+                    # Unbound COVER must be excluded from every FAT, never silently claimed.
+                    cells_by_fat[-1].append(polygon)
+                    continue
+                owner_index = containing[0]
+            cells_by_fat[owner_index].append(polygon)
+
+        plans = {}
+        for index, item in enumerate(pending):
+            own_cells = cells_by_fat[index]
+            if not own_cells:
+                continue
+            own_union = unary_union(own_cells)
+            # ponytail: whole HP footprints; bounded connections, no parcel relocation.
+            inside = own_union
+            if inside.is_empty or not inside.is_valid:
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} has invalid owned HP cells")
+            if any(cell.is_empty or not cell.is_valid for cell in own_cells):
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} loses an owned HP cell")
+            foreign_cells = [cell for owner, cells in cells_by_fat.items() if owner != index for cell in cells]
+            foreign = unary_union(foreign_cells + uncover_cells)
+            if not foreign.is_empty and own_union.intersection(foreign).area > 1e-7:
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} has overlapping foreign/UNCOVER HP cells")
+            plans[index] = (inside, own_union.convex_hull, foreign)
+
+        # Reserve connected HP seeds jointly before any envelope can trap a later owner.
+        order = sorted(plans, key=lambda i: (plans[i][1].area / plans[i][0].area, i))
+        # ponytail: three priority passes, existing bounded visibility helper; no global path solver.
+        for attempt in range(3):
+            seeds = {}
+            for index in order:
+                inside, envelope, foreign = plans[index]
+                excluded = unary_union([foreign] + list(seeds.values()))
+                seed = _connect_fat_components(inside, excluded, inside)
+                clipped = seed.intersection(envelope).buffer(0)
+                if isinstance(clipped, Polygon) and inside.difference(clipped).area <= 1e-7:
+                    seed = clipped
+                if (not isinstance(seed, Polygon) or not seed.is_valid
+                        or inside.difference(seed).area > 1e-7 or seed.intersection(excluded).area > 1e-7):
+                    break
+                seeds[index] = seed
+            else:
+                break
+            if attempt == 2 or order[0] == index:
+                raise FatAreaGeometryError(f"FAT AREA {pending[index]['name']} cannot remain one connected polygon without claiming foreign HP (bounded joint seed reservation)")
+            order.remove(index)
+            order.insert(0, index)
+
+        final_geometries = []
+        for index, item in enumerate(pending):
+            if index not in plans:
+                final_geometries.append(Polygon())
+                continue
+            inside, envelope, foreign = plans[index]
+            excluded = unary_union([foreign] + [g for owner, g in seeds.items() if owner != index] + final_geometries)
+            carve = excluded.buffer(0.2, join_style=2).difference(inside)
+            grown = envelope.difference(carve).union(seeds[index]).buffer(0)
+            # Omit only empty-envelope scraps; every whole owned HP stays in its connected seed.
+            final_geom = unary_union([part for part in _fat_polygon_parts(grown)
+                                      if part.intersection(seeds[index]).area > 1e-7])
+            if final_geom.is_empty or not final_geom.is_valid or not isinstance(final_geom, Polygon):
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} cannot remain one connected polygon without claiming foreign HP")
+            # Fill only cosmetic empty-space gaps; protected foreign/other-seed holes remain holes.
+            holes = [ring.coords for ring in final_geom.interiors
+                     if not excluded.is_empty and Polygon(ring.coords).intersection(excluded).area > 1e-7]
+            final_geom = Polygon(final_geom.exterior.coords, holes)
+            # Restore exact owned footprints after high-coordinate overlay roundoff;
+            # keep the original whole-cell, connected-Polygon and foreign guards.
+            final_geom = final_geom.union(inside).buffer(0)
+            # Unary union can itself lose micro-wedges at large projected coordinates.
+            # Restore from each immutable ownership cell, not only its merged proxy.
+            for _round in range(2):
+                for cell in cells_by_fat[index]:
+                    if cell.difference(final_geom).area > 1e-7:
+                        final_geom = final_geom.union(cell).buffer(0)
+            if not isinstance(final_geom, Polygon) or not final_geom.is_valid:
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} numerical ownership union is not connected")
+            if (inside.difference(final_geom).area > 1e-7 or
+                    any(cell.difference(final_geom).area > 1e-7 for cell in cells_by_fat[index])):
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} misses an owned HP cell")
+            if not excluded.is_empty and final_geom.intersection(excluded).area > 1e-7:
+                raise FatAreaGeometryError(f"FAT AREA {item['name']} intersects foreign/UNCOVER HP cells")
+            final_geometries.append(final_geom)
+
+        if reserve_only:
+            return final_geometries
+
+        # One advisory call for the complete drawing, never one request per HP/FAT.
+        summary = {
+            "fat_count": len(plans), "hp_count": sum(len(cells_by_fat[i]) for i in plans),
+            "vertex_count": sum(len(p.exterior.coords) + sum(len(r.coords) for r in p.interiors)
+                                for p in final_geometries if not p.is_empty),
+        }
+        # Show AI only already-verified cut options, not raw coordinates or authority to edit.
+        summary["safe_cut_options"] = []
+        for tolerance in (.01, .05, .1, .2, .5):
+            removed = 0
+            for index, polygon in enumerate(final_geometries):
+                if polygon.is_empty:
+                    continue
+                foreign = unary_union([plans[index][2]] + [p for i, p in enumerate(final_geometries) if i != index])
+                trimmed = _trim_fat_boundary(polygon, plans[index][0], foreign, tolerance)
+                if trimmed is not None:
+                    removed += len(polygon.exterior.coords) + sum(len(r.coords) for r in polygon.interiors)
+                    removed -= len(trimmed.exterior.coords) + sum(len(r.coords) for r in trimmed.interiors)
+            if removed:
+                summary["safe_cut_options"].append({"simplify_tolerance_m": tolerance, "removed_vertices": removed,
+                                                   "whole_hp_missing_m2": 0, "foreign_overlap_m2": 0})
+        advice = suggest_dxf_fat_boundary_trim(summary) if summary["safe_cut_options"] else None
+        self.fat_boundary_trim_stats = {"recommended": bool(advice), "applied": 0, "removed_vertices": 0}
+        if advice:
+            for index, polygon in enumerate(final_geometries):
+                if polygon.is_empty:
+                    continue
+                foreign = unary_union([plans[index][2]] + [p for i, p in enumerate(final_geometries) if i != index])
+                trimmed = _trim_fat_boundary(polygon, plans[index][0], foreign, advice["simplify_tolerance_m"])
+                if trimmed is not None:
+                    count = lambda p: len(p.exterior.coords) + sum(len(r.coords) for r in p.interiors)
+                    self.fat_boundary_trim_stats["removed_vertices"] += count(polygon) - count(trimmed)
+                    self.fat_boundary_trim_stats["applied"] += 1
+                    final_geometries[index] = trimmed
+            pipeline_log(pipeline_logger, "info", "FAT AREA AI trim recommendation accepted: "
+                         f"tolerance {advice['simplify_tolerance_m']:.2f}m, confidence {advice['confidence']:.2f}; "
+                         f"applied {self.fat_boundary_trim_stats['applied']} FAT, "
+                         f"removed {self.fat_boundary_trim_stats['removed_vertices']} vertices; full HP/foreign guards retained.")
+
+        if "EVA_FAT_OWNER" not in self.doc.appids:
+            self.doc.appids.new("EVA_FAT_OWNER")
+        for index, (item, poly) in enumerate(zip(pending, final_geometries)):
+            if poly.is_empty:
+                continue
+            attrs = item["attrs"]
+            outer = self._add_polyline(list(poly.exterior.coords), close=True, dxfattribs=attrs, width=KML_FAT_AREA_WIDTH)
+            outer.set_xdata("EVA_FAT_OWNER", [(1071, index), (1000, "OUTER")])
+            self.kml_detail_stats["polygon_features"] += 1
+            for inner in poly.interiors:
+                hole = self._add_polyline(list(inner.coords), close=True, dxfattribs=attrs, width=KML_FAT_AREA_WIDTH)
+                hole.set_xdata("EVA_FAT_OWNER", [(1071, index), (1000, "HOLE")])
+            self.stats["KML"] += 1
+            self.stats[KML_FAT_AREA_LAYER] += 1
+            self._add_kml_preview_feature("Polygon", [item["outer_coordinates"]] + item["valid_inner_rings"], "")
 
     def add_kml_polygon(
         self,
@@ -5451,6 +12042,17 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             polygon_for_validation = polygon_for_validation.buffer(0)
         if is_boundary_fat:
             self._register_fat_area_geometry(polygon_for_validation)
+            self.pending_boundary_fat_polygons.append({
+                "polygon": polygon_for_validation,
+                "projected_outer": projected_outer,
+                "projected_inner_rings": projected_inner_rings,
+                "attrs": attrs,
+                "name": name,
+                "fat_owner": kml_fat_owner_key(folder_stack or [], name, getattr(self, "_fat_source_scope", ())),
+                "outer_coordinates": outer_coordinates,
+                "valid_inner_rings": valid_inner_rings,
+            })
+            return
 
         self._add_polyline(projected_outer, close=True, dxfattribs=attrs)
         self.kml_detail_stats["polygon_features"] += 1
@@ -5519,10 +12121,15 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             self.add_standard_layout_frame()
         self.remove_fat_info_artifacts()
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.doc.dxfversion = OUTPUT_DXF_VERSION
+        # Keep native viewport/font resources for the rebased scope templates.
+        if not self.preserve_native_template:
+            self.doc.dxfversion = OUTPUT_DXF_VERSION
         self._turn_all_layers_visible()
         self.apply_cable_draw_order()
-        self.prepare_autocad_lt_output()
+        if not self.preserve_native_template:
+            self.prepare_autocad_lt_output()
+        else:
+            self.update_modelspace_initial_view(bbox.extents(list(self.modelspace)))
         self.doc.audit()
         self.doc.saveas(self.output_path)
         self.patch_ac1015_linetype_pattern_flags()
@@ -5618,8 +12225,13 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 LOGGER.debug("Gagal mengatur initial view modelspace: %s", exc)
 
     def _layout_name_for_scope(self) -> str:
-        """Layout name for the active scope (Cluster vs Feeder)."""
-        return "Feeder" if is_feeder_like_scope(self.scope_type) else TEMPLATE_LAYOUT_NAME
+        """Return the paper-space tab matching the active scope."""
+        scope = normalize_scope_type_name(self.scope_type)
+        if scope == "Subfeeder":
+            return "Subfeeder"
+        if scope == "Feeder":
+            return "Feeder"
+        return TEMPLATE_LAYOUT_NAME
 
     def _fdt_layout_prefix_for_scope(self) -> str:
         """Prefix used for per-FDT layouts under the active scope."""
@@ -5727,19 +12339,17 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 LOGGER.debug("Gagal mengatur viewport layout template: %s", exc)
 
     def _style_viewport_entity(self, viewport) -> None:
+        """Style a viewport entity as a non-plotting frame."""
         try:
             viewport.dxf.layer = TEMPLATE_VIEWPORT_LAYER
             viewport.dxf.color = WHITE_ACI_COLOR
             viewport.dxf.true_color = WHITE_TRUE_COLOR
+            # Entity-level plot flag: 0 = do not plot.
+            viewport.dxf.plot = 0
         except Exception as exc:
             LOGGER.debug("Viewport tidak bisa diset putih: %s", exc)
 
     def _paper_viewport_center_size(self) -> tuple[tuple[float, float], tuple[float, float]]:
-        if is_feeder_like_scope(self.scope_type):
-            return TEMPLATE_FEEDER_PAPER_VIEWPORTS.get(
-                self.network_type,
-                TEMPLATE_FEEDER_PAPER_VIEWPORTS["AE"],
-            )
         return TEMPLATE_PAPER_VIEWPORT_CENTER, TEMPLATE_PAPER_VIEWPORT_SIZE
 
     def _normalize_layout_paper_viewport(self, layout) -> None:
@@ -5760,6 +12370,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 LOGGER.debug("Gagal mengatur paper viewport layout: %s", exc)
 
     def _normalize_layout_page_setup(self, layout) -> None:
+        if self.preserve_native_template:
+            # page_setup() deletes the template viewports and their style links.
+            layout.dxf.plot_configuration_file = "DWG To PDF.pc3"
+            layout.dxf.plot_layout_flags |= 512
+            return
         try:
             layout.page_setup(
                 size=TEMPLATE_PAPER_SIZE,
@@ -6238,8 +12853,9 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         distribution_route = math.ceil(lengths.get("DISTRIBUTION_CABLE", 0.0))
         is_ug = self.network_type == "UG"
         is_feeder = is_feeder_like_scope(self.scope_type)
-        aerial_route = 0 if is_ug else distribution_route
-        duct_route = distribution_route if is_ug else 0
+        active_route_label = "TOTAL DUCT ROUTE" if is_ug else "TOTAL AERIAL ROUTE"
+        total_route = self._design_summary_override_int("TOTAL ROUTE LENGTH", distribution_route)
+        active_route = self._design_summary_override_int(active_route_label, total_route)
         fdt_count = counts.get("FDT", 0)
         fat_count = counts.get("FAT", 0)
         handhole_20_count = counts.get("NEW HH 20X20X20", 0) if is_ug else 0
@@ -6268,9 +12884,8 @@ class OSMToDXFHandler(osmium.SimpleHandler):
             "TOTAL POLE EXT LINKNET": counts.get("EXISTING_POLE_PARTNER_LINKNET", 0),
             "TOTAL POLE EXT TELKOM": counts.get("EXISTING_POLE_PARTNER_TELKOM", 0),
             "TOTAL POLE (ALL TYPE)": counts.get("POLE_ALL", 0),
-            "TOTAL AERIAL ROUTE": aerial_route,
-            "TOTAL DUCT ROUTE": duct_route,
-            "TOTAL ROUTE LENGTH": aerial_route + duct_route,
+            active_route_label: active_route,
+            "TOTAL ROUTE LENGTH": total_route,
             "TOTAL HOMEPASS": counts.get("HP COVER", 0),
             "TOTAL FDT (48C)": 0 if is_ug else fdt_count,
             "TOTAL FDT (72C)": 0,
@@ -6321,12 +12936,12 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 if trenching_override is None:
                     # Until a Feeder BOQ NRO trenching quantity is supplied,
                     # UG trenching follows the current duct-route assumption.
-                    values["TOTAL TRENCHING"] = duct_route
+                    values["TOTAL TRENCHING"] = distribution_route
                     LOGGER.warning(
                         "Feeder UG TOTAL TRENCHING has no BOQ NRO/design override source; "
-                        "using TOTAL DUCT ROUTE fallback (%s m). Real trenching should come "
+                        "using KML distribution-route fallback (%s m). Real trenching should come "
                         "from Feeder BOQ NRO trenching quantity cells.",
-                        duct_route,
+                        distribution_route,
                     )
                 else:
                     values["TOTAL TRENCHING"] = trenching_override
@@ -6724,13 +13339,58 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         if not self.road_buffers and not self.road_lines:
             return
 
+        # Rendering only: remove terminal cross-bars; keep full buffer/clip as the
+        # authoritative ROAD footprint for HP exclusion and collision checks.
+        self._road_open_ends = []
+        self._road_end_tangents = []
+        self._road_buffer_tree = STRtree(self.road_buffers) if STRtree is not None and len(self.road_buffers) > 1 else None
+        self._road_buffer_indexes = {id(area): index for index, area in enumerate(self.road_buffers)}
+        for source_index, centerline in enumerate(self._road_buffer_centerlines):
+            visible = centerline
+            if self.road_clip_geometry is not None and not self.road_clip_geometry.is_empty:
+                visible = visible.intersection(self.road_clip_geometry)
+            parts = [visible] if isinstance(visible, LineString) else list(getattr(visible, "geoms", []))
+            for part in parts:
+                if not isinstance(part, LineString) or part.length <= 0 or part.is_ring:
+                    continue
+                coords = list(part.coords)
+                for end, near in ((coords[0], coords[1]), (coords[-1], coords[-2])):
+                    dx, dy = near[0] - end[0], near[1] - end[1]
+                    length = math.hypot(dx, dy)
+                    if length:
+                        endpoint = ShapelyPoint(end)
+                        if self._road_buffer_tree is not None:
+                            others = self._query_indexed_geometries(self._road_buffer_tree, self.road_buffers, endpoint)
+                        else:
+                            others = self.road_buffers
+                        if any(
+                            self._road_buffer_indexes[id(area)] != source_index
+                            and area.covers(endpoint)
+                            and not area.equals(self.road_buffers[source_index])
+                            for area in others
+                        ):
+                            continue
+                        self._road_open_ends.append(endpoint)
+                        self._road_end_tangents.append((dx / length, dy / length))
+        self._road_clip_bands = {}
+        self._road_source_line_tree = STRtree(self._road_buffer_centerlines) if STRtree is not None and self._road_buffer_centerlines else None
+
         if self.road_buffers:
             road_union = unary_union(self.road_buffers)
             road_union = road_union.buffer(0)
             if self.road_clip_geometry is not None and not self.road_clip_geometry.is_empty:
                 road_union = road_union.intersection(self.road_clip_geometry)
-            road_union = road_union.simplify(ROAD_SIMPLIFY_TOLERANCE_METERS, preserve_topology=True)
+            # Keep rendered ROAD footprint identical to the planner hard-exclusion
+            # geometry. Simplifying here can move/expand boundaries after HP cells
+            # pass the raw ROAD gate, creating false visual ROAD overlaps.
             road_union = road_union.buffer(0)
+            # Way endpoints buried in intersections are not visible ROAD tips.
+            edge = road_union.boundary
+            exposed = [index for index, point in enumerate(self._road_open_ends) if edge.distance(point) <= 1e-4]
+            self._road_end_tangents = [self._road_end_tangents[index] for index in exposed]
+            self._road_open_ends = [self._road_open_ends[index] for index in exposed]
+            self._road_open_end_tree = STRtree(self._road_open_ends) if STRtree is not None and self._road_open_ends else None
+            self._road_end_indexes = {id(point): index for index, point in enumerate(self._road_open_ends)}
             self._add_road_boundaries_to_dxf(road_union)
 
         if self.road_lines:
@@ -6774,18 +13434,94 @@ class OSMToDXFHandler(osmium.SimpleHandler):
         for part in getattr(geometry, "geoms", []):
             self._add_road_lines_to_dxf(part)
 
+    def _add_road_ring(self, points, inset: float = 0.0) -> None:
+        """Omit only cross-bars at exposed source/clip ends, not road sides."""
+        coords = list(points)
+        if coords[0] == coords[-1]:
+            coords.pop()
+        removed = set()
+        ends = getattr(self, "_road_open_ends", [])
+        tree = getattr(self, "_road_open_end_tree", None)
+        tolerance = inset + 1e-5
+        clip = self.road_clip_geometry
+        clip_edge_band = None
+        if clip is not None and not clip.is_empty:
+            bands = self._road_clip_bands
+            if inset not in bands:
+                bands[inset] = clip.boundary.buffer(inset + 1e-5)
+            clip_edge_band = bands[inset]
+        for index, (a, b) in enumerate(zip(coords, coords[1:] + coords[:1])):
+            segment = LineString([a, b])
+            if segment.length <= 1e-8:
+                continue
+            on_clip = clip_edge_band is not None and segment.difference(clip_edge_band).length < 1e-5
+            if on_clip:
+                # A partial-width clip can cut ROAD without reaching centerline.
+                midpoint = segment.interpolate(0.5, normalized=True)
+                lines = self._road_buffer_centerlines
+                line_tree = self._road_source_line_tree
+                if line_tree is not None:
+                    near = line_tree.nearest(midpoint)
+                    line = near if hasattr(near, "geom_type") else lines[int(near)]
+                else:
+                    line = min(lines, key=lambda item: item.distance(midpoint)) if lines else None
+                if line is not None:
+                    station = line.project(midpoint)
+                    left = line.interpolate(max(0.0, station - 0.1))
+                    right = line.interpolate(min(line.length, station + 0.1))
+                    tx, ty = right.x - left.x, right.y - left.y
+                    length = math.hypot(tx, ty)
+                    dx, dy = b[0] - a[0], b[1] - a[1]
+                    if length and abs(tx * dx + ty * dy) < 0.98 * length * segment.length:
+                        removed.add(index)
+                        continue
+            candidates = self._query_indexed_geometries(tree, ends, segment.buffer(tolerance)) if tree is not None else ends
+            for point in candidates:
+                if point.distance(segment) > inset + 1e-5:
+                    continue
+                tx, ty = self._road_end_tangents[self._road_end_indexes[id(point)]]
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                on_clip = clip_edge_band is not None and segment.difference(clip_edge_band).length < 1e-5
+                if not on_clip and abs(tx * dx + ty * dy) > 0.7 * segment.length:
+                    continue  # a longitudinal side, not a transverse cap
+                side_a = tx * (a[1] - point.y) - ty * (a[0] - point.x)
+                side_b = tx * (b[1] - point.y) - ty * (b[0] - point.x)
+                if side_a * side_b < -1e-8 or (
+                    min(abs(side_a), abs(side_b)) <= 1e-5
+                    and max(abs(side_a), abs(side_b)) > 1e-5
+                    and abs((a[0] - point.x) * tx + (a[1] - point.y) * ty) <= tolerance
+                    and abs((b[0] - point.x) * tx + (b[1] - point.y) * ty) <= tolerance
+                ):
+                    removed.add(index)
+                    break
+        if not removed:
+            self._add_polyline(coords, close=True, dxfattribs={"layer": "ROAD"})
+            return
+        # Start after a removed edge so wraparound remains one continuous run.
+        start = next(iter(removed)) + 1
+        run = [coords[start % len(coords)]]
+        for step in range(len(coords)):
+            index = (start + step) % len(coords)
+            following = coords[(index + 1) % len(coords)]
+            if index in removed:
+                if len(run) >= 2:
+                    self._add_polyline(run, close=False, dxfattribs={"layer": "ROAD"})
+                run = [following]
+            else:
+                run.append(following)
+
     def _add_polygon_boundary(self, polygon: Polygon) -> None:
         if polygon.area < ROAD_MIN_POLYGON_AREA_SQUARE_METERS:
             return
 
         exterior = list(polygon.exterior.coords)
         if len(exterior) >= 4:
-            self._add_polyline(exterior, close=True, dxfattribs={"layer": "ROAD"})
+            self._add_road_ring(exterior)
 
         for interior in polygon.interiors:
             interior_points = list(interior.coords)
             if len(interior_points) >= 4:
-                self._add_polyline(interior_points, close=True, dxfattribs={"layer": "ROAD"})
+                self._add_road_ring(interior_points)
 
         self._add_road_inner_line(polygon)
 
@@ -6824,11 +13560,11 @@ class OSMToDXFHandler(osmium.SimpleHandler):
                 continue
             inner_exterior = list(inner_polygon.exterior.coords)
             if len(inner_exterior) >= 4:
-                self._add_polyline(inner_exterior, close=True, dxfattribs={"layer": "ROAD"})
+                self._add_road_ring(inner_exterior, ROAD_INNER_LINE_OFFSET_METERS)
             for interior in inner_polygon.interiors:
                 interior_points = list(interior.coords)
                 if len(interior_points) >= 4:
-                    self._add_polyline(interior_points, close=True, dxfattribs={"layer": "ROAD"})
+                    self._add_road_ring(interior_points, ROAD_INNER_LINE_OFFSET_METERS)
 
 
 def normalize_input_paths(input_paths: str | Path | Iterable[str | Path]) -> list[Path]:
@@ -6931,10 +13667,11 @@ def parse_kml_container(
     filter_enabled: bool,
     styles: dict[str, dict],
     style_maps: dict[str, str],
+    document_scope: tuple[str, ...] = (),
 ) -> int:
     feature_count = 0
 
-    for child in list(element):
+    for child_index, child in enumerate(list(element)):
         child_name = local_name(child.tag)
         if child_name == "Document":
             feature_count += parse_kml_container(
@@ -6946,6 +13683,7 @@ def parse_kml_container(
                 filter_enabled,
                 styles,
                 style_maps,
+                document_scope + (f"{child_index}:{direct_child_text_by_name(child, 'name')}",),
             )
         elif child_name == "Folder":
             folder_name = direct_child_text_by_name(child, "name") or "Tanpa Nama"
@@ -6958,17 +13696,23 @@ def parse_kml_container(
                 filter_enabled,
                 styles,
                 style_maps,
+                document_scope,
             )
         elif child_name == "Placemark":
             standard_folder = nearest_standard_folder(folder_stack)
-            if not standard_folder:
+            if not standard_folder or (standard_folder.startswith("EXISTING HH ") and handler.network_type != "UG"):
                 continue
             key = kml_folder_key(file_name, standard_folder)
             if filter_enabled and key not in selected_kml_folders and standard_folder not in selected_kml_folders:
                 continue
             name = direct_child_text_by_name(child, "name")
             style = resolve_kml_style(direct_child_text_by_name(child, "styleUrl"), styles, style_maps)
-            feature_count += parse_kml_placemark(child, handler, name, style, standard_folder, folder_stack)
+            previous_scope = getattr(handler, "_fat_source_scope", ())
+            handler._fat_source_scope = (file_name, *document_scope)
+            try:
+                feature_count += parse_kml_placemark(child, handler, name, style, standard_folder, folder_stack)
+            finally:
+                handler._fat_source_scope = previous_scope
 
     return feature_count
 
@@ -7277,7 +14021,21 @@ def convert_osm_to_dxf(
             else:
                 pipeline_log(pipeline_logger, "warning", "Feeder scope: no KML geometries found, skipping auto-buffer.")
         else:
-            pipeline_log(pipeline_logger, "warning", "ROAD clipping enabled, but no BOUNDARY CLUSTER polygon was found.")
+            # Cluster KMZ may only contain HP points. Build a local query boundary
+            # so province ROAD cache never loads full-region geometry and HP strips
+            # still receive real nearby ROAD instead of a no-ROAD fallback.
+            local_geometries = _collect_auto_boundary_geometries_from_inputs(input_paths, target_crs)
+            local_boundary = _auto_boundary_from_geometries(
+                local_geometries, auto_boundary_buffer_meters_for_scope(handler.scope_type)
+            )
+            if local_boundary is not None:
+                handler.set_road_clip_geometry(local_boundary)
+                pipeline_log(
+                    pipeline_logger, "info",
+                    "No BOUNDARY CLUSTER: using local KMZ geometry buffer for cached ROAD query.",
+                )
+            else:
+                pipeline_log(pipeline_logger, "warning", "ROAD clipping enabled, but no local KML geometry was found.")
     else:
         pipeline_log(pipeline_logger, "info", "ROAD clipping skipped by user setting.")
     kml_feature_count = 0
@@ -7357,6 +14115,7 @@ def convert_osm_to_dxf(
         f"{format_stage_seconds(time.perf_counter() - road_label_start)}.",
     )
 
+    handler.finalize_roadside_poles_and_lines(pipeline_logger=pipeline_logger)
     pipeline_progress(pipeline_logger, 64, "Menyusun label POLE_ID.")
     pole_id_stage_start = time.perf_counter()
     pipeline_log(
@@ -7378,17 +14137,22 @@ def convert_osm_to_dxf(
 
     pipeline_progress(pipeline_logger, 68, "Menyusun HOME_NUMBER / HP COVER.")
     home_stage_start = time.perf_counter()
+    cover_count = len(handler.pending_home_numbers)
+    uncover_count = len(handler.pending_uncover_home_numbers)
     pipeline_log(
         pipeline_logger,
         "info",
-        f"[3/6] Generating HOME_NUMBER boxes from {len(handler.pending_home_numbers):,} HP COVER point(s)...",
+        f"[3/6] HP dari KMZ: {cover_count:,} COVER, {uncover_count:,} UNCOVER; "
+        "merencanakan parcel bersama tanpa mengubah kelas sumber.",
     )
     handler.finalize_home_numbers(pipeline_logger=pipeline_logger)
-    handler._finalize_uncover_home_numbers_as_parcels(pipeline_logger=pipeline_logger)
+    handler.finalize_boundary_fat_polygons(pipeline_logger=pipeline_logger)
+    handler._hp_parcel_qa(pipeline_logger=pipeline_logger)
     pipeline_log(
         pipeline_logger,
         "success",
-        f"[3/6] HOME_NUMBER generation complete: {len(handler.home_number_boxes):,} box geometry part(s) placed in "
+        f"[3/6] HP parcel selesai: {cover_count:,} COVER (HOME_NUMBER), "
+        f"{uncover_count:,} UNCOVER (HP_UNCOVER) dalam "
         f"{format_stage_seconds(time.perf_counter() - home_stage_start)}.",
     )
 
