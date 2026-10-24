@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ecfdf5">
+<title>Harga &amp; Paket · EVA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* EVA legal + pricing shared styles (brand tokens from the app) */
+:root{
+  --ink:#13201c; --muted:#557169; --line:#dceae2; --canvas:#ecfdf5; --paper:#fff;
+  --soft:#f6fffa; --brand:#087f5b; --brand-dark:#12553f; --brand-soft:#d9f8e9;
+  --amber:#9a5b00; --amber-soft:#fff5d9; --blue:#175b91; --blue-soft:#eaf5ff;
+  --red:#9f2330; --red-soft:#fff0f1; --shadow:0 18px 48px rgba(10,88,63,.10);
+
+  /* ── Type scale ───────────────────────────────────────────────── */
+  --font-body:'Public Sans',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --fs-body:15.5px;
+  --lh-body:1.62;
+  --tracking-body:-0.006em;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;min-width:320px;color:var(--ink);
+  background:radial-gradient(circle at 100% 0,#d9f8e9 0,transparent 29rem),var(--canvas);
+  font-family:var(--font-body);
+  font-size:var(--fs-body);
+  line-height:var(--lh-body);
+  letter-spacing:var(--tracking-body);
+  font-optical-sizing:auto;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility}
+a{color:var(--brand-dark);font-weight:700;text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{color:var(--brand)}
+:focus-visible{outline:3px solid #52c594;outline-offset:3px;border-radius:4px}
+.shell{width:min(1180px,calc(100% - 32px));margin:0 auto}
+
+/* ── header ───────────────────────────────────────────────────── */
+.site-head{border-bottom:1px solid rgba(118,176,148,.36);background:rgba(255,255,255,.78);
+  backdrop-filter:blur(15px);position:sticky;top:0;z-index:20}
+.site-head__row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px}
+.brand{display:inline-flex;align-items:baseline;gap:8px;text-decoration:none}
+.brand strong{font-family:var(--font-display);font-size:26px;line-height:1;font-weight:700;
+  letter-spacing:-0.02em;color:var(--brand-dark)}
+.brand span{font-family:var(--font-body);font-size:11.5px;font-weight:600;letter-spacing:0.02em;
+  color:var(--muted);text-transform:none}
+.site-nav{display:flex;align-items:center;gap:8px}
+.site-nav a{font-size:13.5px;font-weight:600;letter-spacing:0;text-decoration:none;
+  padding:9px 15px;border-radius:10px;color:var(--brand-dark)}
+.site-nav a:hover{background:#f2fdf9}
+.site-nav a[aria-current=page]{color:var(--brand);font-weight:700}
+.site-nav .btn-login{background:var(--brand);color:#fff;border:1px solid #0b7f5d;font-weight:700}
+.site-nav .btn-login:hover{background:#066846;color:#fff}
+
+/* ── hero ─────────────────────────────────────────────────────── */
+.hero{padding:48px 0 12px}
+.eyebrow{margin:0 0 12px;color:var(--brand);font-size:11px;font-weight:800;
+  letter-spacing:0.13em;text-transform:uppercase;line-height:1.2}
+.hero h1{font-family:var(--font-display);margin:0 0 14px;
+  font-size:clamp(27px,4.3vw,41px);line-height:1.08;letter-spacing:-0.025em;
+  font-weight:700;text-wrap:balance}
+.hero__lead{margin:0;max-width:62ch;color:var(--muted);font-size:16.5px;line-height:1.6;
+  letter-spacing:-0.004em;text-wrap:pretty}
+.hero__meta{margin-top:16px;color:var(--muted);font-size:13px;font-weight:600}
+
+/* ── content ──────────────────────────────────────────────────── */
+main{padding-bottom:64px}
+.doc{width:min(820px,calc(100% - 32px));margin:28px auto 0;background:var(--paper);
+  border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);
+  padding:clamp(22px,4vw,44px)}
+.doc h2{margin:30px 0 8px;font-size:19px;letter-spacing:-0.012em;line-height:1.3;
+  scroll-margin-top:90px;font-weight:700}
+.doc h2:first-of-type{margin-top:4px}
+.doc h3{margin:18px 0 6px;font-size:15px;color:var(--brand-dark);font-weight:700;letter-spacing:-0.005em}
+.doc p{margin:8px 0;text-wrap:pretty}
+.doc ul,.doc ol{margin:8px 0;padding-left:22px}
+.doc li{margin:5px 0}
+.doc .lead{color:var(--muted);font-size:15.5px}
+.num{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:9px;
+  border:1px solid #9ad7bb;border-radius:8px;background:var(--brand-soft);color:var(--brand-dark);
+  font-size:12px;font-weight:800;vertical-align:-5px;font-variant-numeric:tabular-nums}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.toc-mini a{font-size:12.5px;font-weight:700;padding:5px 11px;border:1px solid var(--line);
+  border-radius:999px;background:var(--soft);text-decoration:none;color:var(--brand-dark)}
+.toc-mini a:hover{background:var(--brand-soft)}
+.note{margin:14px 0;padding:12px 15px;border-radius:12px;font-size:13.5px;border:1px solid}
+.note b{display:block;margin-bottom:2px}
+.note--blue{background:var(--blue-soft);border-color:#bcdcf4;color:#123f63}
+.note--red{background:var(--red-soft);border-color:#f3c2c6;color:#7a1b25}
+.foot{display:block;margin:34px auto 0;color:var(--muted);font-size:12.5px;
+  text-align:center;padding:18px 0}
+
+/* ── pricing ──────────────────────────────────────────────────── */
+.pricing-wrap{width:min(960px,calc(100% - 32px));margin:16px auto 0}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:stretch}
+.plan{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:20px;
+  box-shadow:var(--shadow);padding:28px 26px;display:flex;flex-direction:column;
+  transition:box-shadow .2s ease,transform .2s ease}
+.plan:hover{box-shadow:0 22px 56px rgba(10,88,63,.14);transform:translateY(-2px)}
+.plan--featured{border:2px solid var(--brand);box-shadow:0 22px 56px rgba(8,121,91,.18)}
+.plan--featured:hover{box-shadow:0 26px 64px rgba(8,121,91,.24)}
+.plan__badge{position:absolute;top:-13px;left:26px;background:var(--brand);color:#fff;
+  font-size:10.5px;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;
+  padding:5px 12px;border-radius:999px;line-height:1.4}
+.plan__name{font-size:12.5px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--brand);line-height:1.4}
+.plan__tagline{margin:6px 0 18px;color:var(--muted);font-size:13.5px;line-height:1.5;
+  letter-spacing:-0.003em;text-wrap:pretty}
+.plan__price{display:flex;align-items:baseline;gap:7px;margin-top:auto}
+.plan__amount{font-family:var(--font-display);font-size:clamp(34px,4.6vw,42px);font-weight:700;
+  letter-spacing:-0.022em;line-height:1.05;font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1,"lnum" 1}
+.plan__period{color:var(--muted);font-size:13.5px;font-weight:600;letter-spacing:0}
+.plan__cta{display:inline-flex;align-items:center;justify-content:center;min-height:48px;
+  margin:22px 0 0;border-radius:12px;font-size:14px;font-weight:700;letter-spacing:-0.004em;
+  text-decoration:none;border:1px solid #0b7f5d;transition:background .16s ease,color .16s ease}
+.plan__cta--solid{background:var(--brand);color:#fff}
+.plan__cta--solid:hover{background:var(--brand-dark);color:#fff}
+.plan__cta--quiet{background:rgba(255,255,255,.9);color:var(--brand-dark);border-color:#b8ddcb}
+.plan__cta--quiet:hover{background:#f5fff9;color:var(--brand-dark)}
+.plan__sub{margin:10px 0 20px;color:var(--muted);font-size:12px;text-align:center;
+  letter-spacing:0.002em}
+.feat{list-style:none;margin:0;padding:18px 0 0;display:grid;gap:10px;
+  border-top:1px solid var(--line)}
+.feat li{display:flex;gap:10px;align-items:flex-start;font-size:13.8px;line-height:1.5;
+  letter-spacing:-0.002em}
+.feat .ic{flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;
+  border-radius:50%;font-size:11px;font-weight:800;margin-top:1px}
+.feat .yes{background:var(--brand-soft);color:var(--brand-dark)}
+.feat .no{background:#f0f2f1;color:#9aa7a1}
+.feat .muted{color:#9aa7a1;text-decoration:line-through;text-decoration-thickness:1px}
+
+/* comparison table */
+.cmp-scroll{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:16px;
+  background:var(--paper);-webkit-overflow-scrolling:touch}
+.cmp{width:100%;min-width:520px;border-collapse:collapse;font-size:13.8px;letter-spacing:-0.002em}
+.cmp caption{caption-side:top;text-align:left;font-weight:800;font-size:15.5px;
+  letter-spacing:-0.012em;margin:30px 0 10px;color:var(--ink);padding:0}
+.cmp th,.cmp td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+.cmp thead th{background:var(--soft);font-size:11.5px;font-weight:700;letter-spacing:0.05em;
+  text-transform:uppercase;color:var(--muted);vertical-align:bottom}
+.cmp thead th small{display:block;font-size:12px;font-weight:700;letter-spacing:0;
+  text-transform:none;color:var(--brand-dark);margin-top:3px;font-variant-numeric:tabular-nums}
+.cmp td.c,.cmp th.c{text-align:center;width:118px}
+.cmp tr:last-child td{border-bottom:0}
+.cmp tbody tr:hover{background:#fbfefc}
+.cmp .yes{color:var(--brand);font-weight:800}
+.cmp .no{color:#b9c2bd;font-weight:800}
+
+/* faq */
+.faq-mini{width:min(960px,calc(100% - 32px));margin:34px auto 0}
+.faq-mini h2{font-size:19px;margin:0 0 10px;letter-spacing:-0.012em;line-height:1.3}
+.faq-mini details{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+  padding:13px 17px;margin:9px 0;transition:border-color .16s ease}
+.faq-mini details[open]{border-color:#b8ddcb}
+.faq-mini summary{font-weight:700;cursor:pointer;font-size:14.5px;letter-spacing:-0.004em;
+  list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.faq-mini summary::-webkit-details-marker{display:none}
+.faq-mini summary::after{content:"+";font-family:var(--font-display);font-size:18px;
+  font-weight:600;color:var(--brand);line-height:1;flex:0 0 auto}
+.faq-mini details[open] summary::after{content:"−"}
+.faq-mini p{margin:9px 0 2px;color:var(--muted);font-size:13.8px;line-height:1.6;
+  letter-spacing:-0.002em;text-wrap:pretty}
+
+/* trial / availability messaging */
+.trial-flag{display:flex;gap:13px;align-items:flex-start;margin:0 auto 24px;max-width:960px;
+  padding:15px 18px;border:1px solid #9ad7bb;border-radius:14px;background:var(--brand-soft);
+  color:var(--brand-dark);font-size:14px;line-height:1.55;font-weight:500;letter-spacing:-0.003em}
+.trial-flag .ic{flex:0 0 auto;font-size:19px;line-height:1.25}
+.trial-flag b{color:var(--ink);font-weight:700}
+.avail{width:min(960px,calc(100% - 32px));margin:20px auto 0;padding:13px 17px;
+  border:1px dashed #b8ddcb;border-radius:12px;background:rgba(255,255,255,.7);
+  color:var(--muted);font-size:13px;line-height:1.55;letter-spacing:-0.002em}
+
+@media (max-width:720px){
+  :root{--fs-body:15px}
+  .plans{grid-template-columns:1fr;gap:26px}
+  .plan{padding:26px 22px}
+  .brand span{display:none}
+  .cmp th.c,.cmp td.c{width:76px}
+  .cmp{font-size:13px;min-width:460px}
+  .hero{padding:34px 0 8px}
+  .hero__lead{font-size:15.5px}
+  .plan__amount{font-size:38px}
+}
+@media (prefers-reduced-motion:reduce){
+  .plan{transition:none}
+  .plan:hover{transform:none}
+}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="shell site-head__row">
+    <a class="brand" href="/" aria-label="EVA by DYENA"><strong>EVA</strong><span>by DYENA</span></a>
+    <nav class="site-nav">
+      <a href="/pricing" aria-current="page">Harga</a>
+      <a class="btn-login" href="/">Masuk</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="shell hero" aria-labelledby="t">
+    <p class="eyebrow">Harga · EVA</p>
+    <h1 id="t">Satu langganan, konversi tanpa ribet.</h1>
+    <p class="hero__lead">Pilih paket sesuai kebutuhan proyek. Semua paket memakai mesin konversi EVA yang sama — bedanya ada di jenis output yang bisa kamu hasilkan.</p>
+  </section>
+
+  <section class="pricing-wrap" aria-label="Paket langganan">
+    <p class="trial-flag"><span class="ic">🎁</span><span><b>Gratis 3 hari untuk akun baru.</b> Begitu daftar, kamu otomatis mendapat akses setara Premium selama 3 hari — termasuk DXF &amp; HPDB. Tanpa kartu kredit.</span></p>
+    <div class="plans">
+
+      <article class="plan">
+        <div class="plan__name">Standar</div>
+        <p class="plan__tagline">Untuk konversi BOQ harian dan standarisasi data desain.</p>
+        <div class="plan__price"><span class="plan__amount">Rp 29.000</span><span class="plan__period">/ bulan</span></div>
+        <a class="plan__cta plan__cta--quiet" href="/">Mulai gratis 3 hari</a>
+        <p class="plan__sub">Daftar dengan Google · tanpa kartu kredit</p>
+        <ul class="feat">
+          <li><span class="ic yes">✓</span> Konversi <b>BOQ</b> (Bill of Quantity)</li>
+          <li><span class="ic yes">✓</span> Standarisasi <b>KMZ</b></li>
+          <li><span class="ic yes">✓</span> Integrasi <b>ASTRI</b> + riwayat BOQ</li>
+          <li><span class="ic yes">✓</span> Cakupan AE &amp; UG, semua scope</li>
+          <li><span class="ic yes">✓</span> Riwayat job &amp; unduh hasil</li>
+          <li><span class="ic no">✕</span> <span class="muted">Konversi DXF (AutoCAD)</span></li>
+          <li><span class="ic no">✕</span> <span class="muted">Konversi HPDB (Homepass DB)</span></li>
+          <li><span class="ic yes">✓</span> Dukungan via email</li>
+        </ul>
+      </article>
+
+      <article class="plan plan--featured">
+        <span class="plan__badge">Paling lengkap</span>
+        <div class="plan__name">Premium</div>
+        <p class="plan__tagline">Akses penuh — semua jenis output, termasuk DXF &amp; HPDB.</p>
+        <div class="plan__price"><span class="plan__amount">Rp 59.000</span><span class="plan__period">/ bulan</span></div>
+        <a class="plan__cta plan__cta--solid" href="/">Mulai gratis 3 hari</a>
+        <p class="plan__sub">Daftar dengan Google · tanpa kartu kredit</p>
+        <ul class="feat">
+          <li><span class="ic yes">✓</span> <b>Semua fitur paket Standar</b></li>
+          <li><span class="ic yes">✓</span> Konversi <b>DXF</b> (AutoCAD, layout siap cetak)</li>
+          <li><span class="ic yes">✓</span> Konversi <b>HPDB</b> (Homepass Database)</li>
+          <li><span class="ic yes">✓</span> Output gabungan (DXF + BOQ + HPDB sekaligus)</li>
+          <li><span class="ic yes">✓</span> Cakupan AE &amp; UG, semua scope</li>
+          <li><span class="ic yes">✓</span> Riwayat job &amp; unduh hasil</li>
+          <li><span class="ic yes">✓</span> Dukungan prioritas</li>
+        </ul>
+      </article>
+
+    </div>
+
+    <table class="cmp">
+      <caption>Perbandingan fitur</caption>
+      <thead>
+        <tr><th>Fitur</th><th class="c">Standar<small>Rp 29rb</small></th><th class="c">Premium<small>Rp 59rb</small></th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Konversi BOQ</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+        <tr><td>Standarisasi KMZ</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+        <tr><td>Integrasi ASTRI + riwayat BOQ</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+        <tr><td>Konversi DXF (AutoCAD)</td><td class="c no">✕</td><td class="c yes">✓</td></tr>
+        <tr><td>Konversi HPDB (Homepass Database)</td><td class="c no">✕</td><td class="c yes">✓</td></tr>
+        <tr><td>Output gabungan (DXF+BOQ+HPDB)</td><td class="c no">✕</td><td class="c yes">✓</td></tr>
+        <tr><td>Riwayat job &amp; unduh hasil</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+        <tr><td>Dukungan</td><td class="c">Email</td><td class="c">Prioritas</td></tr>
+      </tbody>
+    </table>
+    <p class="avail">Pembayaran paket berbayar bisa dilakukan lewat QRIS dari halaman <a href="/langganan">Langganan</a> di dalam aplikasi. Akun baru tetap bisa langsung dicoba gratis selama 3 hari.</p>
+  </section>
+
+  <section class="faq-mini" aria-label="Pertanyaan umum">
+    <h2>Pertanyaan umum</h2>
+    <details><summary>Apa bedanya Standar dan Premium?</summary>
+      <p>Paket Standar sudah cukup untuk konversi BOQ dan standarisasi KMZ harian. Premium menambah kemampuan menghasilkan file <b>DXF</b> (AutoCAD) dan <b>HPDB</b> (Homepass Database), termasuk output gabungan.</p></details>
+    <details><summary>Apakah bisa pindah paket?</summary>
+      <p>Bisa. Kamu dapat naik ke Premium kapan saja; perubahan berlaku pada periode tagihan berikutnya.</p></details>
+    <details><summary>Bagaimana cara pembayaran?</summary>
+      <p>Pembayaran dilakukan per bulan lewat QRIS. Buka menu <b>Langganan</b> di aplikasi, pilih paket, lalu pindai kode QR yang muncul. Akses aktif otomatis setelah pembayaran terverifikasi.</p></details>
+    <details><summary>Apa yang terjadi setelah 3 hari uji coba?</summary>
+      <p>Setelah masa uji coba berakhir, akses mengikuti paket yang aktif di akunmu. Kamu akan diberi tahu lewat email sebelum ada perubahan akses, dan hasil konversi yang sudah dibuat tetap bisa diunduh selama masa penyimpanan.</p></details>
+    <details><summary>Apakah ada pengembalian dana?</summary>
+      <p>Ketentuan pengembalian dana mengikuti <a href="/refund">Kebijakan Pengembalian Dana</a> EVA.</p></details>
+  </section>
+
+  <footer class="foot">EVA by DYENA · <a href="/terms">Syarat &amp; Ketentuan</a> · <a href="/privacy">Kebijakan Privasi</a> · <a href="/refund">Pengembalian Dana</a></footer>
+</main>
+</body>
+</html>

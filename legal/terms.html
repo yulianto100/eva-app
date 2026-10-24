@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ecfdf5">
+<title>Syarat &amp; Ketentuan · EVA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* EVA legal + pricing shared styles (brand tokens from the app) */
+:root{
+  --ink:#13201c; --muted:#557169; --line:#dceae2; --canvas:#ecfdf5; --paper:#fff;
+  --soft:#f6fffa; --brand:#087f5b; --brand-dark:#12553f; --brand-soft:#d9f8e9;
+  --amber:#9a5b00; --amber-soft:#fff5d9; --blue:#175b91; --blue-soft:#eaf5ff;
+  --red:#9f2330; --red-soft:#fff0f1; --shadow:0 18px 48px rgba(10,88,63,.10);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;min-width:320px;color:var(--ink);
+  background:radial-gradient(circle at 100% 0,#d9f8e9 0,transparent 29rem),var(--canvas);
+  font:15px/1.65 'Public Sans',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+a{color:var(--brand-dark);font-weight:750;text-underline-offset:3px}
+a:hover{color:var(--brand)}
+:focus-visible{outline:3px solid #52c594;outline-offset:3px}
+.shell{width:min(1180px,calc(100% - 32px));margin:0 auto}
+
+/* header */
+.site-head{border-bottom:1px solid rgba(118,176,148,.36);background:rgba(255,255,255,.78);backdrop-filter:blur(15px);position:sticky;top:0;z-index:20}
+.site-head__row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px}
+.brand{display:inline-flex;align-items:baseline;gap:8px;text-decoration:none}
+.brand strong{font-family:'Space Grotesk',system-ui,sans-serif;font-size:27px;line-height:1;font-weight:700;letter-spacing:-1px;color:#12553f}
+.brand span{font:12px 'Public Sans',system-ui,sans-serif;color:var(--muted)}
+.site-nav{display:flex;align-items:center;gap:8px}
+.site-nav a{font:600 13.5px 'Public Sans',sans-serif;text-decoration:none;padding:9px 15px;border-radius:10px;color:var(--brand-dark)}
+.site-nav a:hover{background:#f2fdf9}
+.site-nav a[aria-current=page]{color:var(--brand)}
+.site-nav .btn-login{background:var(--emerald,#087f5b);color:#fff;border:1px solid #0b7f5d}
+.site-nav .btn-login:hover{background:#066846;color:#fff}
+.back-link{color:var(--brand-dark);font-weight:800;text-decoration:none;font-size:13px}
+.back-link:hover{color:var(--brand)}
+
+/* hero */
+.hero{padding:46px 0 10px}
+.eyebrow{margin:0 0 10px;color:var(--brand);font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.hero h1{font-family:'Space Grotesk',system-ui,sans-serif;margin:0 0 12px;font-size:clamp(26px,4.4vw,40px);line-height:1.1;letter-spacing:-.02em}
+.hero__lead{margin:0;max-width:72ch;color:var(--muted);font-size:16px}
+.hero__meta{margin-top:16px;color:var(--muted);font-size:13px;font-weight:700}
+
+/* content */
+main{padding-bottom:64px}
+.doc{width:min(820px,calc(100% - 32px));margin:28px auto 0;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:clamp(22px,4vw,44px)}
+.doc h2{margin:30px 0 8px;font-size:19px;letter-spacing:-.01em;scroll-margin-top:90px}
+.doc h2:first-of-type{margin-top:4px}
+.doc h3{margin:18px 0 6px;font-size:15px;color:var(--brand-dark)}
+.doc p{margin:8px 0}
+.doc ul,.doc ol{margin:8px 0;padding-left:22px}
+.doc li{margin:5px 0}
+.doc .lead{color:var(--muted);font-size:15.5px}
+.num{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:9px;border:1px solid #9ad7bb;border-radius:8px;background:var(--brand-soft);color:var(--brand-dark);font-size:12px;font-weight:900;vertical-align:-5px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.toc-mini a{font-size:12.5px;font-weight:750;padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--soft);text-decoration:none;color:var(--brand-dark)}
+.toc-mini a:hover{background:var(--brand-soft)}
+.note{margin:14px 0;padding:12px 15px;border-radius:12px;font-size:13.5px;border:1px solid}
+.note b{display:block;margin-bottom:2px}
+.note--blue{background:var(--blue-soft);border-color:#bcdcf4;color:#123f63}
+.note--red{background:var(--red-soft);border-color:#f3c2c6;color:#7a1b25}
+.foot{display:block;margin:34px auto 0;color:var(--muted);font-size:12.5px;text-align:center;padding:18px 0}
+
+/* ===== pricing ===== */
+.pricing-wrap{width:min(960px,calc(100% - 32px));margin:14px auto 0}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.plan{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:26px 24px;display:flex;flex-direction:column}
+.plan--featured{border:2px solid var(--brand);box-shadow:0 22px 56px rgba(8,121,91,.18)}
+.plan__badge{position:absolute;top:-13px;left:24px;background:var(--brand);color:#fff;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:999px}
+.plan__name{font-size:13px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--brand)}
+.plan__tagline{margin:4px 0 14px;color:var(--muted);font-size:13.5px;min-height:38px}
+.plan__price{display:flex;align-items:baseline;gap:6px}
+.plan__amount{font-family:'Space Grotesk',system-ui,sans-serif;font-size:40px;font-weight:900;letter-spacing:-.03em}
+.plan__period{color:var(--muted);font-size:14px;font-weight:700}
+.plan__cta{display:inline-flex;align-items:center;justify-content:center;min-height:46px;margin:20px 0 18px;border-radius:12px;font-size:14px;font-weight:850;text-decoration:none;border:1px solid #0b7f5d}
+.plan__cta--solid{background:var(--brand);color:#fff}
+.plan__cta--solid:hover{background:var(--brand-dark);color:#fff}
+.plan__cta--quiet{background:rgba(255,255,255,.9);color:var(--brand-dark);border-color:#b8ddcb}
+.plan__cta--quiet:hover{background:#f5fff9;color:var(--brand-dark)}
+.feat{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.feat li{display:flex;gap:10px;align-items:flex-start;font-size:13.8px}
+.feat .ic{flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;font-size:12px;font-weight:900;margin-top:1px}
+.feat .yes{background:var(--brand-soft);color:var(--brand-dark)}
+.feat .no{background:#f0f2f1;color:#9aa7a1}
+.feat .muted{color:#9aa7a1;text-decoration:line-through}
+.cmp{width:100%;border-collapse:collapse;margin-top:12px;font-size:13.8px;background:var(--paper);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.cmp caption{caption-side:top;text-align:left;font-weight:900;font-size:15px;margin:26px 0 10px;color:var(--ink)}
+.cmp th,.cmp td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+.cmp thead th{background:var(--soft);font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.cmp td.c,.cmp th.c{text-align:center;width:120px}
+.cmp tr:last-child td{border-bottom:0}
+.cmp .yes{color:var(--brand);font-weight:900}
+.cmp .no{color:#b9c2bd;font-weight:900}
+.faq-mini{width:min(960px,calc(100% - 32px));margin:30px auto 0}
+.faq-mini details{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:9px 0}
+.faq-mini summary{font-weight:800;cursor:pointer}
+.faq-mini p{margin:8px 0 2px;color:var(--muted);font-size:13.8px}
+
+@media (max-width:720px){
+  .plans{grid-template-columns:1fr}
+  .brand-copy span{display:none}
+  .cmp th.c,.cmp td.c{width:70px}
+}
+
+/* trial / availability messaging */
+.trial-flag{display:flex;gap:12px;align-items:flex-start;margin:0 auto 22px;max-width:960px;padding:14px 18px;border:1px solid #9ad7bb;border-radius:14px;background:var(--brand-soft);color:var(--brand-dark);font-size:14px;font-weight:650}
+.trial-flag .ic{flex:0 0 auto;font-size:20px;line-height:1.2}
+.trial-flag b{color:var(--ink)}
+.plan__sub{margin:-10px 0 16px;color:var(--muted);font-size:12.5px;text-align:center}
+.avail{width:min(960px,calc(100% - 32px));margin:18px auto 0;padding:12px 16px;border:1px dashed #b8ddcb;border-radius:12px;background:rgba(255,255,255,.7);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="shell site-head__row">
+    <a class="brand" href="/" aria-label="EVA by DYENA"><strong>EVA</strong><span>by DYENA</span></a>
+    <nav class="site-nav">
+      <a href="/pricing">Harga</a>
+      <a class="btn-login" href="/">Masuk</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="shell hero" aria-labelledby="t">
+    <p class="eyebrow">Dokumen hukum · EVA</p>
+    <h1 id="t">Syarat &amp; Ketentuan Layanan</h1>
+    <p class="hero__lead">Ketentuan ini mengatur penggunaan layanan EVA. Dengan membuat akun atau menggunakan layanan, kamu menyetujui ketentuan di bawah ini.</p>
+    <p class="hero__meta">Berlaku efektif: 14 Oktober 2026 · Versi 1.0</p>
+  </section>
+
+  <article class="doc">
+    <div class="toc-mini">
+      <a href="#def">Definisi</a><a href="#akun">Akun</a><a href="#paket">Paket</a>
+      <a href="#guna">Penggunaan</a><a href="#data">Data</a><a href="#haki">Kekayaan intelektual</a>
+      <a href="#sla">Ketersediaan</a><a href="#tanggung">Tanggung jawab</a><a href="#henti">Penghentian</a><a href="#hukum">Hukum</a>
+    </div>
+
+    <p class="lead">EVA ("Layanan") dioperasikan oleh DYENA ("kami"). Dengan mengakses atau menggunakan Layanan, kamu ("Pengguna") menyatakan telah membaca, memahami, dan terikat pada ketentuan ini beserta Kebijakan Privasi dan Kebijakan Pengembalian Dana.</p>
+
+    <h2 id="def"><span class="num">1</span>Definisi layanan</h2>
+    <p>EVA adalah platform otomatisasi yang mengubah file desain jaringan fiber (KML/KMZ dan dokumen terkait) menjadi keluaran siap pakai seperti BOQ, DXF, HPDB, serta mendukung integrasi dengan ASTRI. Fitur yang tersedia bergantung pada paket langganan yang aktif.</p>
+
+    <h2 id="akun"><span class="num">2</span>Akun &amp; akses</h2>
+    <ul>
+      <li>Akun dibuat melalui autentikasi Google. Kamu bertanggung jawab menjaga kerahasiaan akses akunmu.</li>
+      <li>Kamu wajib memberikan informasi yang benar dan tidak menyalahgunakan akun pihak lain.</li>
+      <li>Kami dapat menangguhkan akun yang terindikasi melanggar ketentuan atau membahayakan Layanan.</li>
+    </ul>
+
+    <h2 id="paket"><span class="num">3</span>Paket, langganan &amp; pembayaran</h2>
+    <ul>
+      <li>Layanan ditawarkan dalam beberapa paket berlangganan. Jenis fitur tiap paket dijelaskan pada halaman <a href="/pricing">Harga</a>.</li>
+      <li>Langganan ditagih di muka untuk tiap periode (misalnya bulanan) dan dapat diperpanjang otomatis kecuali dibatalkan sebelum periode berikutnya.</li>
+      <li>Harga dapat berubah sewaktu-waktu; perubahan diberitahukan terlebih dahulu dan berlaku pada periode tagihan berikutnya.</li>
+      <li>Akun baru mendapat masa uji coba (trial) dengan akses setara paket Premium selama 3 (tiga) hari sejak pendaftaran, tanpa biaya. Setelah masa uji coba berakhir, akses mengikuti paket yang aktif pada akun.</li>
+      <li>Selama fitur pembayaran belum tersedia, kami dapat memberikan akses tanpa biaya; ketentuan ini tidak menimbulkan kewajiban bagi kami untuk mempertahankan akses gratis tersebut.</li>
+      <li>Pengembalian dana tunduk pada <a href="/refund">Kebijakan Pengembalian Dana</a>.</li>
+    </ul>
+
+    <h2 id="guna"><span class="num">4</span>Penggunaan yang diizinkan &amp; dilarang</h2>
+    <p>Kamu setuju untuk tidak:</p>
+    <ul>
+      <li>menggunakan Layanan untuk tujuan melanggar hukum atau melanggar hak pihak lain;</li>
+      <li>mengunggah konten yang bukan hakmu atau yang kamu tidak berwenang memprosesnya;</li>
+      <li>melakukan rekayasa balik, membebani sistem secara tidak wajar, atau mengganggu ketersediaan Layanan;</li>
+      <li>menjual kembali atau mengalihkan akses Layanan tanpa izin tertulis dari kami.</li>
+    </ul>
+
+    <h2 id="data"><span class="num">5</span>Data &amp; konten pengguna</h2>
+    <ul>
+      <li>Kamu tetap menjadi pemilik atas file dan data yang kamu unggah serta hasil keluaran yang dibuat untukmu.</li>
+      <li>Kamu memberi kami izin terbatas untuk memproses data tersebut semata-mata untuk menjalankan Layanan (konversi, penyimpanan sementara, dan pengiriman hasil).</li>
+      <li>File unggahan dan hasil dapat dihapus otomatis setelah periode penyimpanan tertentu. Simpan salinan hasil pentingmu secara mandiri.</li>
+      <li>Penanganan data pribadi dijelaskan dalam <a href="/privacy">Kebijakan Privasi</a>.</li>
+    </ul>
+
+    <h2 id="haki"><span class="num">6</span>Hak kekayaan intelektual</h2>
+    <p>Seluruh perangkat lunak, antarmuka, logika konversi, dan merek EVA adalah milik kami dan dilindungi hukum. Ketentuan ini tidak mengalihkan kepemilikan apa pun atas Layanan kepada Pengguna, selain hak pakai sesuai paket yang aktif.</p>
+
+    <h2 id="sla"><span class="num">7</span>Ketersediaan layanan</h2>
+    <p>Kami berupaya menjaga Layanan tetap tersedia, namun Layanan disediakan "sebagaimana adanya" tanpa jaminan tanpa henti. Dapat terjadi pemeliharaan terjadwal atau gangguan di luar kendali kami. Kami tidak menjamin hasil konversi bebas dari kebutuhan verifikasi; Pengguna wajib memeriksa keluaran sebelum digunakan untuk pekerjaan resmi.</p>
+
+    <h2 id="tanggung"><span class="num">8</span>Batasan tanggung jawab</h2>
+    <p>Sejauh diizinkan hukum, kami tidak bertanggung jawab atas kerugian tidak langsung, kehilangan data, kehilangan keuntungan, atau kerugian yang timbul dari penggunaan atau ketidakmampuan menggunakan Layanan. Tanggung jawab kami, bila ada, dibatasi maksimal sebesar biaya langganan yang kamu bayarkan dalam 1 (satu) bulan terakhir.</p>
+
+    <h2 id="henti"><span class="num">9</span>Penghentian</h2>
+    <p>Kamu dapat berhenti berlangganan kapan saja. Kami dapat menangguhkan atau menghentikan akses bila terjadi pelanggaran ketentuan, penyalahgunaan, atau atas permintaan hukum yang sah. Setelah penghentian, data dapat dihapus sesuai kebijakan penyimpanan.</p>
+
+    <h2 id="ubah"><span class="num">10</span>Perubahan ketentuan</h2>
+    <p>Kami dapat memperbarui ketentuan ini sewaktu-waktu. Versi terbaru akan dipublikasikan di halaman ini dengan tanggal berlaku yang diperbarui. Penggunaan Layanan setelah perubahan berarti kamu menyetujui ketentuan yang baru.</p>
+
+    <h2 id="hukum"><span class="num">11</span>Hukum yang berlaku</h2>
+    <p>Ketentuan ini tunduk pada hukum Republik Indonesia. Setiap sengketa diselesaikan secara musyawarah; bila tidak tercapai, diselesaikan melalui pengadilan yang berwenang di wilayah Republik Indonesia sesuai domisili kami.</p>
+
+    <h2 id="kontak"><span class="num">12</span>Kontak</h2>
+    <p>Pertanyaan terkait ketentuan ini dapat dikirim ke <a href="mailto:hello@eva.dyena.id">hello@eva.dyena.id</a>.</p>
+  </article>
+
+  <footer class="foot">EVA by DYENA · <a href="/pricing">Harga</a> · <a href="/privacy">Kebijakan Privasi</a> · <a href="/refund">Pengembalian Dana</a></footer>
+</main>
+</body>
+</html>
