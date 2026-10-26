@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FDT Coding Database - EVA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=eva-20260618-download-document-label">
+  <style>
+    :root {
+      --brand: #159a69;
+      --brand-dark: #08734e;
+      --brand-soft: #ecf8f3;
+      --brand-faint: #f5fbf8;
+      --ink: #10231d;
+      --ink-soft: #667b73;
+      --line: #dce7e2;
+      --line-strong: #c8d8d1;
+      --bg: #f3f7f5;
+      --danger: #b42318;
+      --danger-soft: #fff4f2;
+      --radius: 12px;
+      --row-hover: #f1f8f5;
+      --row-even: #fbfdfc;
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body { background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; }
+    button, input, select, textarea { font: inherit; }
+    .fdt-page { max-width: 1540px; margin: 0 auto; padding: 1rem 1.1rem 1.5rem; display: grid; gap: .8rem; }
+
+    .fdt-toolbar, .fdt-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 1px 2px rgba(16,35,29,.04), 0 8px 24px rgba(16,35,29,.035); }
+    .fdt-toolbar { display: grid; grid-template-columns: minmax(8rem,.65fr) minmax(18rem,1.45fr) minmax(13rem,1fr) auto; gap: .7rem; align-items: end; padding: .85rem; }
+    .toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: .45rem; white-space: nowrap; }
+
+    [hidden] { display: none !important; }
+    .fdt-form { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .75rem; padding: 1rem; border-top: 1px solid var(--line); background: #fff; }
+    .fdt-form-shell { overflow: hidden; background: #fff; }
+    .fdt-form-toggle { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .8rem 1rem; cursor: pointer; list-style: none; background: var(--brand-faint); border-radius: var(--radius); transition: background 160ms ease; }
+    .fdt-form-toggle:hover { background: var(--brand-soft); }
+    .fdt-form-toggle::-webkit-details-marker { display: none; }
+    .fdt-form-toggle h2 { margin: .12rem 0 0; font-size: 1rem; font-weight: 750; letter-spacing: -.015em; color: var(--ink); }
+    .fdt-form-toggle p { margin: .15rem 0 0; color: var(--ink-soft); font-size: .78rem; }
+    .fdt-form-toggle::after { content: '⌄'; display: grid; place-items: center; width: 2rem; height: 2rem; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--brand-dark); font-size: 1.05rem; font-weight: 800; background: #fff; }
+    .fdt-form-shell[open] .fdt-form-toggle { border-radius: var(--radius) var(--radius) 0 0; }
+    .fdt-form-shell[open] .fdt-form-toggle::after { content: '⌃'; }
+    .eyebrow { display: block; color: var(--brand-dark); font-size: .62rem; font-weight: 850; letter-spacing: .09em; line-height: 1.2; }
+
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-6 { grid-column: 1 / -1; }
+    .fdt-field { display: grid; gap: .3rem; min-width: 0; }
+    .fdt-field label { color: #50655d; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .045em; }
+    .ui-input { min-height: 2.55rem; width: 100%; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; color: var(--ink); padding: .5rem .68rem; font-size: .83rem; }
+    .ui-input::placeholder { color: #94a39d; }
+    .ui-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(21,154,105,.13); }
+    .ui-input:disabled { background: #f1f5f3; color: #8a9993; cursor: not-allowed; }
+    .ui-input[readonly] { background: #f5f8f7; color: #50655d; cursor: default; }
+    #sharingToggleWrap label { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+    #sharingToggleWrap input { accent-color: var(--brand); width: 1rem; height: 1rem; }
+    #sharingPicker select { min-height: 8rem; padding: .2rem; }
+    #sharingPicker option { padding: .38rem; }
+    #sharingPicker small, #sharingToggleWrap small { color: var(--ink-soft); }
+    textarea.ui-input { min-height: 4.6rem; resize: vertical; line-height: 1.45; }
+    .fdt-actions { display: flex; gap: .5rem; align-items: center; justify-content: flex-start; flex-wrap: wrap; }
+    .form-actions { align-self: end; }
+    .form-step { display: flex; align-items: center; gap: .6rem; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: 9px; background: #fafcfb; }
+    .form-step > span { display: grid; place-items: center; width: 1.65rem; height: 1.65rem; flex: 0 0 auto; border-radius: 50%; background: var(--brand-soft); color: var(--brand-dark); font-size: .72rem; font-weight: 850; }
+    .form-step div { display: grid; gap: .08rem; }
+    .form-step strong { font-size: .8rem; }
+    .form-step small { color: var(--ink-soft); font-size: .71rem; }
+    .form-footer { justify-content: flex-end; padding-top: .8rem; border-top: 1px solid var(--line); }
+    .form-footer-copy { display: grid; gap: .1rem; margin-right: auto; }
+    .form-footer-copy strong { font-size: .8rem; }
+    .form-footer-copy span { color: var(--ink-soft); font-size: .72rem; }
+
+    .olt-form { display: none; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; padding: .9rem; }
+    .olt-form.is-open { display: grid; }
+    .olt-list { display: none; padding: .9rem; }
+    .olt-list.is-open { display: block; }
+    .section-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .75rem .85rem; border-radius: 9px; background: var(--brand-faint); border: 1px solid var(--line); }
+    .section-heading h2 { margin: 0; font-size: .95rem; font-weight: 750; letter-spacing: -.01em; }
+    .section-heading p { margin: .15rem 0 0; color: var(--ink-soft); font-size: .76rem; }
+    .destination-badge { display: inline-flex; align-items: center; min-height: 1.75rem; padding: .25rem .55rem; border: 1px solid var(--line-strong); border-radius: 999px; background: #fff; color: var(--ink-soft); font-size: .68rem; font-weight: 750; white-space: nowrap; }
+    .destination-badge.is-ready { border-color: #a9d9c6; background: var(--brand-soft); color: var(--brand-dark); }
+    .field-hint { grid-column: 1 / -1; margin: 0; color: var(--ink-soft); font-size: .72rem; }
+
+    .fdt-card-header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .75rem .9rem; border-bottom: 1px solid var(--line); background: #fff; }
+    .fdt-card-header > div { display: grid; gap: .15rem; }
+    #summaryText { display: block; font-size: .9rem; font-weight: 750; }
+    .muted { color: var(--ink-soft); }
+    .fdt-bulk-actions { display: flex; gap: .45rem; align-items: center; flex-wrap: wrap; min-height: 2.8rem; padding: .5rem .9rem; background: var(--brand-faint); border-bottom: 1px solid var(--line); }
+    .selection-count { min-width: 4.7rem; color: #50655d; font-size: .75rem; font-weight: 750; }
+    .fdt-select-col { width: 2.7rem; text-align: center; }
+    .fdt-table-wrap { overflow: auto; max-height: min(58vh, 620px); border-top: 0; background: #fff; scrollbar-gutter: stable; }
+    .olt-list .fdt-table-wrap { max-height: 430px; border: 1px solid var(--line); border-radius: 10px; }
+    .olt-list-tools { display: flex; justify-content: space-between; align-items: end; gap: .75rem; margin: .75rem 0; }
+    .olt-list-tools .fdt-field { min-width: min(24rem, 100%); flex: 1; }
+    .olt-list-status { color: var(--ink-soft); font-size: .78rem; white-space: nowrap; }
+    .olt-pagination { display: flex; justify-content: flex-end; align-items: center; gap: .4rem; margin-top: .7rem; flex-wrap: wrap; }
+
+    table { width: 100%; border-collapse: collapse; border-spacing: 0; min-width: 860px; }
+    th, td { padding: .52rem .65rem; border-bottom: 1px solid var(--line); text-align: left; font-size: .76rem; vertical-align: middle; line-height: 1.28; }
+    th { position: sticky; top: 0; z-index: 2; background: #eef4f1; color: #52665f; font-size: .64rem; font-weight: 850; text-transform: uppercase; letter-spacing: .055em; }
+    tbody tr:nth-child(even) td { background: var(--row-even); }
+    tbody tr:hover td { background: var(--row-hover); }
+    tbody tr:has(.row-select:checked) td { background: #e9f7f1; }
+    td strong { color: var(--ink); font-weight: 780; }
+    .records-table th:nth-child(2) { width: 20%; }
+    .records-table th:nth-child(3) { width: 24%; }
+    .records-table th:nth-child(4) { width: 31%; }
+    .records-table th:nth-child(5) { width: 15%; }
+    .records-table th:last-child { width: 9.5rem; }
+    .cell-stack { display: grid; gap: .14rem; }
+    .cell-primary { color: var(--ink); font-weight: 720; }
+    .cell-secondary { color: var(--ink-soft); font-size: .68rem; }
+    .area-chip { display: inline-flex; width: fit-content; padding: .12rem .4rem; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-size: .63rem; font-weight: 780; }
+    .code-chip { display: inline-flex; width: fit-content; padding: .18rem .42rem; border-radius: 6px; background: #edf3f0; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .7rem; font-weight: 700; }
+    .row-actions { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }
+    .row-action { min-height: 2rem; padding: .35rem .58rem; }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+
+    .fdt-pagination { display: flex; justify-content: flex-end; align-items: center; gap: .4rem; padding: .7rem .9rem; flex-wrap: wrap; background: #fff; border-top: 1px solid var(--line); }
+    .fdt-page-button { min-width: 2rem; min-height: 2rem; padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink); font-size: .75rem; font-weight: 720; cursor: pointer; }
+    .fdt-page-button:hover:not(:disabled) { background: var(--brand-soft); border-color: #a9d9c6; }
+    .fdt-page-button.active { background: var(--brand); border-color: var(--brand-dark); color: #fff; }
+
+    .primary-button, .secondary-button, .danger-button, .icon-button { min-height: 2.35rem; border-radius: 8px; padding: .48rem .75rem; font-weight: 740; font-size: .76rem; cursor: pointer; transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease; }
+    .primary-button { background: var(--brand); color: #fff; border: 1px solid var(--brand-dark); }
+    .secondary-button { background: #fff; color: var(--ink); border: 1px solid var(--line-strong); }
+    .danger-button { background: var(--danger-soft); color: var(--danger); border: 1px solid #f2c7c2; }
+    .icon-button { display: inline-grid; place-items: center; width: 2.35rem; padding: 0; background: #fff; color: var(--brand-dark); border: 1px solid var(--line-strong); font-size: 1.05rem; }
+    .primary-button:hover:not(:disabled) { background: #11855b; }
+    .secondary-button:hover:not(:disabled), .icon-button:hover:not(:disabled) { background: var(--brand-faint); border-color: #a9bdb4; }
+    .danger-button:hover:not(:disabled) { background: #fee9e6; border-color: #eaa39a; }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:focus-visible, .ui-input:focus-visible, summary:focus-visible, input[type="checkbox"]:focus-visible { outline: 3px solid rgba(21,154,105,.25); outline-offset: 2px; }
+
+    @media (max-width: 1180px) {
+      .fdt-toolbar { grid-template-columns: .7fr 1.3fr 1fr; }
+      .toolbar-actions { grid-column: 1 / -1; justify-content: flex-start; }
+      .olt-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .fdt-page { padding: .7rem; gap: .65rem; }
+      .fdt-toolbar, .fdt-form, .olt-form { grid-template-columns: 1fr; }
+      .toolbar-actions { display: grid; grid-template-columns: 1fr 1fr auto; width: 100%; }
+      #addCodingButton { grid-column: 1 / -1; }
+      .span-2, .span-3, .span-6 { grid-column: 1 / -1; }
+      .fdt-card-header, .section-heading { align-items: flex-start; flex-direction: column; }
+      .form-step small, .form-footer-copy { display: none; }
+      .form-footer { justify-content: stretch; }
+      .form-footer button { flex: 1; }
+      .fdt-table-wrap { max-height: 58vh; }
+      table { min-width: 760px; }
+      .fdt-pagination { justify-content: center; }
+      .olt-list-tools { align-items: stretch; flex-direction: column; }
+    }
+    .fdt-page [hidden] { display: none !important; }
+    /* Hasil Generate Panel */
+    .fdt-result-panel { margin-top: .5rem; padding: .85rem 0 0; border-top: 1px solid var(--line); }
+    .fdt-result-title { margin: 0 0 .6rem; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-soft); }
+    .fdt-result-rows { display: grid; gap: .5rem; }
+    .fdt-result-text { margin: 0; padding: .75rem .85rem; background: var(--brand-soft); border: 1px solid #bbf7d0; border-radius: 10px; font-family: Inter, system-ui, sans-serif; font-size: .82rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--ink); font-weight: 600; }
+    .fdt-result-rows .copy-btn { padding: .5rem .85rem; border: 1px solid var(--brand-dark); background: var(--brand); color: #06301f; font-size: .8rem; font-weight: 700; cursor: pointer; border-radius: 10px; justify-self: start; }
+    .fdt-result-rows .copy-btn:hover { background: #27b97a; }
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+</head>
+<body>
+  <main class="fdt-page">
+    <section class="fdt-toolbar" aria-label="Filter dan aksi Coding FDT">
+      <div class="fdt-field">
+        <label for="areaFilter">Area</label>
+        <select id="areaFilter" class="ui-input">
+          <option value="">Semua Area</option>
+          <option value="Balikpapan">Balikpapan</option>
+          <option value="Bekasi">Bekasi</option>
+          <option value="Jakarta">Jakarta</option>
+          <option value="Sukabumi">Sukabumi</option>
+          <option value="Tangerang">Tangerang</option>
+          <option value="Indramayu">Indramayu</option>
+          <option value="Kuningan">Kuningan</option>
+          <option value="DUMMY">DUMMY</option>
+        </select>
+      </div>
+      <div class="fdt-field">
+        <label for="searchInput">Cari Coding</label>
+        <input id="searchInput" class="ui-input" type="search" placeholder="Cluster, FDT code, OLT ID..." autocomplete="off">
+      </div>
+      <div class="fdt-field">
+        <label for="oltFilter">OLT</label>
+        <select id="oltFilter" class="ui-input"><option value="ALL">Semua OLT</option></select>
+      </div>
+      <div class="toolbar-actions">
+        <button id="addCodingButton" class="primary-button" type="button" {% if not fdt_can_write %}hidden disabled{% endif %}>+ Tambah Coding</button>
+        <button id="addOltButton" class="secondary-button" type="button" {% if not fdt_can_write %}hidden disabled{% endif %}>Tambah OLT</button>
+        <button id="viewOltButton" class="secondary-button" type="button">Daftar OLT</button>
+        <button id="refreshButton" class="icon-button" type="button" title="Muat ulang data" aria-label="Muat ulang data">↻</button>
+      </div>
+    </section>
+
+    <section id="addOltForm" class="fdt-card olt-form" aria-label="Form tambah OLT" {% if not fdt_can_write %}hidden{% endif %}>
+      <div class="section-heading">
+        <div>
+          <h2>Tambah OLT</h2>
+          <p>Pilih area tujuan. EVA membuat OLT pada database dan spreadsheet area tersebut.</p>
+        </div>
+        <span id="newOltDestination" class="destination-badge">Area belum dipilih</span>
+      </div>
+      <div class="fdt-field"><label for="newOltArea">Area Tujuan</label><select id="newOltArea" class="ui-input" required><option value="">Pilih Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option><option value="Sukabumi">Sukabumi</option><option value="Indramayu">Indramayu</option><option value="Kuningan">Kuningan</option><option disabled>Tangerang (belum ada Template)</option></select></div>
+      <div class="fdt-field"><label for="newOltName">Nama OLT</label><input id="newOltName" class="ui-input" placeholder="Contoh: OLT JAGAKARSA" autocomplete="off"></div>
+      <div class="fdt-field"><label for="newOltId">OLT ID</label><input id="newOltId" class="ui-input" placeholder="Contoh: JKT.100.5001" autocomplete="off"></div>
+      <div class="fdt-field"><label for="newOltInitialName">Inisial OLT</label><input id="newOltInitialName" class="ui-input" placeholder="Contoh: JGS" autocomplete="off"></div>
+      <div class="fdt-field"><label for="newOltHostname">OLT Hostname</label><input id="newOltHostname" class="ui-input" placeholder="Contoh: JKT-JGS-OLT1-FH" autocomplete="off"></div>
+      <p id="newOltHint" class="field-hint">Pilih Area untuk menentukan spreadsheet tujuan.</p>
+      <div class="fdt-actions form-actions"><button id="saveOltButton" class="primary-button" type="button">Simpan OLT</button><button id="cancelOltButton" class="secondary-button" type="button">Batal</button></div>
+    </section>
+
+    <section id="oltListPanel" class="fdt-card olt-list" aria-label="OLT list">
+      <div class="section-heading">
+        <div>
+          <h2>Daftar OLT</h2>
+          <p>OLT yang masih punya record FDT harus record-nya dihapus dulu.</p>
+        </div>
+        <button id="closeOltListButton" class="secondary-button" type="button">Tutup</button>
+      </div>
+      <div class="olt-list-tools">
+        <div class="fdt-field"><label for="oltListSearch">Cari OLT</label><input id="oltListSearch" class="ui-input" placeholder="Cari nama OLT, OLT ID, inisial..."></div>
+        <span id="oltListStatus" class="olt-list-status">0 OLT</span>
+      </div>
+      <div class="fdt-table-wrap">
+        <table>
+          <thead><tr><th>Nama OLT</th><th>Area</th><th>OLT ID</th><th>OLT Hostname</th><th>Inisial OLT</th><th>Aksi</th></tr></thead>
+          <tbody id="oltListBody"></tbody>
+        </table>
+      </div>
+      <div id="oltPaginationControls" class="olt-pagination"></div>
+    </section>
+
+    <details id="fdtFormPanel" class="fdt-card fdt-form-shell" {% if not fdt_can_write %}hidden{% endif %}>
+      <summary class="fdt-form-toggle">
+        <div>
+          <span class="eyebrow">FORM CODING</span>
+          <h2 id="fdtFormTitle">Tambah Coding FDT</h2>
+          <p id="fdtFormSubtitle">Pilih Area → OLT → Unit, lalu isi data cluster.</p>
+        </div>
+      </summary>
+      <section class="fdt-form" aria-label="Form Coding FDT">
+        <input id="recordId" type="hidden">
+
+        <div class="form-step span-6"><span>1</span><div><strong>Pilih jaringan</strong><small>Area menentukan pilihan OLT dan unit.</small></div></div>
+        <div class="fdt-field span-2"><label for="areaArea">Area</label><select id="areaArea" class="ui-input" required><option value="" selected>Pilih Area</option><option value="Bekasi">Bekasi</option><option value="Jakarta">Jakarta</option><option value="Sukabumi">Sukabumi</option><option value="Tangerang">Tangerang</option><option value="Indramayu">Indramayu</option><option value="Kuningan">Kuningan</option>
+          <option value="DUMMY">DUMMY</option>
+        </select></div>
+        <div class="fdt-field span-2"><label for="oltInitial">OLT</label><select id="oltInitial" class="ui-input" disabled><option value="">Pilih Area dulu</option></select><input id="oltInitialManual" class="ui-input" placeholder="Ketik nama OLT bebas" autocomplete="off" hidden></div>
+        <div class="fdt-field span-2"><label for="oltUnit">Unit OLT</label><select id="oltUnit" class="ui-input" disabled><option value="">Pilih OLT dulu</option></select><input id="oltUnitManual" class="ui-input" placeholder="Ketik unit/OLT ID bebas" autocomplete="off" hidden></div>
+
+        <div class="form-step span-6"><span>2</span><div><strong>Isi coding cluster</strong><small>FDT ID dan hasil coding dibuat otomatis.</small></div></div>
+        <div class="fdt-field span-3"><label for="siteName">Nama Cluster</label><input id="siteName" class="ui-input" placeholder="Contoh: PERUMAHAN MELATI RW 05" autocomplete="off"></div>
+        <div class="fdt-field span-2"><label for="clusterInitial">Inisial FDT Code</label><input id="clusterInitial" class="ui-input" placeholder="Contoh: PVMJ14" autocomplete="off"></div>
+        <div class="fdt-field"><label for="fdtOrder">Jumlah FDT</label><input id="fdtOrder" class="ui-input" type="number" min="1" value="1" inputmode="numeric"></div>
+        <div class="fdt-field span-6" id="sharingToggleWrap"><label for="sharingFdt"><input id="sharingFdt" type="checkbox"> Sharing FDT yang sudah ada</label><small>Pilih FDT dari OLT ini; ID dan kode FDT asli tetap dipakai.</small></div>
+        <div class="fdt-field span-6" id="sharingPicker" hidden>
+          <label for="sharingSearch">Cari FDT di OLT terpilih</label>
+          <input id="sharingSearch" class="ui-input" type="search" placeholder="Cari kode FDT, ID, nama cluster..." autocomplete="off">
+          <label for="sharingResults">Pilih FDT</label>
+          <select id="sharingResults" class="ui-input" size="5" aria-describedby="sharingHint"></select>
+          <small id="sharingHint" role="status" aria-live="polite">Pilih OLT dahulu.</small>
+        </div>
+
+        <div class="form-step span-6"><span>3</span><div><strong>Periksa hasil otomatis</strong><small>Nilai ini tetap tampil untuk pengecekan, tanpa perlu diketik ulang.</small></div></div>
+        <div class="fdt-field span-2"><label for="hubId">OLT ID</label><input id="hubId" class="ui-input" placeholder="Otomatis dari Unit OLT" readonly></div>
+        <div class="fdt-field span-2"><label for="oltHostname">OLT Hostname</label><input id="oltHostname" class="ui-input" placeholder="Otomatis dari Unit OLT" readonly></div>
+        <div class="fdt-field span-2"><label for="oltNameInitial">Inisial OLT</label><input id="oltNameInitial" class="ui-input" placeholder="Otomatis dari Unit OLT" readonly></div>
+        <div class="fdt-field span-3"><label for="fdtId">FDT ID</label><textarea id="fdtId" class="ui-input" placeholder="Otomatis" readonly rows="3"></textarea></div>
+        <div class="fdt-field span-3"><label for="fdtCode">Generated FDT Code</label><textarea id="fdtCode" class="ui-input" placeholder="Otomatis setelah Jumlah FDT diisi" readonly rows="3"></textarea></div>
+
+        <div class="fdt-actions span-6 form-footer">
+          <div class="form-footer-copy"><strong id="formModeLabel">Coding baru</strong><span id="formReadiness">Lengkapi Area, OLT, Unit, dan Cluster.</span></div>
+          <button id="clearButton" class="secondary-button" type="button">Batal</button>
+          <button id="saveButton" class="primary-button" type="button">Simpan Coding</button>
+        </div>
+
+        <div id="generateResultPanel" class="fdt-result-panel span-6" style="display:none;">
+          <h3 class="fdt-result-title">Pratinjau Coding</h3>
+          <div id="generateResultRows" class="fdt-result-rows"></div>
+        </div>
+      </section>
+    </details>
+
+    <section class="fdt-card">
+      <div class="fdt-card-header">
+        <div><span class="eyebrow">DATABASE CODING</span><strong id="summaryText">Memuat data...</strong></div>
+        <span id="statusText" class="muted" aria-live="polite"></span>
+      </div>
+      <div class="fdt-bulk-actions" {% if not fdt_can_write %}hidden{% endif %}>
+        <span id="selectedText" class="selection-count">0 dipilih</span>
+        <button id="bulkEditButton" class="secondary-button" type="button" disabled>Edit Pilihan</button>
+        <button id="bulkDeleteButton" class="danger-button" type="button" disabled>Hapus Pilihan</button>
+      </div>
+      <div class="fdt-table-wrap">
+        <table class="records-table">
+          <thead><tr><th class="fdt-select-col"><input id="selectAllRows" type="checkbox" aria-label="Pilih semua baris pada halaman" {% if not fdt_can_write %}hidden disabled{% endif %}></th><th>OLT / Area</th><th>Unit OLT</th><th>Cluster</th><th>FDT</th><th>Aksi</th></tr></thead>
+          <tbody id="recordsBody"></tbody>
+        </table>
+      </div>
+      <div id="paginationControls" class="fdt-pagination"></div>
+    </section>
+  </main>
+<script src="/static/js/toast.js?v=popup-neutral-20260819-211055"></script>
+<script>
+document.getElementById('backToEvaLink')?.addEventListener('click', (event) => {
+  if (window.parent && window.parent !== window) {
+    event.preventDefault();
+    window.parent.postMessage({ type: 'eva-close-fdt-modal' }, window.location.origin);
+  }
+});
+
+const FDT_CAN_WRITE = {{ fdt_can_write|default(false)|tojson }};
+const els = {
+  search: document.getElementById('searchInput'), olt: document.getElementById('oltFilter'), area: document.getElementById('areaFilter'), body: document.getElementById('recordsBody'),
+  summary: document.getElementById('summaryText'), status: document.getElementById('statusText'), pagination: document.getElementById('paginationControls'), selectedText: document.getElementById('selectedText'), selectAll: document.getElementById('selectAllRows'), bulkEdit: document.getElementById('bulkEditButton'), bulkDelete: document.getElementById('bulkDeleteButton'),
+  addOltForm: document.getElementById('addOltForm'), newOltDestination: document.getElementById('newOltDestination'), newOltHint: document.getElementById('newOltHint'),
+  oltListPanel: document.getElementById('oltListPanel'), oltListBody: document.getElementById('oltListBody'), oltListSearch: document.getElementById('oltListSearch'), oltListStatus: document.getElementById('oltListStatus'), oltPagination: document.getElementById('oltPaginationControls'),
+  formTitle: document.getElementById('fdtFormTitle'), formSubtitle: document.getElementById('fdtFormSubtitle'), formModeLabel: document.getElementById('formModeLabel'), formReadiness: document.getElementById('formReadiness'),
+  newOlt: ['newOltArea','newOltName','newOltId','newOltInitialName','newOltHostname'].reduce((acc,id)=>(acc[id]=document.getElementById(id),acc),{}),
+  fields: ['recordId','oltInitial','oltUnit','hubId','oltHostname','oltNameInitial','areaArea','siteName','fdtOrder','fdtId','fdtCode','clusterInitial'].reduce((acc,id)=>(acc[id]=document.getElementById(id),acc),{}),
+  sharing: document.getElementById('sharingFdt'), sharingWrap: document.getElementById('sharingToggleWrap'),
+  sharingPicker: document.getElementById('sharingPicker'), sharingSearch: document.getElementById('sharingSearch'),
+  sharingResults: document.getElementById('sharingResults'), sharingHint: document.getElementById('sharingHint')
+};
+let records = [];
+let currentPage = 1;
+const pageSize = 50;
+let totalRecords = 0;
+let selectedIds = new Set();
+let bulkEditMode = false;
+let availableFdtIds = [];
+let availableIdRequest = 0;
+let fdtFormOltOptions = [];
+let formOltRequest = 0;
+let shareCandidates = [];
+let shareRequest = 0;
+let oltListPage = 1;
+const oltListPageSize = 10;
+function escapeHtml(value){ return String(value ?? '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+const TANGERANG_SOURCE_IDS=new Set([
+  '1I5RR2Ow631aRgm9oOBfi5rhOMU-fnMOKGCUXWLSi6U4',
+  '1a89l5TmTlZiICSSvvRwCB6lONDOCQgpd',
+]);
+const TANGERANG_OLT_NAMES=new Set([
+  'CREATE EMAIL SENDING','TANGERANG','SMT','CODING POLE MAIN FEEDER',
+  'OLT CIPUTAT','OLT PAMULANG','OLT JOMBANG','OLT SMART BSD','OLT JOMBANG RAYA 02',
+  'OLT CURUG','OLT SERPONG UTARA','MINI OLT PARAGON VILLAGE','OLT KELAPA DUA',
+  'OLT PASAR KEMIS','OLT RAJEG','OLT TIGA RAKSA','OLT SAWAH LAMA','OLT CILEDUG',
+  'OLT MODERNLAND','OLT GUNUNG SINDUR','OLT CISOKA','OLT SAWANGAN','OLT ATMA ASNAWI',
+  'OLT BANTAR PANJANG','OLT CISAUK','OLT PARUNG PANJANG','OLT SEPATAN','OLT TELUK NAGA',
+  'OLT TENJO','OLT LIPPO KARAWACI UTARA','OLT LIPPO KARAWACI SENTRAL',
+  'OLT LIPPO KARAWACI BARAT','OLT PARK SERPONG',
+]);
+const BALIKPAPAN_SOURCE_ID="1-snIVcM6Whnxe6Os2DQTLEnnF7JJHCxLSXNdgT-WV78";
+const BALIKPAPAN_OLT_NAMES=new Set(["OLT BALIKPAPAN TIMUR", "OLT BALIKPAPAN TIMUR-2", "OLT BALIKPAPAN SELATAN", "OLT BALIKPAPAN SELATAN-2", "OLT BALIKPAPAN KOTA", "OLT BALIKPAPAN BARAT", "OLT BALIKPAPAN UTARA", "OLT BALIKPAPAN UTARA 02", "OLT SAMBOJA", "OLT DAMAI BALIKPAPAN", "OLT SALOK API DARAT", "OLT BATU AMPAR", "OLT SANIPAH", "OLT KARYA MERDEKA", "OLT MUARA JAWA", "CODING POLE MAIN FEEDER"]);
+function isBalikpapanRecord(row){
+  const r=row||{};
+  return String(r.source_spreadsheet_id||'').trim()===BALIKPAPAN_SOURCE_ID
+    || [r.area,r.olt_area].some(value=>String(value||'').trim().toUpperCase()==='BALIKPAPAN')
+    || [r.hub_id,r.olt_code].some(value=>/^(BPN|TRG)\./.test(String(value||'').trim().toUpperCase()))
+    || BALIKPAPAN_OLT_NAMES.has(String(r.sheet_name||'').trim().toUpperCase())
+    || BALIKPAPAN_OLT_NAMES.has(String(r.olt_initial||'').trim().toUpperCase());
+}
+function isInboundReadOnlyArea(value){ return isTangerangArea(value)||String(value||'').trim().toUpperCase()==='BALIKPAPAN'; }
+function isInboundReadOnlyRecord(row){ return Boolean(row&&row.read_only)||isBalikpapanRecord(row)||isTangerangRecord(row); }
+function isTangerangArea(value){ return String(value||'').trim().toUpperCase()==='TANGERANG'; }
+function isTangerangRecord(row){
+  const sheetName=String((row&&row.sheet_name)||'').trim().toUpperCase();
+  const oltInitial=String((row&&row.olt_initial)||'').trim().toUpperCase();
+  return TANGERANG_SOURCE_IDS.has(String((row&&row.source_spreadsheet_id)||'').trim())
+    || isTangerangArea(row && row.area)
+    || String((row && row.hub_id)||'').trim().toUpperCase().startsWith('TNG.')
+    || TANGERANG_OLT_NAMES.has(sheetName)
+    || TANGERANG_OLT_NAMES.has(oltInitial);
+}
+function popupFeedback(title, message, severity='info'){
+  const target=window.parent && window.parent !== window ? window.parent : window;
+  return target.evaPopupFeedback?.({title, message, severity}) || window.evaPopupFeedback?.({title, message, severity});
+}
+function currentOltOption(){
+  return fdtFormOltOptions.find(o=>o.olt_initial===els.fields.oltInitial.value) || null;
+}
+function currentUnitOption(){
+  const olt=currentOltOption();
+  const units=(olt && olt.options) || [];
+  const selected=els.fields.oltUnit.selectedOptions[0];
+  return units.find(unit=>unit.olt_code===els.fields.oltUnit.value && (unit.olt_hostname||'')===(selected?.dataset.hostname||'')) || null;
+}
+function parseFdtIdLines(){
+  return String(els.fields.fdtId.value||'')
+    .split(/[\n,;]+/)
+    .map(value=>value.trim())
+    .filter(Boolean);
+}
+function selectedShare(){ return shareCandidates.find(row=>String(row.id)===els.sharingResults.value) || null; }
+function renderSharingSelection(){
+  let row=els.sharing.checked && !els.sharingPicker.hidden ? selectedShare() : null;
+  let invalidUnit=false;
+  if(row){
+    const unit=(currentOltOption()?.options||[]).find(unit=>unit.olt_code===row.hub_id && (!row.olt_hostname || unit.olt_hostname===row.olt_hostname));
+    if(!unit){
+      els.sharingResults.selectedIndex=-1;
+      row=null;
+      invalidUnit=true;
+    } else if(currentUnitOption()!==unit) updateHubFromOlt(row.hub_id, row.olt_hostname||'');
+  }
+  if(els.sharing.checked){
+    els.fields.fdtId.value=row?.fdt_id||'';
+    els.fields.fdtCode.value=row?.fdt_code||'';
+    els.sharingHint.textContent=invalidUnit ? 'Unit OLT sumber tidak tersedia; pilih FDT lain.' : row ? `Terpilih: ${row.fdt_code} · ${row.site_name} · ${row.hub_id}` : `${shareCandidates.length} FDT tersedia; pilih satu dari Unit OLT terpilih.`;
+    updateGenerateResultPanel();
+  } else updateGeneratedFdtCodes();
+  updateFormMeta();
+}
+async function loadSharingOptions(){
+  const serial=++shareRequest;
+  shareCandidates=[];
+  els.sharingResults.innerHTML='';
+  if(els.sharing.checked) renderSharingSelection();
+  if(!els.sharing.checked) return;
+  const area=els.fields.areaArea.value, olt=els.fields.oltInitial.value, hub=els.fields.oltUnit.value;
+  if(!area||!olt||!hub){ renderSharingSelection(); els.sharingHint.textContent='Pilih Area, OLT, dan Unit OLT dahulu.'; return; }
+  els.sharingHint.textContent='Memuat FDT dari OLT terpilih...';
+  try{
+    const q=els.sharingSearch.value.trim();
+    const data=await api('/api/fdt-coding/shareable-fdt?'+new URLSearchParams({area,olt,hub,q}));
+    if(serial!==shareRequest || !els.sharing.checked || area!==els.fields.areaArea.value || olt!==els.fields.oltInitial.value || hub!==els.fields.oltUnit.value || q!==els.sharingSearch.value.trim()) return;
+    shareCandidates=data.records||[];
+    els.sharingResults.innerHTML=shareCandidates.map(row=>`<option value="${escapeHtml(row.id)}">${escapeHtml(row.fdt_code)} · ${escapeHtml(row.site_name)} (${escapeHtml(row.hub_id)}${row.olt_hostname ? ' - '+escapeHtml(row.olt_hostname) : ''}) · ${row.sheet_name && row.source_row ? `${escapeHtml(JSON.stringify(row.sheet_name))} · baris ${escapeHtml(row.source_row)}` : 'lokasi belum tersedia'}</option>`).join('');
+    els.sharingResults.selectedIndex=-1;
+    renderSharingSelection();
+  }catch(err){ if(serial===shareRequest){ renderSharingSelection(); els.sharingHint.textContent=`Gagal memuat FDT: ${err.message||err}`; } }
+}
+function updateSharingMode(){
+  ++availableIdRequest;
+  const active=els.sharing.checked && !els.fields.recordId.value;
+  els.sharingPicker.hidden=!active;
+  els.fields.clusterInitial.disabled=active;
+  els.fields.fdtOrder.disabled=active;
+  if(active) { els.fields.fdtOrder.value='1'; availableFdtIds=[]; }
+  else { ++shareRequest; shareCandidates=[]; els.sharingResults.innerHTML=''; availableFdtIds=[]; }
+  renderSharingSelection();
+  if(active) loadSharingOptions();
+  else if(!els.fields.recordId.value) loadAvailableFdtIds();
+}
+function payload(){
+  const fdtIds=parseFdtIdLines();
+  const selected = els.fields.oltInitial.selectedOptions && els.fields.oltInitial.selectedOptions[0];
+  const fallbackHub = els.fields.oltUnit.value || els.fields.hubId.value || (selected ? (selected.dataset.hub || '') : '');
+  const generatedCodes=(els.fields.fdtCode.value||'').split('\n').map(v=>v.trim()).filter(Boolean);
+  const firstFdtId=fdtIds[0] || els.fields.fdtId.value;
+  const prefix=(els.fields.clusterInitial.value||'').trim().toUpperCase();
+  // HERE IS THE FIX: payload() must send the *full* fdt_code from generatedCodes[0]
+  // not just the prefix. Otherwise, ON CONFLICT will not match.
+  const fullFdtCode = generatedCodes[0] || (prefix && firstFdtId ? `${prefix}.${String(firstFdtId).padStart(3,'0')}` : prefix);
+
+  // If this is an edit and a recordId exists, use the existing fdt_code from the form data,
+  // not a generated one, to ensure proper matching in upsert.
+  // This helps when editing an existing record that already has a specific fdt_code.
+  const currentFdtCodeInput = els.fields.fdtCode.value;
+  const payloadFdtCode = els.fields.recordId.value && currentFdtCodeInput ? currentFdtCodeInput.split('\n')[0].trim() : fullFdtCode;
+
+  const data={ ids:[...selectedIds], olt_initial: els.fields.oltInitial.value, hub_id: fallbackHub, olt_hostname: els.fields.oltHostname.value, olt_name_initial: els.fields.oltNameInitial.value, area: (els.fields.areaArea ? els.fields.areaArea.value : ''), site_name: els.fields.siteName.value.toUpperCase(), total_fdt: els.fields.fdtOrder.value || '1', fdt_order: els.fields.fdtOrder.value || '1', fdt_id: firstFdtId, fdt_ids: fdtIds, fdt_code: payloadFdtCode, cluster_initial: prefix, sheet_name: els.fields.oltInitial.value };
+  if(els.sharing.checked && !els.fields.recordId.value && selectedShare()) data.shared_fdt_id=Number(els.sharingResults.value);
+  return data;
+}
+async function fillForm(row){
+  if(isInboundReadOnlyRecord(row)){
+    return popupFeedback('FDT Coding', 'Coding sumber inbound-only read-only dan mengikuti spreadsheet sumber.', 'warning');
+  }
+  document.getElementById('fdtFormPanel').open=true;
+  els.sharing.checked=false;
+  els.sharingWrap.hidden=true;
+  updateSharingMode();
+  bulkEditMode=false;
+  selectedIds.clear();
+  updateBulkActions();
+  els.fields.fdtId.readOnly=false;
+  els.fields.recordId.value=row.id||'';
+  els.fields.areaArea.value=row.area||'';
+  if(!await loadFormOlts(row.olt_initial||'', row.hub_id||'')) return;
+  els.fields.hubId.value=row.hub_id||els.fields.hubId.value||'';
+  els.fields.oltHostname.value=row.olt_hostname||els.fields.oltHostname.value||'';
+  els.fields.oltNameInitial.value=row.olt_name_initial||els.fields.oltNameInitial.value||'';
+  els.fields.siteName.value=(row.site_name||'').replace(/ - FDT \d+$/,'');
+  els.fields.fdtOrder.value=row.fdt_order||1;
+  els.fields.fdtId.value=row.fdt_id||'';
+  els.fields.clusterInitial.value=row.cluster_initial||String(row.fdt_code||'').split('.')[0]||'';
+  updateGeneratedFdtCodes();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function clearForm(){
+  ++formOltRequest;
+  ++availableIdRequest;
+  els.sharing.checked=false;
+  els.sharingWrap.hidden=false;
+  els.sharingSearch.value='';
+  Object.values(els.fields).forEach(el=>el.value='');
+  updateSharingMode();
+  els.fields.fdtOrder.value='1';
+  els.fields.fdtId.readOnly=true;
+  bulkEditMode=false;
+  selectedIds.clear();
+  fdtFormOltOptions=[];
+  els.fields.oltInitial.disabled=true;
+  els.fields.oltInitial.innerHTML='<option value="">Pilih Area dulu</option>';
+  els.fields.oltUnit.disabled=true;
+  els.fields.oltUnit.innerHTML='<option value="">Pilih OLT dulu</option>';
+  updateBulkActions();
+  updateGeneratedFdtCodes();
+  updateFormMeta();
+}
+
+function isDummyArea(){
+  return (els.fields.areaArea.value||'').trim().toUpperCase()==='DUMMY';
+}
+function manualOlt(){
+  const el=document.getElementById('oltInitialManual');
+  return el ? (el.value||'').trim() : '';
+}
+function manualUnit(){
+  const el=document.getElementById('oltUnitManual');
+  return el ? (el.value||'').trim() : '';
+}
+function updateFormMeta(){
+  const editing=Boolean(els.fields.recordId.value);
+  const area=els.fields.areaArea.value;
+  const dummyArea=isDummyArea();
+  const olt=dummyArea ? manualOlt() : els.fields.oltInitial.value;
+  const unit=dummyArea ? manualUnit() : currentUnitOption();
+  const readOnly=!FDT_CAN_WRITE || isInboundReadOnlyArea(area);
+  const saveButton=document.getElementById('saveButton');
+  els.formTitle.textContent=readOnly ? 'Coding FDT Read-only' : (editing ? 'Edit Coding FDT' : 'Tambah Coding FDT');
+  els.formModeLabel.textContent=readOnly ? 'Read-only' : (editing ? 'Mengedit coding terpilih' : 'Coding baru');
+  els.formSubtitle.textContent=readOnly ? 'Data mengikuti spreadsheet sumber dan tidak dapat diubah dari EVA.' : (editing ? 'Periksa jaringan dan data cluster sebelum menyimpan.' : 'Pilih Area → OLT → Unit, lalu isi data cluster.');
+  if(saveButton) saveButton.disabled=readOnly;
+  if(readOnly){
+    els.formReadiness.textContent='Read-only: data mengikuti spreadsheet sumber.';
+    return;
+  }
+  const missing=[];
+  if(!area) missing.push('Area');
+  if(!olt) missing.push('OLT');
+  if(!unit && !dummyArea) missing.push('Unit');
+  if(!els.fields.siteName.value.trim()) missing.push('Cluster');
+  if(els.sharing.checked && !editing){ if(!selectedShare()) missing.push('FDT sharing'); }
+  else if(!els.fields.clusterInitial.value.trim()) missing.push('Inisial code');
+  els.formReadiness.textContent=missing.length ? `Belum lengkap: ${missing.join(', ')}.` : 'Siap disimpan.';
+}
+function updateHubFromOlt(preferredHub='', preferredHostname=''){
+  const selected = els.fields.oltInitial.selectedOptions && els.fields.oltInitial.selectedOptions[0];
+  const olt=currentOltOption();
+  const units=(olt && olt.options) || [];
+  const previous=preferredHub || els.fields.oltUnit.value || (selected ? (selected.dataset.hub || '') : '');
+  const hostname=preferredHostname || (preferredHub ? '' : els.fields.oltUnit.selectedOptions[0]?.dataset.hostname || '');
+  if(units.length){
+    els.fields.oltUnit.disabled=false;
+    els.fields.oltUnit.innerHTML=units.map(unit=>`<option value="${escapeHtml(unit.olt_code)}" data-hostname="${escapeHtml(unit.olt_hostname || '')}" data-olt-name="${escapeHtml(unit.olt_name_initial || '')}">${escapeHtml(unit.olt_code || '(NO ID)')}${unit.olt_hostname ? ' - '+escapeHtml(unit.olt_hostname) : ''}</option>`).join('');
+    const index=units.findIndex(unit=>unit.olt_code===previous && (!hostname || (unit.olt_hostname||'')===hostname));
+    els.fields.oltUnit.selectedIndex=index<0 ? 0 : index;
+  } else {
+    els.fields.oltUnit.disabled=true;
+    els.fields.oltUnit.innerHTML='<option value="">Tidak ada pilihan unit</option>';
+  }
+  const unit=currentUnitOption();
+  els.fields.hubId.value = unit ? (unit.olt_code || '') : (selected ? (selected.dataset.hub || '') : '');
+  els.fields.oltHostname.value = unit ? (unit.olt_hostname || '') : (selected ? (selected.dataset.hostname || '') : '');
+  els.fields.oltNameInitial.value = unit ? (unit.olt_name_initial || '') : (selected ? (selected.dataset.oltName || '') : '');
+  updateFormMeta();
+  if(!els.fields.recordId.value && !els.sharing.checked) loadAvailableFdtIds();
+}
+function updateGeneratedFdtCodes(){
+  if(els.sharing.checked && !els.fields.recordId.value){ renderSharingSelection(); return; }
+  const prefix=(els.fields.clusterInitial.value||'').trim().toUpperCase();
+  const total=Math.max(parseInt(els.fields.fdtOrder.value||'1',10)||1,1);
+   if(!prefix){ els.fields.fdtCode.value=''; if(els.fields.fdtId.readOnly) els.fields.fdtId.value=availableFdtIds.join('\n'); updateGenerateResultPanel(); return; }
+
+  const ids = els.fields.fdtId.readOnly ? availableFdtIds.slice(0,total) : parseFdtIdLines();
+  const bulkRows=bulkEditMode ? selectedRows().sort((a,b)=>Number(a.fdt_order)-Number(b.fdt_order)) : [];
+  const existingBase=bulkRows[0]?.cluster_initial.replace(/-\d+$/,'');
+  const numberedBulk=bulkRows.length>1 && new Set(bulkRows.map(r=>Number(r.fdt_order))).size===bulkRows.length &&
+    bulkRows.every(r=>r.cluster_initial===`${existingBase}-${r.fdt_order}`);
+  const requestedSuffix=prefix.match(/^(.+)-(\d+)$/);
+  const bulkBase=numberedBulk && requestedSuffix && bulkRows.some(r=>Number(r.fdt_order)===Number(requestedSuffix[2])) ? requestedSuffix[1] : prefix;
+  const codePrefix=i=>bulkRows.length && prefix===bulkRows[0].cluster_initial ? bulkRows[i].cluster_initial
+    : numberedBulk ? `${bulkBase}-${bulkRows[i].fdt_order}`
+    : els.fields.fdtId.readOnly && total>1 ? `${prefix}-${i+1}` : prefix;
+  const previewIds=bulkRows.length ? bulkRows.map((row,i)=>ids[i]||row.fdt_id) : ids;
+  const codes = previewIds.length ? previewIds.map((id,i)=>`${codePrefix(i)}.${id}`) : Array.from({length:total},(_,i)=>`${codePrefix(i)}.AUTO${String(i+1).padStart(2,'0')}`);
+  els.fields.fdtCode.value=codes.join('\n');
+  if(els.fields.fdtId.readOnly) els.fields.fdtId.value=ids.join('\n');
+  updateGenerateResultPanel();
+}
+function updateGenerateResultPanel(){
+  const panel=document.getElementById('generateResultPanel');
+  const container=document.getElementById('generateResultRows');
+  const siteName=(els.fields.siteName.value||'').trim().toUpperCase();
+  const clusterInitial=(els.sharing.checked && !els.fields.recordId.value ? (selectedShare()?.fdt_code.split('.')[0]||'') : (els.fields.clusterInitial.value||'')).trim().toUpperCase();
+  const oltNameInitial=(els.fields.oltNameInitial.value||'').trim().toUpperCase();
+  const hubId=(els.fields.hubId.value||'').trim();
+  const total=Math.max(parseInt(els.fields.fdtOrder.value||'1',10)||1,1);
+  const codes=(els.fields.fdtCode.value||'').split('\n').filter(Boolean);
+  const sharing=els.sharing.checked && !els.fields.recordId.value;
+  if(sharing && !selectedShare()){ panel.style.display='none'; return; }
+  const oltSelect=els.fields.oltInitial;
+  const oltLabel=(oltSelect.selectedOptions&&oltSelect.selectedOptions[0]&&oltSelect.selectedOptions[0].value)?oltSelect.selectedOptions[0].textContent.trim():'';
+  if(!siteName&&!clusterInitial){ panel.style.display='none'; return; }
+  const lines=[];
+  // FDT names + codes
+  for(let i=0;i<total;i++){
+    const fdtLabel=total===1 ? (siteName||'CLUSTER') : `${siteName||'CLUSTER'} - FDT ${i+1}`;
+    const fdtCode=codes[i]||`${clusterInitial}.${String(i+1).padStart(3,'0')}`;
+    lines.push(fdtLabel);
+    lines.push(fdtCode);
+  }
+  // Pole SF
+  if(oltNameInitial&&clusterInitial){
+    lines.push('');
+    lines.push('POLE SF:');
+    lines.push(`MR.${oltNameInitial}.${clusterInitial}.P001 s/d P00+ (Increment)`);
+  }
+  // Pole CL
+  if(clusterInitial){
+    lines.push('');
+    lines.push('POLE CL:');
+    lines.push(`MR.${clusterInitial}.P001 s/d P00+ (Increment)`);
+  }
+  // OLT info
+  if(oltLabel){
+    lines.push('');
+    const normalizedOltLabel=`OLT ${oltLabel.replace(/^(?:OLT\s*)+/i,'').trim()}`;
+    lines.push(normalizedOltLabel);
+  }
+  // Homepass ID
+  if(hubId){
+    lines.push(hubId);
+  }
+  const fullText=lines.join('\n');
+  container.innerHTML=`<pre class="fdt-result-text">${escapeHtml(fullText)}</pre><button class="copy-btn" type="button" id="copyAllResultBtn">Salin Semua</button>`;
+  panel.style.display='';
+  document.getElementById('copyAllResultBtn').onclick=function(){
+    navigator.clipboard.writeText(fullText).then(()=>{
+      this.textContent='Disalin!';
+      setTimeout(()=>{ this.textContent='Salin Semua'; },1500);
+      popupFeedback('Data Disalin', 'Hasil generate berhasil disalin', 'success');
+    }).catch(()=>{ this.textContent='Gagal'; setTimeout(()=>{ this.textContent='Salin Semua'; },1500); });
+  };
+}
+async function loadAvailableFdtIds(){
+  const serial=++availableIdRequest;
+  availableFdtIds=[];
+  if(!els.fields.recordId.value && !els.sharing.checked) updateGeneratedFdtCodes();
+  const olt=els.fields.oltInitial.value||'';
+  const total=Math.max(parseInt(els.fields.fdtOrder.value||'1',10)||1,1);
+  if(!olt || els.sharing.checked || els.fields.recordId.value) return;
+  const data=await api(`/api/fdt-coding/available-fdt-ids?${new URLSearchParams({olt,count:String(total)})}`);
+  if(serial!==availableIdRequest || olt!==(els.fields.oltInitial.value||'') || total!==Math.max(parseInt(els.fields.fdtOrder.value||'1',10)||1,1) || els.sharing.checked || els.fields.recordId.value) return;
+  availableFdtIds=data.ids||[];
+  updateGeneratedFdtCodes();
+}
+function baseClusterName(value){ return String(value||'').replace(/ - FDT \d+$/i,''); }
+function selectedRows(){ return records.filter(row => selectedIds.has(String(row.id))); }
+function updateBulkActions(){
+  const count=selectedIds.size;
+  const selected=selectedRows();
+  const hasReadOnly=!FDT_CAN_WRITE || selected.some(isInboundReadOnlyRecord);
+  if(els.selectedText) els.selectedText.textContent=`${count} dipilih`;
+  if(els.bulkDelete) els.bulkDelete.disabled=count===0 || hasReadOnly;
+  if(els.bulkEdit) els.bulkEdit.disabled=count===0 || hasReadOnly;
+  if(els.selectAll){
+    const selectable=records.filter(row=>FDT_CAN_WRITE && !isInboundReadOnlyRecord(row));
+    els.selectAll.checked=selectable.length>0 && selectable.every(row=>selectedIds.has(String(row.id)));
+    els.selectAll.indeterminate=count>0 && !els.selectAll.checked;
+  }
+}
+async function startBulkEdit(){
+  const rows=selectedRows();
+  if(!rows.length) return popupFeedback('FDT Coding', 'Pilih data dulu.', 'warning');
+  if(!FDT_CAN_WRITE || rows.some(isInboundReadOnlyRecord)) return popupFeedback('FDT Coding', 'Coding sumber inbound-only read-only.', 'warning');
+  document.getElementById('fdtFormPanel').open=true;
+  const clusters=[...new Set(rows.map(row=>baseClusterName(row.site_name).toUpperCase()))];
+  if(clusters.length>1) return popupFeedback('FDT Coding', 'Edit multiple hanya bisa kalau Nama Cluster sama.', 'warning');
+  const first=rows[0];
+  bulkEditMode=true;
+  els.sharing.checked=false;
+  els.sharingWrap.hidden=true;
+  updateSharingMode();
+  els.fields.recordId.value='bulk';
+  els.fields.areaArea.value=first.area||'';
+  if(!await loadFormOlts(first.olt_initial||'', first.hub_id||'')) return;
+  if(first.hub_id && !els.fields.hubId.value) els.fields.hubId.value=first.hub_id;
+  els.fields.oltHostname.value=first.olt_hostname||'';
+  els.fields.oltNameInitial.value=first.olt_name_initial||'';
+  els.fields.siteName.value=baseClusterName(first.site_name);
+  els.fields.fdtOrder.value=rows.length;
+  els.fields.fdtId.readOnly=false;
+  els.fields.fdtId.value=rows.map(row=>row.fdt_id||'').filter(Boolean).join('\n');
+  els.fields.clusterInitial.value=first.cluster_initial||String(first.fdt_code||'').split('.')[0]||'';
+  updateGeneratedFdtCodes();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function api(url, opts={}){ if(!FDT_CAN_WRITE && !['GET','HEAD'].includes((opts.method||'GET').toUpperCase())) throw new Error('Coding FDT hanya dapat diubah oleh owner EVA.'); const res=await fetch(url, opts); const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data.error||res.statusText); return data; }
+async function loadFormOlts(preferredOlt='', preferredHub=''){
+  const serial=++formOltRequest;
+  ++availableIdRequest;
+  availableFdtIds=[];
+  if(!els.fields.recordId.value && !els.sharing.checked) updateGeneratedFdtCodes();
+  const area=(els.fields.areaArea.value||'').trim();
+  fdtFormOltOptions=[];
+  els.fields.oltInitial.value='';
+  els.fields.oltInitial.disabled=true;
+  els.fields.oltUnit.disabled=true;
+  els.fields.oltUnit.innerHTML='<option value="">Pilih OLT dulu</option>';
+  els.fields.hubId.value='';
+  els.fields.oltHostname.value='';
+  els.fields.oltNameInitial.value='';
+  if(!area){
+    els.fields.oltInitial.innerHTML='<option value="">Pilih Area dulu</option>';
+    updateFormMeta();
+    return;
+  }
+  els.fields.oltInitial.innerHTML='<option value="">Memuat OLT...</option>';
+  updateFormMeta();
+  let data;
+  try{ data=await api('/api/fdt-coding/summary?'+new URLSearchParams({area})); }
+  catch(err){ if(serial!==formOltRequest || area!==els.fields.areaArea.value.trim()) return false; throw err; }
+  if(serial!==formOltRequest || area!==els.fields.areaArea.value.trim()) return false;
+  fdtFormOltOptions=data.olts||[];
+  els.fields.oltInitial.innerHTML='<option value="">Pilih OLT</option>'+fdtFormOltOptions.map(o=>`<option value="${escapeHtml(o.olt_initial)}">${escapeHtml(o.olt_initial)}</option>`).join('');
+  els.fields.oltInitial.disabled=false;
+  if(preferredOlt && fdtFormOltOptions.some(o=>o.olt_initial===preferredOlt)) els.fields.oltInitial.value=preferredOlt;
+  updateHubFromOlt(preferredHub);
+  return true;
+}
+
+async function loadSummary(){
+  const data=await api('/api/fdt-coding/summary?'+new URLSearchParams({area:els.area.value||''}));
+  window.fdtOltOptions = data.olts || [];
+  els.summary.textContent = `Total ${data.total} record | ${data.olts.length} OLT | Sumber: ${data.source_label}`;
+  const currentFilter=els.olt.value || 'ALL';
+  const activeOltOptions=window.fdtOltOptions.filter(o=>Number(o.total||0)>0);
+  els.olt.innerHTML='<option value="ALL">Semua OLT</option>'+activeOltOptions.map(o=>`<option value="${escapeHtml(o.olt_initial)}">${escapeHtml(o.olt_initial)} (${escapeHtml(o.total)})</option>`).join('');
+  els.olt.value=currentFilter;
+  if(els.olt.value !== currentFilter) els.olt.value='ALL';
+  renderOltList();
+}
+function filteredOltList(){
+  const query=(els.oltListSearch?.value||'').trim().toUpperCase();
+  return (window.fdtOltOptions||[])
+    .filter(o=>o.olt_initial && o.olt_initial !== '(NO OLT)')
+    .filter(o=>!query || [o.olt_initial, o.hub_id, o.olt_hostname, o.olt_name_initial, ...((o.options||[]).flatMap(unit=>[unit.olt_code,unit.olt_hostname,unit.olt_name_initial]))].some(value=>String(value||'').toUpperCase().includes(query)));
+}
+function renderOltPagination(total){
+  const totalPages=Math.max(1, Math.ceil(total / oltListPageSize));
+  if(oltListPage > totalPages) oltListPage = totalPages;
+  if(total <= oltListPageSize){ els.oltPagination.innerHTML=''; return; }
+  const pages = new Set([1, totalPages, oltListPage - 1, oltListPage, oltListPage + 1]);
+  const buttons = [...pages].filter(page=>page>=1 && page<=totalPages).sort((a,b)=>a-b);
+  let lastPage = 0;
+  const pageButtons = buttons.map(page=>{
+    const gap = page - lastPage > 1 ? '<span class="muted">...</span>' : '';
+    lastPage = page;
+    return `${gap}<button class="fdt-page-button ${page === oltListPage ? 'active' : ''}" data-olt-page="${page}" type="button">${page}</button>`;
+  }).join('');
+  els.oltPagination.innerHTML = `<button class="secondary-button" data-olt-page="${oltListPage - 1}" ${oltListPage <= 1 ? 'disabled' : ''} type="button">Sebelumnya</button>${pageButtons}<button class="secondary-button" data-olt-page="${oltListPage + 1}" ${oltListPage >= totalPages ? 'disabled' : ''} type="button">Berikutnya</button>`;
+}
+function renderOltList(){
+  const olts=filteredOltList();
+  const totalPages=Math.max(1, Math.ceil(olts.length / oltListPageSize));
+  if(oltListPage > totalPages) oltListPage = totalPages;
+  const offset=(oltListPage-1)*oltListPageSize;
+  const pageRows=olts.slice(offset, offset + oltListPageSize);
+  els.oltListBody.innerHTML=pageRows.map(o=>{
+    const units=(o.options||[]);
+    const ids=units.length?units.map(unit=>`<span class="code-chip">${escapeHtml(unit.olt_code||'-')}</span>`).join('<br>'):escapeHtml(o.hub_id||'');
+    const hostnames=units.length?units.map(unit=>escapeHtml(unit.olt_hostname||'-')).join('<br>'):escapeHtml(o.olt_hostname||'');
+    const initials=units.length?[...new Set(units.map(unit=>unit.olt_name_initial).filter(Boolean))].map(escapeHtml).join('<br>'):escapeHtml(o.olt_name_initial||'');
+    const area=o.area||units.find(unit=>unit.area)?.area||'-';
+    const readOnly=!FDT_CAN_WRITE || isInboundReadOnlyRecord(o)||units.some(isInboundReadOnlyRecord);
+    const action=readOnly?'<span class="area-chip">Read-only</span>':`<button class="danger-button row-action" data-del-olt="${escapeHtml(o.olt_initial)}" data-total="${escapeHtml(o.total||0)}" type="button">Hapus</button>`;
+    return `<tr><td><div class="cell-stack"><span class="cell-primary">${escapeHtml(o.olt_initial)}</span><span class="cell-secondary">${units.length} unit</span></div></td><td><span class="area-chip">${escapeHtml(area)}</span></td><td>${ids}</td><td>${hostnames}</td><td>${initials}</td><td>${action}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Belum ada OLT.</td></tr>';
+  const from=olts.length ? offset + 1 : 0;
+  const to=Math.min(offset + pageRows.length, olts.length);
+  els.oltListStatus.textContent = `${from}-${to} dari ${olts.length} OLT`;
+  renderOltPagination(olts.length);
+}
+const oltAreaPrefixes={Bekasi:'BKS',Jakarta:'JKT',Sukabumi:'SKB / SMI',Indramayu:'IDM',Kuningan:'KNG'};
+function updateOltDestination(){
+  const area=els.newOlt.newOltArea.value;
+  const prefix=oltAreaPrefixes[area]||'';
+  els.newOltDestination.textContent=area ? `Tujuan: ${area}` : 'Area belum dipilih';
+  els.newOltDestination.classList.toggle('is-ready',Boolean(area));
+  els.newOltHint.textContent=area ? `OLT akan disimpan ke database dan spreadsheet ${area}. Prefix OLT ID: ${prefix}.` : 'Pilih Area untuk menentukan spreadsheet tujuan.';
+  if(area && !els.newOlt.newOltId.value.trim()) els.newOlt.newOltId.placeholder=`Contoh: ${prefix.split(' ')[0]}.100.5001`;
+}
+function clearOltForm(){ Object.values(els.newOlt).forEach(el=>el.value=''); updateOltDestination(); }
+document.getElementById('addOltButton').onclick=()=>{ els.addOltForm.classList.add('is-open'); els.oltListPanel.classList.remove('is-open'); els.newOlt.newOltArea.focus(); };
+els.newOlt.newOltArea.onchange=updateOltDestination;
+document.getElementById('viewOltButton').onclick=()=>{ oltListPage=1; renderOltList(); els.oltListPanel.classList.add('is-open'); };
+document.getElementById('closeOltListButton').onclick=()=>els.oltListPanel.classList.remove('is-open');
+els.oltListSearch.oninput=()=>{ oltListPage=1; renderOltList(); };
+els.oltPagination.onclick=(ev)=>{ const page=Number(ev.target.dataset.oltPage||0); if(!page || ev.target.disabled) return; oltListPage=page; renderOltList(); };
+els.oltListBody.onclick=async(ev)=>{
+  const olt=ev.target.dataset.delOlt;
+  if(!olt) return;
+  const current=(window.fdtOltOptions||[]).find(row=>row.olt_initial===olt);
+  if(!FDT_CAN_WRITE || !current || isInboundReadOnlyRecord(current) || (current.options||[]).some(isInboundReadOnlyRecord)) return;
+  const total=Number(ev.target.dataset.total||0);
+  if(total>0) return popupFeedback('FDT Coding', `OLT ${olt} masih punya ${total} record FDT. Hapus record FDT dulu baru hapus OLT.`, 'warning');
+  if(!confirm(`Hapus OLT ${olt}?`)) return;
+  await api(`/api/fdt-coding/olts/${encodeURIComponent(olt)}`,{method:'DELETE'});
+  await refresh();
+};
+document.getElementById('cancelOltButton').onclick=()=>{ clearOltForm(); els.addOltForm.classList.remove('is-open'); };
+document.getElementById('saveOltButton').onclick=async()=>{
+  const button=document.getElementById('saveOltButton');
+  const area=els.newOlt.newOltArea.value;
+  const payload={area, olt_initial:els.newOlt.newOltName.value, hub_id:els.newOlt.newOltId.value, olt_name_initial:els.newOlt.newOltInitialName.value, olt_hostname:els.newOlt.newOltHostname.value};
+  if(!area) return popupFeedback('Tambah OLT', 'Pilih Area tujuan dulu.', 'warning');
+  button.disabled=true;
+  button.textContent='Menyimpan...';
+  try{
+    const data=await api('/api/fdt-coding/olts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    clearOltForm();
+    els.addOltForm.classList.remove('is-open');
+    els.area.value=data.olt.area||area;
+    await loadSummary();
+    els.olt.value=data.olt.olt_initial;
+    currentPage=1;
+    await loadRecords();
+    popupFeedback('Tambah OLT', `${data.olt.olt_initial} tersimpan di Area ${data.olt.area||area}.`, 'success');
+  }catch(err){
+    popupFeedback('Tambah OLT', err.message||String(err), 'error');
+  }finally{
+    button.disabled=!FDT_CAN_WRITE;
+    button.textContent='Simpan OLT';
+  }
+};
+function renderPagination(){
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  if(currentPage > totalPages) currentPage = totalPages;
+  if(totalRecords <= pageSize){ els.pagination.innerHTML=''; return; }
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+  const buttons = [...pages].filter(page => page >= 1 && page <= totalPages).sort((a,b)=>a-b);
+  let lastPage = 0;
+  const pageButtons = buttons.map(page => {
+    const gap = page - lastPage > 1 ? '<span class="muted">...</span>' : '';
+    lastPage = page;
+    return `${gap}<button class="fdt-page-button ${page === currentPage ? 'active' : ''}" data-page="${page}" type="button">${page}</button>`;
+  }).join('');
+  els.pagination.innerHTML = `<button class="secondary-button" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} type="button">Sebelumnya</button>${pageButtons}<button class="secondary-button" data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} type="button">Berikutnya</button>`;
+}
+async function loadRecords(){
+  els.status.textContent='Memuat...';
+  const offset=(currentPage-1)*pageSize;
+  const params=new URLSearchParams({olt:els.olt.value||'ALL', area:els.area.value||'', q:els.search.value||'', limit:String(pageSize), offset:String(offset)});
+  const data=await api('/api/fdt-coding/records?'+params);
+  records=data.records||[];
+  totalRecords=data.total||0;
+  els.body.innerHTML=records.map(r=>{
+    const readOnly=!FDT_CAN_WRITE || isInboundReadOnlyRecord(r);
+    const selector=readOnly?'<span class="area-chip">RO</span>':`<input class="row-select" type="checkbox" aria-label="Pilih ${escapeHtml(r.fdt_code)}" data-select="${escapeHtml(r.id)}" ${selectedIds.has(String(r.id))?'checked':''}>`;
+    const actions=readOnly?'<span class="area-chip">Read-only</span>':`<button class="secondary-button row-action" type="button" data-edit="${escapeHtml(r.id)}">Edit</button><button class="danger-button row-action" type="button" data-del="${escapeHtml(r.id)}">Hapus</button>`;
+    return `<tr>
+    <td class="fdt-select-col">${selector}</td>
+    <td><div class="cell-stack"><span class="cell-primary">${escapeHtml(r.olt_initial||'-')}</span><span class="area-chip">${escapeHtml(r.area||'-')}</span></div></td>
+    <td><div class="cell-stack"><span class="code-chip">${escapeHtml(r.hub_id||'-')}</span><span class="cell-secondary">${escapeHtml(r.olt_hostname||'-')} · ${escapeHtml(r.olt_name_initial||'-')}</span></div></td>
+    <td><div class="cell-stack"><span class="cell-primary">${escapeHtml(r.site_name||'-')}</span><span class="cell-secondary">${escapeHtml(r.cluster_initial||'-')}</span></div></td>
+    <td><div class="cell-stack"><span class="code-chip">${escapeHtml(r.fdt_code||'-')}</span><span class="cell-secondary">ID ${escapeHtml(r.fdt_id||'-')} · Urutan ${escapeHtml(r.fdt_order||'-')}</span></div></td>
+    <td><div class="row-actions">${actions}</div></td>
+  </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Belum ada data.</td></tr>';
+  renderPagination();
+  updateBulkActions();
+  const from=totalRecords ? offset+1 : 0;
+  const to=Math.min(offset+records.length,totalRecords);
+  els.status.textContent=`${from}-${to} dari ${totalRecords} baris`;
+}
+async function refresh(){ await loadSummary(); await loadRecords(); }
+document.getElementById('refreshButton').onclick=refresh;
+document.getElementById('addCodingButton').onclick=()=>{ clearForm(); document.getElementById('fdtFormPanel').open=true; els.fields.areaArea.focus(); window.scrollTo({top:0,behavior:'smooth'}); };
+document.getElementById('clearButton').onclick=()=>{ clearForm(); document.getElementById('fdtFormPanel').open=false; };
+els.fields.areaArea.onchange=()=>{ ++shareRequest; shareCandidates=[]; els.sharingResults.innerHTML=''; renderSharingSelection(); loadFormOlts().then(loaded=>{ if(loaded) loadSharingOptions(); }).catch(err=>{ els.status.textContent=`Gagal memuat OLT: ${err.message||err}`; }); updateFormMeta(); };
+els.fields.oltInitial.onchange=()=>{ updateHubFromOlt(); loadSharingOptions(); updateGenerateResultPanel(); };
+els.fields.oltUnit.onchange=()=>{ updateHubFromOlt(els.fields.oltUnit.value, els.fields.oltUnit.selectedOptions[0]?.dataset.hostname||''); loadSharingOptions(); updateGenerateResultPanel(); };
+els.sharing.onchange=updateSharingMode;
+els.sharingSearch.oninput=()=>{ ++shareRequest; shareCandidates=[]; els.sharingResults.innerHTML=''; renderSharingSelection(); els.sharingHint.textContent='Mencari FDT...'; clearTimeout(window._sharingSearch); window._sharingSearch=setTimeout(loadSharingOptions,220); };
+els.sharingResults.onchange=renderSharingSelection;
+els.fields.clusterInitial.oninput=()=>{ updateGeneratedFdtCodes(); updateFormMeta(); };
+els.fields.fdtOrder.oninput=()=>{ loadAvailableFdtIds(); updateGeneratedFdtCodes(); updateFormMeta(); };
+els.fields.fdtId.oninput=updateGeneratedFdtCodes;
+els.fields.siteName.oninput=()=>{ updateGenerateResultPanel(); updateFormMeta(); };
+els.search.oninput=()=>{ clearTimeout(window._fdtSearch); window._fdtSearch=setTimeout(()=>{ currentPage=1; loadRecords(); },250); };
+els.olt.onchange=()=>{ currentPage=1; loadRecords(); };
+els.area.onchange=()=>{ currentPage=1; loadSummary().then(loadRecords); };
+document.getElementById('saveButton').onclick=async()=>{
+  const button=document.getElementById('saveButton');
+  const oldText=button.textContent;
+  button.disabled=true;
+  button.textContent='Menyimpan...';
+  els.status.textContent='Menyimpan data FDT...';
+  try{
+    if(isInboundReadOnlyArea(els.fields.areaArea.value)) throw new Error('Coding sumber inbound-only read-only; ubah pada spreadsheet sumber.');
+    if(!els.fields.areaArea.value) throw new Error('AREA wajib dipilih');
+    const _dummyArea=isDummyArea();
+    const _oltValue=_dummyArea ? manualOlt() : els.fields.oltInitial.value;
+    if(!_oltValue) throw new Error(_dummyArea ? 'OLT wajib diisi' : 'OLT wajib dipilih');
+    if(_dummyArea && !manualUnit()) throw new Error('Unit OLT wajib diisi');
+    if(els.sharing.checked && !els.fields.recordId.value && !selectedShare()) throw new Error('Pilih FDT sharing dari Unit OLT ini.');
+    const id=els.fields.recordId.value;
+    const isBulk=bulkEditMode && selectedIds.size>0;
+    const method=isBulk||id?'PUT':'POST';
+    const url=isBulk?'/api/fdt-coding/records/bulk':(id?`/api/fdt-coding/records/${id}`:'/api/fdt-coding/records');
+    await api(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});
+    clearForm();
+    currentPage=1;
+    await refresh();
+    els.status.textContent='Data FDT tersimpan.';
+  }catch(err){
+    console.error('Gagal simpan FDT:', err);
+    els.status.textContent=`Gagal simpan: ${err.message || err}`;
+    popupFeedback('FDT Coding', `Gagal simpan FDT: ${err.message || err}`, 'error');
+  }finally{
+    button.disabled=!FDT_CAN_WRITE || isInboundReadOnlyArea(els.fields.areaArea.value);
+    button.textContent=oldText;
+  }
+};
+els.body.onclick=async(ev)=>{ const select=ev.target.dataset.select, edit=ev.target.dataset.edit, del=ev.target.dataset.del; if(select){ ev.target.checked ? selectedIds.add(String(select)) : selectedIds.delete(String(select)); updateBulkActions(); } if(edit){ fillForm(records.find(r=>String(r.id)===String(edit))||{}).catch(err=>{ els.status.textContent=`Gagal membuka data: ${err.message||err}`; }); } if(del && confirm('Hapus record ini?')){ await api(`/api/fdt-coding/records/${del}`,{method:'DELETE'}); selectedIds.delete(String(del)); await refresh(); } };
+els.pagination.onclick=(ev)=>{ const page=Number(ev.target.dataset.page||0); if(!page || ev.target.disabled) return; currentPage=page; loadRecords(); };
+els.selectAll.onchange=()=>{ records.forEach(row=>{ if(!FDT_CAN_WRITE || isInboundReadOnlyRecord(row)){ selectedIds.delete(String(row.id)); return; } els.selectAll.checked ? selectedIds.add(String(row.id)) : selectedIds.delete(String(row.id)); }); loadRecords(); };
+els.bulkEdit.onclick=startBulkEdit;
+els.bulkDelete.onclick=async()=>{ if(!selectedIds.size || els.bulkDelete.disabled) return; if(!confirm(`Hapus ${selectedIds.size} record terpilih?`)) return; const ids=[...selectedIds]; els.bulkDelete.disabled=true; els.bulkDelete.textContent='Menghapus...'; try{ const data=await api('/api/fdt-coding/records/bulk',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})}); selectedIds.clear(); popupFeedback('FDT Coding', `${data.deleted} record berhasil dihapus`, 'success'); await refresh(); } finally { els.bulkDelete.textContent='Hapus Pilihan'; updateBulkActions(); } };
+updateOltDestination();
+updateFormMeta();
+refresh().catch(err=>{ els.status.textContent=err.message; });
+
+/* ---- Mode DUMMY: OLT, hostname, inisial, FDT ID & code diisi manual ---- */
+(function(){
+  const manual={
+    oltInitial: document.getElementById('oltInitialManual'),
+    oltUnit: document.getElementById('oltUnitManual')
+  };
+  const FREE=['hubId','oltHostname','oltNameInitial','fdtId','fdtCode'];
+  const AUTO_PLACEHOLDER={
+    hubId:'Otomatis dari Unit OLT',
+    oltHostname:'Otomatis dari Unit OLT',
+    oltNameInitial:'Otomatis dari Unit OLT',
+    fdtId:'Otomatis',
+    fdtCode:'Otomatis setelah Jumlah FDT diisi'
+  };
+  const FREE_PLACEHOLDER={
+    hubId:'Isi OLT ID bebas',
+    oltHostname:'Isi hostname bebas',
+    oltNameInitial:'Isi inisial OLT bebas',
+    fdtId:'Isi FDT ID bebas (boleh beberapa baris)',
+    fdtCode:'Isi FDT code bebas (boleh beberapa baris)'
+  };
+  function apply(){
+    const on=isDummyArea();
+    if(manual.oltInitial) manual.oltInitial.hidden=!on;
+    if(manual.oltUnit) manual.oltUnit.hidden=!on;
+    if(els.fields.oltInitial) els.fields.oltInitial.hidden=on;
+    if(els.fields.oltUnit) els.fields.oltUnit.hidden=on;
+    FREE.forEach(key=>{
+      const el=els.fields[key];
+      if(!el) return;
+      el.readOnly=!on;
+      el.placeholder=on ? FREE_PLACEHOLDER[key] : AUTO_PLACEHOLDER[key];
+    });
+    const hint=document.getElementById('formSubtitle');
+    if(hint && on) hint.textContent='Mode DUMMY: semua kolom OLT dan FDT diisi manual, tidak dikirim ke spreadsheet.';
+  }
+
+  const basePayload=payload;
+  payload=function(){
+    const data=basePayload();
+    if(isDummyArea()){
+      data.area='DUMMY';
+      data.olt_initial=manualOlt().toUpperCase();
+      data.sheet_name=data.olt_initial;
+      data.hub_id=(els.fields.hubId.value||'').trim();
+      data.olt_hostname=(els.fields.oltHostname.value||'').trim();
+      data.olt_name_initial=(els.fields.oltNameInitial.value||'').trim().toUpperCase();
+      data.fdt_ids=parseFdtIdLines();
+      data.fdt_id=(els.fields.fdtId.value||'').trim().split('\n')[0].trim();
+      const code=(els.fields.fdtCode.value||'').trim().split('\n')[0].trim();
+      if(code) data.fdt_code=code;
+      data.cluster_initial=(els.fields.clusterInitial.value||'').trim().toUpperCase();
+    }
+    return data;
+  };
+
+  const baseGenerate=updateGeneratedFdtCodes;
+  updateGeneratedFdtCodes=function(){
+    if(isDummyArea() && !els.fields.recordId.value){ updateGenerateResultPanel(); return; }
+    return baseGenerate.apply(this, arguments);
+  };
+
+  const baseHub=updateHubFromOlt;
+  updateHubFromOlt=function(){
+    if(isDummyArea()){ apply(); updateFormMeta(); return; }
+    return baseHub.apply(this, arguments);
+  };
+
+  const baseClear=clearForm;
+  clearForm=function(){
+    baseClear.apply(this, arguments);
+    if(manual.oltInitial) manual.oltInitial.value='';
+    if(manual.oltUnit) manual.oltUnit.value='';
+    apply();
+  };
+
+  if(els.fields.areaArea){
+    els.fields.areaArea.addEventListener('change',()=>{
+      if(isDummyArea()){
+        if(manual.oltInitial) manual.oltInitial.value='';
+        if(manual.oltUnit) manual.oltUnit.value='';
+        els.fields.hubId.value='';
+        els.fields.oltHostname.value='';
+        els.fields.oltNameInitial.value='';
+        els.fields.fdtId.value='';
+        els.fields.fdtCode.value='';
+      }
+      apply();
+      updateFormMeta();
+    });
+  }
+  [manual.oltInitial, manual.oltUnit, els.fields.hubId, els.fields.oltHostname,
+   els.fields.oltNameInitial, els.fields.fdtId, els.fields.fdtCode,
+   els.fields.clusterInitial].forEach(el=>{
+    if(el) el.addEventListener('input',()=>updateFormMeta());
+  });
+  apply();
+})();
+</script>
+
+</body>
+</html>
+
+
+

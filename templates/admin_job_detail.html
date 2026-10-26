@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Job Detail - EVA Admin</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif}header{background:#020617;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;gap:16px;align-items:center}h1{margin:0;font-size:22px}.sub{margin:4px 0 0;color:#cbd5e1;font-size:13px}.btn{border:0;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}.ghost{background:rgba(255,255,255,.1);color:#fff}.wrap{padding:24px;display:grid;gap:16px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.08);overflow:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.kv{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px}.k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}.v{font-size:14px;margin-top:5px;word-break:break-word}.mono,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:#0f172a;color:#e2e8f0;border-radius:14px;padding:14px;overflow:auto;max-height:460px}.log{border-bottom:1px solid #e2e8f0;padding:8px 0;font-size:13px}.sev{font-weight:800}.ERROR{color:#991b1b}.WARNING{color:#a16207}.SUCCESS{color:#166534}.INFO{color:#1d4ed8}
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Job Detail</h1>
+      <p class="sub mono">{{ job.job_id or 'Not Found' }}</p>
+    </div>
+    <div style="display:flex;gap:10px"><a class="btn ghost" href="/admin/jobs">Jobs</a><a class="btn ghost" href="/admin">Dashboard</a></div>
+  </header>
+  <main class="wrap">
+    <section class="card">
+      <h2 style="margin-top:0">Summary</h2>
+      <div class="grid">
+        {% for key in ['status','progress','message','error','scope_type','network_type','output_mode','created_at','updated_at','store_backend'] %}
+        <div class="kv"><div class="k">{{ key }}</div><div class="v">{{ job.get(key) }}</div></div>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">File Input (upload user)</h2>
+      {% if job.get('input_downloads') %}
+        <div class="grid">
+          {% for f in job.get('input_downloads') %}
+          <div class="kv">
+            <div class="k">file {{ f.index }}</div>
+            <div class="v" style="margin-top:6px;">
+              <span class="mono">{{ f.name }}</span>
+              <div style="margin-top:4px;color:#64748b;font-size:12px;">{{ '{:,}'.format(f.bytes).replace(',', '.') }} byte</div>
+              <a class="btn" style="margin-top:8px;background:#0f172a;color:#fff;" href="{{ f.url }}">Unduh file asli</a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin:0;color:#64748b;font-size:13px;font-style:italic;">
+          File asli sudah dibersihkan dari server (retensi 24 jam), atau job ini tidak menerima upload user.
+        </p>
+      {% endif %}
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">Outputs</h2>
+      <div class="grid">
+        {% for key in ['output_path','boq_output_path','dxf_output_path','astri_output_path','hpdb_output_path'] %}
+        <div class="kv"><div class="k">{{ key }}</div><div class="v mono">{{ job.get(key) }}</div></div>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">Logs</h2>
+      {% for log in job.get('logs', []) %}
+        <div class="log"><span class="sev {{ log.get('severity') }}">{{ log.get('severity') }}</span> <span class="mono">#{{ log.get('seq') }}</span> {{ log.get('message') }}</div>
+      {% endfor %}
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">Raw JSON</h2>
+      <pre>{{ job | tojson(indent=2) }}</pre>
+    </section>
+  </main>
+</body>
+</html>

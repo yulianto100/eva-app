@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hubungi support — EVA by DYENA</title>
+  <meta name="eva-csrf" content="{{ eva_account.csrf }}">
+  <meta name="eva-role" content="{{ eva_account.role }}">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f4f8f6">
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-icon.svg?v=20260923-green">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-account.css') }}?v=support-20261020-v5">
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=support-20261020-v5" defer></script>
+</head>
+<body class="eva-account-page eva-support-page" data-eva-support-page>
+  <a class="account-skip" href="#support-main">Lewati ke support</a>
+  <header class="account-topbar">
+    <div class="account-shell account-topbar-inner">
+      <a class="account-brand" href="/" aria-label="EVA by DYENA, kembali ke workspace"><strong>EVA</strong><span>by DYENA</span></a>
+      <nav class="support-nav" aria-label="Navigasi pribadi"><a class="account-back" href="/account">Akun saya</a><a class="account-back" href="/">Kembali ke EVA</a></nav>
+    </div>
+  </header>
+  <main id="support-main" class="account-shell" tabindex="-1">
+    <div class="account-heading support-heading"><div><p class="account-eyebrow">BANTUAN PRIBADI</p><h1>Hubungi support</h1><p>Kirim kendala, lihat balasan dan status dari tim EVA.</p></div><button id="support-new" class="account-button account-primary" type="button">Tiket baru</button></div>
+    <div class="support-layout">
+      <section class="account-card support-sidebar" aria-labelledby="support-list-title">
+        <div class="support-section-head"><h2 id="support-list-title">Tiket saya</h2><button id="support-refresh" class="account-button account-secondary" type="button">Muat ulang</button></div>
+        <p id="support-list-feedback" class="account-note" role="status" aria-live="polite">Memuat tiket…</p>
+        <ul id="support-tickets" class="support-tickets" aria-label="Tiket pribadi"></ul>
+        <div class="support-pages"><p id="support-summary" class="account-note"></p><div><button id="support-prev" class="account-button account-secondary" type="button" disabled>Sebelumnya</button><button id="support-next" class="account-button account-secondary" type="button" disabled>Berikutnya</button></div></div>
+      </section>
+      <section id="support-thread" class="account-card support-thread" aria-labelledby="support-thread-title">
+        <h2 id="support-thread-title" tabindex="-1">Percakapan tiket</h2>
+        <div id="support-empty" class="support-empty"><p id="support-selection" class="account-note">Pilih tiket untuk membaca percakapan, atau buat tiket baru.</p><button id="support-new-inline" class="account-button account-primary" type="button">Buat tiket baru</button></div>
+        <div id="support-conversation" hidden>
+          <div class="support-ticket-meta"><p id="support-ticket-reference" class="account-note"></p><span id="support-ticket-status" class="support-status"></span></div>
+          <p id="support-delivery" class="account-note support-delivery" role="status" aria-live="polite" aria-atomic="true" hidden></p>
+          <p id="support-thread-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+          <div id="support-messages" class="support-messages" tabindex="0" role="region" aria-label="Pesan tiket, gulir untuk membaca"></div>
+          <button id="support-more" class="account-button account-secondary" type="button" hidden>Muat pesan berikutnya</button>
+          <p id="support-resolved" class="account-note" hidden>Tiket selesai. Buka kembali sebelum mengirim balasan baru.</p>
+          <button id="support-reopen" class="account-button account-secondary" type="button" hidden>Buka kembali</button>
+          <form id="support-reply" novalidate>
+            <label for="support-reply-message">Balasan</label><textarea id="support-reply-message" name="message" maxlength="4000" rows="3" aria-describedby="support-reply-privacy support-retention" disabled></textarea>
+            <label for="support-reply-images">Gambar balasan</label><input id="support-reply-images" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-describedby="support-reply-image-help support-reply-count support-retention" disabled>
+            <p id="support-reply-image-help" class="account-note">Maksimal 3 gambar PNG, JPEG atau WebP, masing-masing 5 MiB. Potong atau tutupi data sensitif sebelum mengirim.</p><p id="support-reply-count" class="account-note" role="status">0 / 3 gambar</p>
+            <ul id="support-reply-previews" class="support-previews" aria-label="Gambar balasan terpilih"></ul>
+            <p id="support-reply-privacy" class="account-note">Balasan dan gambar dibagikan melalui Telegram. Jangan kirim password, token atau data pribadi.</p>
+            <p id="support-reply-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+            <div class="support-actions"><button id="support-reply-send" class="account-button account-primary" type="submit" disabled>Kirim balasan</button></div>
+          </form>
+        </div>
+        <form id="support-create" hidden novalidate>
+          <label for="support-subject">Subjek</label><input id="support-subject" name="subject" required maxlength="120" autocomplete="off">
+          <label for="support-create-message">Pesan</label><textarea id="support-create-message" name="message" required maxlength="4000" rows="5" aria-describedby="support-privacy support-retention"></textarea>
+          <label for="support-module">Modul (opsional)</label><select id="support-module" name="module"><option value="">Pilih modul</option><option value="convert">Convert</option><option value="kmz">KMZ</option><option value="dxf">DXF</option><option value="boq">Add BOQ</option><option value="hpdb">HPDB</option><option value="astri">ASTRI</option><option value="stella">STELLA</option><option value="gdr">GDR</option><option value="account">Akun</option><option value="billing">Langganan</option><option value="other">Lainnya</option></select>
+          <label for="support-job">Job ID (opsional)</label><input id="support-job" name="job_id" maxlength="32" pattern="[0-9a-f]{32}" autocomplete="off" aria-describedby="support-job-help"><p id="support-job-help" class="account-note">Hanya pekerjaan milik akun ini. Tidak ada log atau hasil yang dikirim otomatis.</p>
+          <label for="support-create-images">Gambar tiket</label><input id="support-create-images" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-describedby="support-create-image-help support-create-count support-retention">
+          <p id="support-create-image-help" class="account-note">Maksimal 3 gambar PNG, JPEG atau WebP, masing-masing 5 MiB. Gambar diperiksa kembali oleh server.</p><p id="support-create-count" class="account-note" role="status">0 / 3 gambar</p>
+          <ul id="support-create-previews" class="support-previews" aria-label="Gambar tiket terpilih"></ul>
+          <p id="support-privacy" class="account-note">Teks dan gambar yang Anda kirim dibagikan kepada tim support melalui Telegram. Potong atau tutupi password, token dan data pribadi pada gambar. Jangan kirim rahasia.</p>
+          <p id="support-create-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+          <div class="support-actions"><button id="support-create-send" class="account-button account-primary" type="submit">Kirim tiket</button><button id="support-create-cancel" class="account-button account-secondary" type="button">Batal</button></div>
+        </form>
+        <p id="support-retention" class="account-note support-retention">Gambar dihapus dari server EVA 90 hari setelah tiket selesai. Teks percakapan tetap disimpan. Salinan di Telegram dikelola terpisah oleh tim support; penghapusan dari EVA tidak menghapus salinan Telegram.</p>
+      </section>
+    </div>
+    <footer class="account-footer">EVA by DYENA · Percakapan hanya untuk akun ini</footer>
+  </main>
+
+  <script>
+    if (window.self !== window.top) {
+      document.body.classList.add('in-iframe');
+    }
+  </script>
+</body>
+
+</html>
