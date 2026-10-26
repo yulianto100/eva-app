@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ManCore Dashboard - EVA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=eva-mancore-20260627-multiFDTeva-20260618-download-document-label">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { overflow-x: auto; }
+    body { 
+      background: 
+        radial-gradient(circle at 18% -8%, rgba(93, 187, 154, 0.18), transparent 34rem),
+        radial-gradient(circle at 92% 4%, rgba(122, 216, 180, 0.16), transparent 30rem),
+        linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 18rem),
+        #FFFFFF;
+      color: #171717; 
+      margin: 0; 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      font-feature-settings: "cv11", "ss01";
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Main Container */
+    .coreman-page { 
+      width: 100%; 
+      max-width: 1600px; 
+      margin: 0 auto; 
+      padding: 2rem 1.5rem; 
+      display: grid; 
+      gap: 1.5rem;
+    }
+    
+    /* Hero Section */
+    .hero { 
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      border-radius: 16px;
+      padding: 2rem 2.5rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2rem;
+      border: 1px solid #DFDFDF;
+    }
+    
+    .hero-content h1 { 
+      margin: 0 0 0.5rem 0;
+      font-size: 2.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #3ECF8E 0%, #24B47E 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.02em;
+    }
+    
+    .hero-content p { 
+      margin: 0;
+      color: #707070;
+      font-size: 1rem;
+      line-height: 1.6;
+      max-width: 600px;
+    }
+    
+    .hero-actions { 
+      display: flex;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 0.78rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.86rem;
+      cursor: pointer;
+      transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+      letter-spacing: 0.005em;
+    }
+    
+    .btn-primary {
+      background: #3ECF8E;
+      color: #083127;
+      box-shadow: 0 10px 22px rgba(93, 187, 154, 0.24);
+    }
+    
+    .btn-primary:hover {
+      background: #4ADE80;
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(93, 187, 154, 0.3);
+    }
+    
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+    
+    .btn-secondary {
+      background: white;
+      color: #212121;
+      border: 1px solid #DFDFDF;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(62, 207, 142, 0.08);
+      border-color: #C7C7C7;
+      transform: translateY(-1px);
+    }
+    
+    .btn-danger {
+      background: #FF2201;
+      color: white;
+      padding: 0.5rem 1rem;
+      font-size: 0.74rem;
+    }
+    
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+    
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+      border: 1px solid #DFDFDF;
+    }
+    
+    /* Summary Grid */
+    .summary-grid { 
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      padding: 0;
+    }
+    
+    .summary-card {
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid #DFDFDF;
+      transition: border-color 0.16s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .summary-card:hover {
+      box-shadow: 0 8px 24px rgba(93, 187, 154, 0.10);
+      border-color: #3ECF8E;
+    }
+    
+    .summary-card span {
+      display: block;
+      font-size: 0.66rem;
+      color: #707070;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.5rem;
+    }
+    
+    .summary-card strong {
+      display: block;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #3ECF8E 0%, #24B47E 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    /* Section Headers */
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.5rem 2rem;
+      background: linear-gradient(135deg, #f8f9ff 0%, #f1f5f9 100%);
+      border-bottom: 1px solid #DFDFDF;
+    }
+    
+    .section-head h2 {
+      margin: 0 0 0.25rem 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #171717;
+    }
+    
+    .section-head p {
+      margin: 0;
+      font-size: 0.875rem;
+      color: #707070;
+    }
+    
+    .section-body {
+      padding: 2rem;
+      display: grid;
+      gap: 1.5rem;
+    }
+    
+    /* Pills/Badges */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      background: linear-gradient(135deg, #3ECF8E 0%, #24B47E 100%);
+      color: #083127;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    
+    /* Tables */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid #DFDFDF;
+      position: relative;
+    }
+    
+    .table-wrap::after {
+      content: 'Scroll untuk melihat lebih banyak';
+      position: sticky;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, transparent, #f1f5f9 20%, #f1f5f9);
+      padding: 0.5rem 1rem;
+      font-size: 0.7rem;
+      color: #707070;
+      text-align: right;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .table-wrap:hover::after {
+      opacity: 1;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 800px;
+    }
+    
+    th, td {
+      padding: 1rem;
+      text-align: left;
+      font-size: 0.875rem;
+      border-bottom: 1px solid #DFDFDF;
+    }
+    
+    th {
+      background: linear-gradient(135deg, #f8f9ff 0%, #f1f5f9 100%);
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+    }
+    
+    tbody tr:nth-child(even) {
+      background: #FAFAFA;
+    }
+    
+    tbody tr:hover {
+      background: rgba(62, 207, 142, 0.05);
+    }
+    
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+    
+    /* Forms */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.25rem;
+    }
+    
+    .frow {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .frow label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #475569;
+    }
+    
+    .ui-input, select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid #DFDFDF;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+      background: white;
+      font-weight: 500;
+      outline: none;
+    }
+    
+    .ui-input::placeholder {
+      color: #707070;
+    }
+    
+    .ui-input:focus, select:focus {
+      border-color: rgba(93, 187, 154, 0.65);
+      box-shadow: 0 0 0 3px rgba(93, 187, 154, 0.16);
+    }
+    
+    /* Grid Layout */
+    .grid {
+      display: grid;
+      gap: 1.5rem;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+    
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: 1 / -1; }
+    
+    .card.subtle {
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.78);
+    }
+    
+    .card.subtle .section-head {
+      background: #FFFFFF;
+      padding: 1rem 1.25rem;
+    }
+    
+    .card.subtle .section-head h2 {
+      font-size: 0.95rem;
+    }
+    
+    .card.subtle .section-head p {
+      font-size: 0.78rem;
+    }
+    
+    .card.subtle .section-body {
+      padding: 1rem 1.25rem;
+    }
+    
+    .card.subtle table {
+      min-width: 720px;
+    }
+    
+    .card.subtle th,
+    .card.subtle td {
+      padding: 0.7rem 0.75rem;
+      font-size: 0.78rem;
+    }
+    
+
+
+    .mancore-input-card {
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      border-radius: 16px;
+      padding: 1.5rem 2rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      border: 1px solid #DFDFDF;
+    }
+    .mancore-input-card h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #171717;
+    }
+    .mancore-input-card .subtitle {
+      margin: 0 0 1.25rem 0;
+      color: #707070;
+      font-size: 0.9rem;
+    }
+    .mancore-chat-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .mancore-chat-textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 1rem 1.25rem;
+      border: 2px solid #E0E0E0;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: #FAFBFC;
+      color: #171717;
+    }
+    .mancore-chat-textarea:focus {
+      outline: none;
+      border-color: #3ECF8E;
+      box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.15);
+      background: #FFFFFF;
+    }
+    .mancore-chat-textarea::placeholder {
+      color: #A0A0A0;
+      font-style: italic;
+    }
+    .mancore-form-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .mancore-form-actions .btn-primary {
+      padding: 0.75rem 1.5rem;
+      font-weight: 600;
+    }
+    .mancore-status {
+      margin-top: 1rem;
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      animation: fadeIn 0.3s ease;
+    }
+    .mancore-status.ok {
+      background: #F0FDF4;
+      color: #166534;
+      border: 1px solid #BBF7D0;
+    }
+    .mancore-status.err {
+      background: #FEF2F2;
+      color: #991B1B;
+      border: 1px solid #FECACA;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Spreadsheet Section */
+    .sheet-toolbar {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      padding: 1.5rem 2rem;
+      background: #FAFAFA;
+      border-bottom: 1px solid #DFDFDF;
+    }
+    
+    .sheet-toolbar .frow {
+      min-width: min(300px, 100%);
+      flex: 1;
+    }
+    
+    .sheet-tabs {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding: 1rem 2rem;
+      background: #FAFAFA;
+      border-bottom: 1px solid #DFDFDF;
+    }
+    
+    .sheet-tab {
+      white-space: nowrap;
+      padding: 0.625rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+      background: white;
+      border: 1px solid #DFDFDF;
+      color: #707070;
+    }
+    
+    .sheet-tab:hover {
+      border-color: #3ECF8E;
+      color: #24B47E;
+    }
+    
+    .sheet-tab.active {
+      background: linear-gradient(135deg, #3ECF8E 0%, #24B47E 100%);
+      color: #083127;
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(93, 187, 154, 0.24);
+    }
+    
+    /* View Filter Tabs */
+    .view-filters {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem 2rem;
+      background: #FFFFFF;
+      border-bottom: 1px solid #DFDFDF;
+      align-items: center;
+    }
+    
+    .view-filters-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #707070;
+      margin-right: 0.5rem;
+    }
+    
+    .view-filter-tab {
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+      background: #F8F9FA;
+      border: 1px solid #E0E0E0;
+      color: #707070;
+    }
+    
+    .view-filter-tab:hover {
+      border-color: #3ECF8E;
+      background: rgba(62, 207, 142, 0.05);
+      color: #24B47E;
+    }
+    
+    .view-filter-tab.active {
+      background: #3ECF8E;
+      color: #083127;
+      border-color: #3ECF8E;
+      box-shadow: 0 2px 8px rgba(93, 187, 154, 0.2);
+    }
+    
+    .view-filter-tab .count {
+      display: inline-block;
+      margin-left: 0.4rem;
+      padding: 0.1rem 0.4rem;
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    
+    .view-filter-tab.active .count {
+      background: rgba(8, 49, 39, 0.2);
+    }
+    
+    .sheet-table {
+      min-width: 1200px;
+      font-size: 0.8rem;
+    }
+    
+    .sheet-table th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      text-align: center;
+      padding: 0.6rem 0.4rem;
+      font-size: 0.65rem;
+      white-space: nowrap;
+      max-width: 8rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .sheet-table th:hover {
+      overflow: visible;
+      white-space: normal;
+      max-width: none;
+      background: #e2e8f0;
+    }
+    
+    .sheet-table td {
+      padding: 0.4rem 0.3rem;
+    }
+    
+    .sheet-table .row-head {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: #f1f5f9;
+      min-width: 3rem;
+      text-align: center;
+      font-weight: 800;
+      font-size: 0.75rem;
+    }
+    
+    .sheet-table td.row-head {
+      z-index: 1;
+    }
+    
+    /* Zebra striping for sheet table */
+    .sheet-table tbody tr:nth-child(even) {
+      background: #FAFAFA;
+    }
+    
+    .sheet-table tbody tr:nth-child(odd) {
+      background: white;
+    }
+    
+    .sheet-table tbody tr:hover {
+      background: rgba(62, 207, 142, 0.05);
+    }
+    
+    .sheet-cell {
+      width: 100%;
+      min-width: 5rem;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      padding: 0.4rem 0.3rem;
+      text-align: center;
+      font-size: 0.75rem;
+    }
+    
+    .sheet-cell:focus {
+      outline: 1px solid #3ECF8E;
+      background: rgba(62, 207, 142, 0.08);
+      border-radius: 3px;
+    }
+    
+    /* Compact tube/core number cells */
+    .sheet-cell.fiber-tube-1,
+    .sheet-cell.fiber-tube-2,
+    .sheet-cell.fiber-tube-3,
+    .sheet-cell.fiber-tube-4,
+    .sheet-cell.fiber-tube-5,
+    .sheet-cell.fiber-tube-6,
+    .sheet-cell.fiber-tube-7,
+    .sheet-cell.fiber-tube-8,
+    .sheet-cell.fiber-tube-9,
+    .sheet-cell.fiber-tube-10,
+    .sheet-cell.fiber-tube-11,
+    .sheet-cell.fiber-tube-12,
+    .sheet-cell.fiber-core-1,
+    .sheet-cell.fiber-core-2,
+    .sheet-cell.fiber-core-3,
+    .sheet-cell.fiber-core-4,
+    .sheet-cell.fiber-core-5,
+    .sheet-cell.fiber-core-6,
+    .sheet-cell.fiber-core-7,
+    .sheet-cell.fiber-core-8,
+    .sheet-cell.fiber-core-9,
+    .sheet-cell.fiber-core-10,
+    .sheet-cell.fiber-core-11,
+    .sheet-cell.fiber-core-12 {
+      min-width: 3rem;
+      font-weight: 700;
+      border-radius: 4px;
+    }
+    
+    /* Fiber optic color coding - 144 fiber standard (12 tubes ?? 12 cores) */
+    .fiber-tube-1, .fiber-core-1 { background-color: rgb(0, 0, 255) !important; color: white !important; }
+    .fiber-tube-2, .fiber-core-2 { background-color: rgb(255, 125, 0) !important; color: black !important; }
+    .fiber-tube-3, .fiber-core-3 { background-color: rgb(51, 166, 82) !important; color: white !important; }
+    .fiber-tube-4, .fiber-core-4 { background-color: rgb(140, 82, 41) !important; color: white !important; }
+    .fiber-tube-5, .fiber-core-5 { background-color: rgb(166, 166, 166) !important; color: black !important; }
+    .fiber-tube-6, .fiber-core-6 { background-color: rgb(255, 255, 255) !important; color: black !important; border: 1px solid #DFDFDF !important; }
+    .fiber-tube-7, .fiber-core-7 { background-color: rgb(255, 0, 0) !important; color: white !important; }
+    .fiber-tube-8, .fiber-core-8 { background-color: rgb(0, 0, 0) !important; color: white !important; }
+    .fiber-tube-9, .fiber-core-9 { background-color: rgb(255, 217, 0) !important; color: black !important; }
+    .fiber-tube-10, .fiber-core-10 { background-color: rgb(115, 51, 191) !important; color: white !important; }
+    .fiber-tube-11, .fiber-core-11 { background-color: rgb(255, 105, 181) !important; color: black !important; }
+    .fiber-tube-12, .fiber-core-12 { background-color: rgb(0, 191, 204) !important; color: white !important; }
+    
+    .sheet-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    
+    .sheet-actions button {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.7rem;
+    }
+    
+    .col-source-name .sheet-cell,
+    .col-dest-name .sheet-cell {
+      min-width: 12rem;
+      text-align: left;
+    }
+    
+    .col-status .sheet-cell {
+      min-width: 5rem;
+      font-weight: 700;
+    }
+
+    .col-fdt .sheet-cell {
+      font-size: 0.85rem !important;
+      font-weight: 700 !important;
+      text-align: center !important;
+    }
+    
+    /* Compact specific columns */
+    .sheet-table th:nth-child(2),
+    .sheet-table td:nth-child(2) {
+      min-width: 5rem;
+    }
+    
+    .sheet-table th:nth-child(5),
+    .sheet-table td:nth-child(5),
+    .sheet-table th:nth-child(6),
+    .sheet-table td:nth-child(6),
+    .sheet-table th:nth-child(8),
+    .sheet-table td:nth-child(8),
+    .sheet-table th:nth-child(9),
+    .sheet-table td:nth-child(9) {
+      min-width: 3.5rem;
+    }
+    
+    /* Utilities */
+    .toolbar {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    
+    .empty {
+      padding: 2rem;
+      text-align: center;
+      color: #707070;
+      font-style: italic;
+    }
+    
+    .muted {
+      color: #707070;
+    }
+    
+    .danger {
+      color: #FF2201;
+      font-weight: 700;
+    }
+    
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .span-7, .span-6, .span-5 {
+        grid-column: 1 / -1;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .coreman-page {
+        padding: 1rem;
+      }
+      
+      .hero {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 1.5rem;
+      }
+      
+      .hero-content h1 {
+        font-size: 1.75rem;
+      }
+      
+      .hero-actions {
+        width: 100%;
+        flex-direction: column;
+      }
+      
+      .hero-actions .btn {
+        width: 100%;
+        justify-content: center;
+      }
+      
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 {
+        grid-column: 1 / -1;
+      }
+      
+      .section-head {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 1.25rem 1.5rem;
+      }
+      
+      .section-body {
+        padding: 1.5rem;
+      }
+      
+      .sheet-toolbar {
+        padding: 1.25rem 1.5rem;
+      }
+      
+      .sheet-tabs {
+        padding: 0.75rem 1.5rem;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/eva-redesign.css?v=popup-neutral-20260819-211055">
+
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=google-auth-v4"></script>
+</head>
+<body>
+  <main class="coreman-page">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-content">
+        <h1>ManCore Dashboard</h1>
+        <p>Kelola data core, registry sheet OLT per segment, dan pantau aktivitas bot seperlunya.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="resetLocalDataButton" class="btn btn-secondary" type="button">Reset Data</button>
+        <button id="refreshButton" class="btn btn-primary" type="button">Muat Ulang</button>
+      </div>
+    </section>
+
+    <!-- Input Mancore -->
+    <section class="mancore-input-card" id="mancoreInputSection">
+      <h3>Input Mancore</h3>
+      <p class="subtitle">Paste data mancore, lalu kirim. Format sama seperti chat bot.</p>
+      <form id="mancoreInputForm" class="mancore-chat-form">
+        <textarea class="mancore-chat-textarea" id="mancoreInputText" required spellcheck="false"
+          placeholder="MUTIARA GADING TIMUR RW 24
+OLT Taman Narogong segment 5
+Tube 12 core 5.6.7.8.9"></textarea>
+        <div class="mancore-form-actions">
+          <button class="btn btn-primary" type="submit">Kirim Mancore</button>
+        </div>
+      </form>
+      
+    </section>
+
+    <!-- Summary Cards -->
+    <section class="card">
+      <div class="summary-grid" id="summaryGrid"></div>
+    </section>
+
+    <!-- Spreadsheet Editor -->
+    <section class="card" aria-label="ManCore spreadsheet">
+      <div class="section-head">
+        <div>
+          <h2>Spreadsheet ManCore</h2>
+          <p class="muted">Monitor, edit, dan clear row langsung dari Google Sheets. Warna tube/core mengikuti standar 144 fiber optic.</p>
+        </div>
+        <span class="pill" id="spreadsheetStatus">Belum dimuat</span>
+      </div>
+      <div class="sheet-toolbar">
+        <div class="frow">
+          <label for="sheetSelect">Pilih Sheet OLT / Segment</label>
+          <select id="sheetSelect" class="ui-input"></select>
+        </div>
+        <button id="loadSheetRowsButton" class="btn btn-primary" type="button">Muat Sheet</button>
+      </div>
+      <div id="sheetTabs" class="sheet-tabs" aria-label="Sheet tabs"></div>
+      <div class="view-filters">
+        <span class="view-filters-label">Tampilkan:</span>
+        <button type="button" class="view-filter-tab active" data-view-filter="all">
+          Semua <span class="count" id="countAll">0</span>
+        </button>
+        <button type="button" class="view-filter-tab" data-view-filter="filled">
+          Terisi <span class="count" id="countFilled">0</span>
+        </button>
+        <button type="button" class="view-filter-tab" data-view-filter="empty">
+          Kosong <span class="count" id="countEmpty">0</span>
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="sheet-table">
+          <thead id="spreadsheetHead"></thead>
+          <tbody id="spreadsheetBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Supporting Tools -->
+    <section class="grid">
+      <!-- Sheet Manager -->
+      <article class="card span-12">
+        <div class="section-head">
+          <div>
+            <h2>Sheet Manager</h2>
+            <p class="muted">Register sheet per OLT per segment jika bot perlu bootstrap sheet baru</p>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="frow">
+              <label for="sheetOltName">OLT</label>
+              <input id="sheetOltName" class="ui-input" placeholder="OLT SEGARA CITY">
+            </div>
+            <div class="frow">
+              <label for="sheetSegmentName">Segment</label>
+              <input id="sheetSegmentName" class="ui-input" placeholder="1">
+            </div>
+            <div class="frow">
+              <label for="sheetCoreFeeder">Core Feeder</label>
+              <select id="sheetCoreFeeder" class="ui-input">
+                <option value="96">96C (8 tube)</option>
+                <option value="144" selected>144C (12 tube)</option>
+                <option value="288">288C (24 tube)</option>
+              </select>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="saveSheetButton" class="btn btn-primary" type="button">Simpan Sheet</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>OLT</th>
+                  <th>Segment</th>
+                  <th>Sheet</th>
+                  <th>Core Feeder</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="sheetsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+
+
+    </section>
+  </main>
+
+  <script src="/static/js/toast.js?v=popup-neutral-20260819-211055"></script>
+  <script>
+    const state = { 
+      summary: null, 
+      batches: [], 
+      sheets: [], 
+      logs: [], 
+      spreadsheetSheets: [], 
+      spreadsheetId: '',
+      activeSheet: '', 
+      activeViewFilter: 'all',
+      spreadsheetHeaders: [], 
+      spreadsheetRows: [],
+      spreadsheetRowsFiltered: [],
+      spreadsheetLayout: 'legacy_rows'
+    };
+
+    function esc(v) { 
+      return String(v ?? '').replace(/[&<>"]/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;'
+      }[ch])); 
+    }
+
+    function fmtTs(ts) { 
+      if (!ts) return '-'; 
+      return new Date(Number(ts) * 1000).toLocaleString('id-ID'); 
+    }
+
+    async function parseJsonResponse(response) { 
+      const data = await response.json().catch(() => ({})); 
+      if (!response.ok) throw new Error(data.error || 'Request gagal'); 
+      return data; 
+    }
+
+    function handleDashboardError(error, context = 'Request') {
+      const message = error?.message || 'Request gagal';
+      console.warn(`${context}: ${message}`);
+      const status = document.getElementById('spreadsheetStatus');
+      if (status) status.textContent = message;
+      const rows = document.getElementById('spreadsheetBody');
+      if (rows && !state.spreadsheetRows.length) {
+        rows.innerHTML = `<tr><td colspan="12" class="empty">${esc(message)}</td></tr>`;
+      }
+      const batchPill = document.getElementById('batchCountPill');
+      if (batchPill && /quota|429|rate limit|read requests/i.test(message)) {
+        batchPill.textContent = 'Google Sheets cooldown';
+      }
+    }
+
+    function renderSummary() { 
+      const root = document.getElementById('summaryGrid'); 
+      const s = state.summary || {}; 
+      const stats = [
+        ['Total Batch', s.total_batches || 0], 
+        ['Pending', s.pending_batches || 0], 
+        ['Sheet Registry', s.total_sheets || 0]
+      ]; 
+      root.innerHTML = stats.map(([k, v]) => 
+        `<article class="summary-card"><span>${esc(k)}</span><strong>${esc(v)}</strong></article>`
+      ).join(''); 
+    }
+
+    function renderBatches() { 
+      const root = document.getElementById("batchesBody"); if (!root) return; 
+      const rows = state.batches || []; 
+      const pill = document.getElementById("batchCountPill"); if (pill) pill.textContent = `${rows.length} batch`; 
+      root.innerHTML = rows.length ? rows.map((row) => 
+        `<tr>
+          <td>#${esc(row.id)}</td>
+          <td><strong>${esc(row.cluster_name)}</strong><div class="muted">${esc(row.source_sender || '-')}</div></td>
+          <td><span class="pill">${esc(row.status)}</span></td>
+          <td>${esc((row.detected_fdt_labels || []).join(', ') || row.detected_fdt_count || 0)}</td>
+          <td>${esc(row.selected_olt_name || '-')}</td>
+          <td>${esc(row.selected_segment_name || '-')}</td>
+          <td>${esc(fmtTs(row.updated_at))}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="7" class="empty">Belum ada batch OPM.</td></tr>'; 
+    }
+
+    function renderSheets() { 
+      const root = document.getElementById('sheetsBody');
+      if (!root) return; 
+      const rows = state.sheets || []; 
+      root.innerHTML = rows.length ? rows.map((row) => 
+        `<tr>
+          <td>${esc(row.olt_name)}</td>
+          <td>${esc(row.segment_name)}</td>
+          <td>${esc(row.sheet_name)}</td>
+          <td>${esc(row.row_count || '-')}C</td>
+          <td>${esc(row.status)}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="5" class="empty">Belum ada sheet registry.</td></tr>'; 
+    }
+
+    function renderLogs() { 
+      const root = document.getElementById('logsBody');
+      if (!root) return; 
+      const rows = state.logs || []; 
+      root.innerHTML = rows.length ? rows.map((row) => 
+        `<tr>
+          <td>${esc(fmtTs(row.created_at))}</td>
+          <td>${esc(row.event_type)}</td>
+          <td>${esc(row.actor_name || '-')}</td>
+          <td>${esc(row.source_chat_id || '-')}</td>
+          <td>${esc(row.message_text || '-')}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="5" class="empty">Belum ada audit log.</td></tr>'; 
+    }
+
+    function renderAll() { 
+      renderSummary(); 
+      renderBatches(); 
+      renderSheets(); 
+      renderLogs(); 
+      renderSpreadsheetSelectors(); 
+      renderSpreadsheetRows(); 
+    }
+
+    async function loadDashboard() { 
+      const payload = await fetch('/api/coreman/summary').then(parseJsonResponse); 
+      state.summary = payload.summary || {}; 
+      state.batches = payload.batches || []; 
+      state.sheets = payload.sheets || []; 
+      state.logs = payload.logs || []; 
+      renderAll(); 
+    }
+
+    async function loadSpreadsheetSheets() { 
+      const payload = await fetch('/api/coreman/spreadsheet/sheets').then(parseJsonResponse); 
+      state.spreadsheetId = payload.spreadsheet_id || '';
+      state.spreadsheetSheets = payload.sheets || []; 
+      if (!state.activeSheet && state.spreadsheetSheets.length) { 
+        const firstSegment = state.spreadsheetSheets.find((sheet) => sheet.is_segment_sheet) || state.spreadsheetSheets[0]; 
+        state.activeSheet = firstSegment.title; 
+      } 
+      renderSpreadsheetSelectors(); 
+      if (state.activeSheet) await loadSpreadsheetRows(state.activeSheet); 
+    }
+
+    async function loadSpreadsheetRows(sheetName) { 
+      state.activeSheet = sheetName;
+      state.activeViewFilter = 'all';
+      const payload = await fetch(`/api/coreman/spreadsheet/rows?sheet=${encodeURIComponent(sheetName)}&limit=1200`).then(parseJsonResponse); 
+      state.spreadsheetHeaders = payload.headers || []; 
+      state.spreadsheetRows = payload.rows || []; 
+      state.spreadsheetLayout = payload.layout || 'legacy_rows';
+      document.getElementById('spreadsheetStatus').textContent = `${payload.total || state.spreadsheetRows.length} row`; 
+      renderSpreadsheetSelectors(); 
+      renderSpreadsheetRows(); 
+    }
+
+    function renderSpreadsheetSelectors() { 
+      const select = document.getElementById('sheetSelect'); 
+      const tabs = document.getElementById('sheetTabs'); 
+      if (!select || !tabs) return; 
+      select.innerHTML = state.spreadsheetSheets.map((sheet) => 
+        `<option value="${esc(sheet.title)}"${sheet.title === state.activeSheet ? ' selected' : ''}>${esc(sheet.title)}</option>`
+      ).join(''); 
+      tabs.innerHTML = state.spreadsheetSheets.map((sheet) => 
+        `<button type="button" class="sheet-tab${sheet.title === state.activeSheet ? ' active' : ''}" data-sheet-tab="${esc(sheet.title)}">${esc(sheet.title)}</button>`
+      ).join(''); 
+    }
+
+    function getFiberColorClass(value, type) {
+      const num = parseInt(value);
+      if (!num || num < 1) return '';
+      const colorIndex = ((num - 1) % 12) + 1;
+      return `fiber-${type}-${colorIndex}`;
+    }
+
+    function isCoremanGridLayout() {
+      return state.spreadsheetLayout === 'coreman_grid'
+        || state.spreadsheetHeaders.some((header) => /cluster name/i.test(header))
+        || state.spreadsheetHeaders.some((header) => /hub feeder/i.test(header));
+    }
+
+    function isHiddenDashboardColumn(index) {
+      if (index <= 6) return true;
+      if (!isCoremanGridLayout()) return false;
+      return index === 7 || (index >= 12 && index <= 22) || index === 28 || index === 26 || index === 27 || [10, 15, 20].includes(index);
+    }
+
+    function visibleSpreadsheetColumns(headers) {
+      return headers
+        .map((header, index) => ({ header, index }))
+        .filter((column) => !isHiddenDashboardColumn(column.index));
+    }
+
+    function fiberColorClassForCell(index, value) {
+      const grid = isCoremanGridLayout();
+      const tubeCols = grid ? [9, 14, 19] : [3, 6, 13];
+      const coreCols = grid ? [11, 16, 21] : [4, 7, 14];
+      if (tubeCols.includes(index)) return getFiberColorClass(value, 'tube');
+      if (coreCols.includes(index)) return getFiberColorClass(value, 'core');
+      return '';
+    }
+
+    function cellClass(index) { 
+      if (isCoremanGridLayout()) {
+        if ([18].includes(index)) return 'col-status';
+        if ([23, 24, 25].includes(index)) return 'col-fdt';
+        return '';
+      }
+      return index === 2 ? 'col-source-name' : index === 15 ? 'col-dest-name' : index === 8 ? 'col-status' : ''; 
+    }
+
+    function isRowFilled(row) {
+      const values = row.values || [];
+      const significantFields = isCoremanGridLayout() ? [18, 23, 24, 25] : [1, 2, 5, 8, 11, 12, 15];
+      return significantFields.some(index => {
+        const val = String(values[index] || '').trim();
+        return val !== '' && val !== '-';
+      });
+    }
+
+    function applyViewFilter() {
+      const filter = state.activeViewFilter;
+      if (filter === 'all') {
+        state.spreadsheetRowsFiltered = state.spreadsheetRows;
+      } else if (filter === 'filled') {
+        state.spreadsheetRowsFiltered = state.spreadsheetRows.filter(isRowFilled);
+      } else if (filter === 'empty') {
+        state.spreadsheetRowsFiltered = state.spreadsheetRows.filter(row => !isRowFilled(row));
+      }
+      updateViewFilterCounts();
+    }
+
+    function updateViewFilterCounts() {
+      const total = state.spreadsheetRows.length;
+      const filled = state.spreadsheetRows.filter(isRowFilled).length;
+      const empty = total - filled;
+      
+      document.getElementById('countAll').textContent = total;
+      document.getElementById('countFilled').textContent = filled;
+      document.getElementById('countEmpty').textContent = empty;
+      
+      document.querySelectorAll('.view-filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.viewFilter === state.activeViewFilter);
+      });
+    }
+
+    function renderSpreadsheetRows() { 
+      const head = document.getElementById('spreadsheetHead'); 
+      const body = document.getElementById('spreadsheetBody'); 
+      if (!head || !body) return; 
+      
+      applyViewFilter();
+      
+      const headers = state.spreadsheetHeaders.length ? state.spreadsheetHeaders : [
+        'Source Type', 'Source Code', 'source name', 'Source Tube Number', 'Source Core Number', 
+        '(Sub)Feeder Code', 'Tube Number', 'Core Number', 'Status', 'Remarks', 'Closure Code', 
+        'Dest. Type', 'Dest. Code', 'Dest. Tube Number', 'Dest. Core Number', 'Dest. Name'
+      ]; 
+      const visibleColumns = visibleSpreadsheetColumns(headers);
+      head.innerHTML = `<tr><th class="row-head">Row</th>${visibleColumns.map((column) => `<th>${esc(column.header)}</th>`).join('')}</tr>`; 
+      
+      const rowsToRender = state.spreadsheetRowsFiltered;
+      body.innerHTML = rowsToRender.length ? rowsToRender.map((row) => {
+        const rowVals = row.values || [];
+        return `<tr data-row-number="${esc(row.row_number)}">
+          <td class="row-head">${esc(row.row_number)}</td>
+          ${visibleColumns.map((column) => {
+            const index = column.index;
+            const value = rowVals[index] || '';
+            const colorClass = fiberColorClassForCell(index, value);
+            return `<td class="${cellClass(index)}"><input class="sheet-cell ${colorClass}" data-row-cell="${esc(row.row_number)}" data-col="${index}" value="${esc(value)}" readonly></td>`;
+          }).join('')}
+        </tr>`
+      }).join('') : `<tr><td colspan="${visibleColumns.length + 1}" class="empty">Tidak ada row ${state.activeViewFilter === 'filled' ? 'terisi' : state.activeViewFilter === 'empty' ? 'kosong' : ''} untuk sheet ini.</td></tr>`; 
+    }
+
+    function valuesForRow(rowNumber) { 
+      const original = state.spreadsheetRows.find((row) => String(row.row_number) === String(rowNumber));
+      const values = original ? [...(original.values || [])] : [];
+      Array.from(document.querySelectorAll(`[data-row-cell="${CSS.escape(String(rowNumber))}"]`))
+        .forEach((input) => {
+          values[Number(input.dataset.col)] = input.value;
+        });
+      return values; 
+    }
+
+    async function saveSpreadsheetRow(rowNumber) { 
+      await fetch(`/api/coreman/spreadsheet/rows/${rowNumber}`, { 
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          sheet: state.activeSheet, 
+          values: valuesForRow(rowNumber) 
+        }) 
+      }).then(parseJsonResponse); 
+      await loadSpreadsheetRows(state.activeSheet); 
+    }
+
+    async function clearSpreadsheetRow(rowNumber) { 
+      if (!confirm(`Clear assignment row ${rowNumber}? Struktur tube/core tetap dipertahankan.`)) return; 
+      await fetch(`/api/coreman/spreadsheet/rows/${rowNumber}?sheet=${encodeURIComponent(state.activeSheet)}`, { 
+        method: 'DELETE' 
+      }).then(parseJsonResponse); 
+      await loadSpreadsheetRows(state.activeSheet); 
+    }
+
+    async function saveSheet() { 
+      const oltName = document.getElementById('sheetOltName').value.trim();
+      const segmentName = document.getElementById('sheetSegmentName').value.trim().replace(/^0+/, '') || '1';
+      const coreFeeder = Number(document.getElementById('sheetCoreFeeder').value || 144);
+      const payload = { 
+        olt_name: oltName, 
+        segment_name: segmentName, 
+        template_sheet_name: 'TEMPLATE', 
+        spreadsheet_id: state.spreadsheetId, 
+        row_count: coreFeeder, 
+        status: 'active' 
+      };
+      await fetch('/api/coreman/sheets', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      }).then(parseJsonResponse); 
+      await loadDashboard(); 
+      await loadSpreadsheetSheets();
+    }
+
+    async function resetLocalData() { 
+      if (!confirm('Reset inbox OPM dan audit log lokal? Data Google Sheets tidak akan dihapus.')) return; 
+      await fetch('/api/coreman/reset', { 
+        method: 'DELETE', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          include_aliases: false, 
+          include_sheets: false 
+        }) 
+      }).then(parseJsonResponse); 
+      await loadDashboard(); 
+    }
+
+    window.addEventListener('click', async (event) => { 
+      
+
+      const tab = event.target.closest('[data-sheet-tab]'); 
+      if (tab) { 
+        await loadSpreadsheetRows(tab.dataset.sheetTab).catch((err) => handleDashboardError(err, 'Load sheet tab')); 
+      } 
+      
+      const viewFilter = event.target.closest('[data-view-filter]');
+      if (viewFilter) {
+        state.activeViewFilter = viewFilter.dataset.viewFilter;
+        renderSpreadsheetRows();
+      }
+      
+      const saveRow = event.target.closest('[data-save-row]'); 
+      if (saveRow) { 
+        await saveSpreadsheetRow(saveRow.dataset.saveRow).catch((err) => handleDashboardError(err, 'Save row')); 
+      } 
+      
+      const clearRow = event.target.closest('[data-clear-row]'); 
+      if (clearRow) { 
+        await clearSpreadsheetRow(clearRow.dataset.clearRow).catch((err) => handleDashboardError(err, 'Clear row')); 
+      }
+    });
+
+    document.getElementById('refreshButton').addEventListener('click', () => 
+      loadDashboard().catch((err) => handleDashboardError(err, 'Refresh dashboard'))
+    );
+    
+    document.getElementById('resetLocalDataButton').addEventListener('click', () => 
+      resetLocalData().catch((err) => handleDashboardError(err, 'Reset local data'))
+    );
+    
+    document.getElementById('saveSheetButton').addEventListener('click', () => 
+      saveSheet().catch((err) => handleDashboardError(err, 'Save sheet'))
+    );
+    
+    document.getElementById('loadSheetRowsButton').addEventListener('click', () => 
+      loadSpreadsheetRows(document.getElementById('sheetSelect').value).catch((err) => handleDashboardError(err, 'Load sheet rows'))
+    );
+    
+    document.getElementById('sheetSelect').addEventListener('change', (event) => 
+      loadSpreadsheetRows(event.target.value).catch((err) => handleDashboardError(err, 'Change sheet'))
+    );
+    
+    loadDashboard().then(() => loadSpreadsheetSheets()).catch((err) => handleDashboardError(err, 'Initial load'));
+
+// Mancore Input Form
+(function() {
+  const form = document.getElementById('mancoreInputForm');
+  const textarea = document.getElementById('mancoreInputText');
+  const statusBox = document.getElementById('mancoreInputStatus');
+  if (!form) return;
+
+  function parseMancoreText(text) {
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').trim();
+    if (!normalized) throw new Error('Data mancore wajib diisi');
+    const lines = normalized.split('\n');
+
+    function parseTubeLine(cleaned) {
+      const m = cleaned.match(/TUBE\s*(\d+)\s*CORE\s*(.+)/i);
+      if (!m) return [];
+      const tube = parseInt(m[1]);
+      if (tube < 1 || tube > 12) return [];
+      const parts = m[2].trim().split(/[,.]/);
+      const result = [];
+      let status = 'TAKEN';
+      for (const part of parts) {
+        const p = part.trim();
+        if (!p) continue;
+        if (/^(IDLE|AKTIF|TAKEN|ACTIVE)$/i.test(p)) { status = /^IDLE$/i.test(p) ? 'IDLE' : 'TAKEN'; continue; }
+        const rangeM = p.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/);
+        if (rangeM) {
+          let a = parseInt(rangeM[1]), b = parseInt(rangeM[2]), step = a <= b ? 1 : -1;
+          for (let i = a; step > 0 ? i <= b : i >= b; i += step) { if (i >= 1 && i <= 12) result.push({ tube, core: i, status }); }
+        } else {
+          const num = parseInt(p); if (num >= 1 && num <= 12) result.push({ tube, core: num, status });
+        }
+      }
+      return result;
+    }
+
+    const fullUpper = normalized.toUpperCase();
+    let olt = '', segment = '';
+    const oltM = fullUpper.match(/\bOLT\s+(.+?)(?=\s+SEG(?:MENT)?\s+\d|\n|,|$)/);
+    if (oltM) olt = 'OLT ' + oltM[1].trim();
+    const segM = fullUpper.match(/\b(?:SEG|SEGMENT)\s*0*(\d+)/);
+    if (segM) segment = segM[1];
+
+    const blocks = [];
+    let curCluster = '', curEntries = [];
+    for (const line of lines) {
+      const cleaned = line.trim();
+      if (!cleaned) continue;
+      if (/FDT\s+\d+/i.test(cleaned)) {
+        if (curCluster && curEntries.length) blocks.push({ cluster_name: curCluster, core_entries: curEntries });
+        curCluster = cleaned.toUpperCase(); curEntries = [];
+        continue;
+      }
+      if (/^OLT\b/i.test(cleaned)) continue;
+      const te = parseTubeLine(cleaned);
+      if (te.length) { curEntries.push(...te); }
+      else if (!curCluster) { curCluster = cleaned.toUpperCase(); }
+    }
+    if (curCluster && curEntries.length) blocks.push({ cluster_name: curCluster, core_entries: curEntries });
+
+    if (!blocks.length) {
+      let cluster = ''; const entries = [];
+      for (const line of lines) {
+        const cleaned = line.trim(); if (!cleaned) continue;
+        if (/^OLT\b/i.test(cleaned)) continue;
+        const te = parseTubeLine(cleaned);
+        if (te.length) { entries.push(...te); continue; }
+        if (!cluster) cluster = cleaned.toUpperCase();
+      }
+      if (!cluster) throw new Error('Nama cluster wajib diisi pada baris pertama');
+      if (!entries.length) throw new Error('Tube/core tidak terbaca. Format: Tube 12 core 5.6.7.8.9');
+      blocks.push({ cluster_name: cluster, core_entries: entries });
+    }
+    if (!blocks.length) throw new Error('Tube/core tidak terbaca');
+    return { blocks, olt_name: olt, segment_name: segment || '1', raw_text: normalized };
+  }
+
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    let parsed;
+    try { parsed = parseMancoreText(textarea.value); }
+    catch (err) {  showPopup(err.message, true); return; }
+
+    let preview = 'Kirim mancore?\n';
+    preview += '\nOLT: ' + (parsed.olt_name || '(dari isi data)');
+    preview += '\nSegment: ' + parsed.segment_name;
+    preview += '\nTotal FDT: ' + parsed.blocks.length;
+    for (let i = 0; i < parsed.blocks.length; i++) {
+      const b = parsed.blocks[i];
+      preview += '\n\nFDT ' + (i+1) + ': ' + b.cluster_name;
+      preview += '  (' + b.core_entries.length + ' entries)';
+    }
+    if (!confirm(preview)) return;
+
+    
+    statusBox.className = 'mancore-status';
+    statusBox.textContent = 'Mengirim...';
+    try {
+      const r = await fetch('/api/mancore/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_text: parsed.raw_text, olt_name: parsed.olt_name, segment_name: parsed.segment_name })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Submit gagal');
+      showPopup(`Berhasil. Sheet: ${d.sheet_name}, Cluster: ${d.cluster_name}`);
+      textarea.value = '';
+    } catch (err) {
+      statusBox.className = 'mancore-status err';
+      statusBox.textContent = err.message;
+    }
+  });
+})();
+
+  </script>
+</body>
+</html>
