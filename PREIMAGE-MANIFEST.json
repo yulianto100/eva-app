@@ -1,0 +1,59 @@
+{
+  "absent": [
+    "fdt_hardware.py",
+    "fdt_hardware/144.dxf",
+    "fdt_hardware/144.json",
+    "fdt_hardware/48.dxf",
+    "fdt_hardware/48.json"
+  ],
+  "manifest_sha256": "3cb7f4b1c441ef4ae7efc2fcb6829f39e881f226287ff5caeff369b4169ba36f",
+  "original_head": "aa7cd16287252f8133b8b2d3a158e05a23a832f9",
+  "original_index_sha256": "ddf68e2eede3857b40910631ac53f8371be7875f4cb411e926f218961e685d9b",
+  "present": {
+    "abd_cad.py": {
+      "bytes": 12575,
+      "gid": 1001,
+      "inode": 400439,
+      "mode": 420,
+      "sha256": "f4cef7a896737238d80091b5e2aa832a876609a83fc6f8ce67b8eb3f9e0f2649",
+      "uid": 1000
+    },
+    "combined_batch.py": {
+      "bytes": 13858,
+      "gid": 1001,
+      "inode": 405273,
+      "mode": 436,
+      "sha256": "c7835a8131330e1f1a849145f41d837d1e670bb1a55e1d0866fd438c8b3dc4c8",
+      "uid": 1000
+    },
+    "static/js/abd-cad.js": {
+      "bytes": 11796,
+      "gid": 1001,
+      "inode": 405306,
+      "mode": 436,
+      "sha256": "d8c6782690e92e37f02f7f2a7560fc05d15eae8383a9eb4a8c81aab52b311645",
+      "uid": 1000
+    },
+    "templates/abd_cad.html": {
+      "bytes": 9822,
+      "gid": 1001,
+      "inode": 415952,
+      "mode": 436,
+      "sha256": "b8e3f170f464dc599e051e12689fe63f9b9c65e6e167fed4fd817a0cff39d74b",
+      "uid": 1000
+    }
+  },
+  "production_source_changed": false,
+  "status": "SOURCE_PREIMAGE_ONLY_NOT_DEPLOYMENT",
+  "targets": [
+    "abd_cad.py",
+    "combined_batch.py",
+    "fdt_hardware.py",
+    "fdt_hardware/144.dxf",
+    "fdt_hardware/144.json",
+    "fdt_hardware/48.dxf",
+    "fdt_hardware/48.json",
+    "static/js/abd-cad.js",
+    "templates/abd_cad.html"
+  ]
+}
