@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-mark.svg?v=20261026-mark">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block page_title %}EVA Admin{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --app-bg: #F4F8F6;
+      --card-bg: #FFFFFF;
+      --sidebar-bg: #FFFFFF;
+      --border-color: #E2ECE7;
+      --border-light: #E5E7EB;
+      --text-main: #0F172A;
+      --text-sub: #64748B;
+      --text-faint: #94A3B8;
+      --brand-green: #15803D;
+      --mint-bg: #ECFDF5;
+      --mint-border: #A7F3D0;
+      --mint-text: #065F46;
+      --danger: #DC2626;
+      --danger-bg: #FEF2F2;
+      --danger-border: #FECACA;
+      --info: #2563EB;
+      --info-bg: #EFF6FF;
+      --info-border: #BFDBFE;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: var(--app-bg);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea { font: inherit; }
+
+    .layout { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; width: 100%; }
+
+    .sidebar {
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      background: var(--sidebar-bg); border-right: 1px solid var(--border-color);
+      padding: 22px 18px; display: flex; flex-direction: column; gap: 24px;
+      z-index: 50; transition: transform .25s cubic-bezier(.16,1,.3,1);
+    }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.4); backdrop-filter: blur(4px); z-index: 45; }
+    .brand-lockup { display: flex; align-items: center; gap: 8px; }
+    .brand-mark { width: 26px; height: 26px; border-radius: 7px; display: block; flex: none; }
+    .brand-eva { font-size: 20px; font-weight: 900; letter-spacing: -.025em; }
+    .brand-by { color: var(--brand-green); font-size: 14px; font-weight: 700; }
+    .admin-badge { font-size: 10.5px; font-weight: 800; background: #F1F5F9; color: #475569; padding: 2px 7px; border-radius: 6px; border: 1px solid #E2E8F0; letter-spacing: .05em; }
+    .nav-section { display: flex; flex-direction: column; gap: 4px; }
+    .nav-label { font-size: 11px; font-weight: 800; color: var(--text-faint); text-transform: uppercase; letter-spacing: .08em; margin: 12px 0 6px; padding-left: 10px; }
+    .nav-label:first-child { margin-top: 0; }
+    .nav a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 11px; border-radius: 10px;
+      font-size: 13.5px; font-weight: 600; color: var(--text-sub);
+      transition: background .12s, color .12s;
+    }
+    .nav a svg { width: 16px; height: 16px; stroke-width: 2; flex: none; }
+    .nav a:hover { background: #F1F5F9; color: var(--text-main); }
+    .nav a.active { background: var(--mint-bg); color: var(--mint-text); font-weight: 800; box-shadow: inset 0 0 0 1px var(--mint-border); }
+    .sidebar-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px; }
+    .btn-side {
+      display: flex; align-items: center; gap: 9px; width: 100%;
+      padding: 9px 11px; border: 0; border-radius: 10px; background: transparent;
+      color: var(--text-sub); font-size: 13px; font-weight: 650; cursor: pointer; text-align: left;
+    }
+    .btn-side:hover { background: #F1F5F9; color: var(--text-main); }
+    .btn-side.danger:hover { background: var(--danger-bg); color: #991B1B; }
+
+    .mobile-header { display: none; position: sticky; top: 0; z-index: 40; background: #fff; border-bottom: 1px solid var(--border-color); padding: 11px 14px; align-items: center; justify-content: space-between; }
+    .hamburger-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border-light); background: #fff; color: var(--text-main); display: grid; place-items: center; cursor: pointer; }
+
+    .content { padding: 26px 28px 48px; max-width: 1400px; width: 100%; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 20px; flex-wrap: wrap; }
+    .page-kicker { font-size: 11px; font-weight: 800; color: var(--brand-green); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 4px; }
+    .page-head h1 { font-size: 22px; font-weight: 900; letter-spacing: -.03em; }
+    .page-head p { margin-top: 3px; color: var(--text-sub); font-size: 12.5px; line-height: 1.5; }
+    .head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      height: 38px; padding: 0 14px; border-radius: 10px;
+      border: 1px solid var(--border-light); background: #fff; color: var(--text-main);
+      font-size: 12.5px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap;
+    }
+    .btn:hover { background: #F8FAFC; }
+    .btn.primary { background: var(--text-main); border-color: var(--text-main); color: #fff; }
+    .btn.primary:hover { background: #1E293B; }
+    .btn.success { background: var(--mint-bg); border-color: var(--mint-border); color: var(--mint-text); }
+    .btn.danger { background: var(--danger-bg); border-color: var(--danger-border); color: #991B1B; }
+    /* alias kelas lama agar tidak perlu ubah tiap halaman */
+    .btn.save, .btn.upload { background: var(--mint-bg); border-color: var(--mint-border); color: var(--mint-text); }
+    .btn.download { background: var(--text-main); border-color: var(--text-main); color: #fff; }
+    .btn.ghost { background: #fff; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 18px; box-shadow: 0 2px 6px rgba(15,23,42,.02); }
+    .card + .card { margin-top: 14px; }
+    .card h2, .card h3 { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+    .card .sub { color: var(--text-sub); font-size: 12.5px; line-height: 1.5; }
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+
+    .table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--border-color); border-radius: 12px; background: #fff; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; font-size: 12.5px; border-bottom: 1px solid #F1F5F9; vertical-align: top; }
+    th { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); background: #FAFCFB; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #FAFCFB; }
+    td.empty { padding: 22px 12px; color: var(--text-sub); font-size: 13px; text-align: center; }
+
+    .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .small { font-size: 11.5px; color: var(--text-sub); }
+    .path { font-size: 11px; color: var(--text-faint); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+
+    .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+    .pill.ok, .pill.done { background: var(--mint-bg); color: var(--mint-text); border-color: var(--mint-border); }
+    .pill.bad, .pill.error, .pill.failed { background: var(--danger-bg); color: #991B1B; border-color: var(--danger-border); }
+    .pill.run, .pill.completed { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
+    .pill.idle { background: #F1F5F9; color: #475569; border-color: #E2E8F0; }
+
+    .ok { color: var(--mint-text); font-weight: 800; }
+    .bad, .err { color: #991B1B; font-weight: 800; }
+
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; }
+    .kv { border-top: 1px solid #F1F5F9; padding: 9px 0; }
+    .kv .k { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); }
+    .kv .v { font-size: 12.5px; font-weight: 600; margin-top: 3px; word-break: break-word; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .field > label { font-size: 12px; font-weight: 700; color: var(--text-main); }
+    input[type=text], input[type=search], input[type=password], input[type=file], input:not([type]), select, textarea {
+      border: 1px solid #CBD5E1; border-radius: 10px; padding: 9px 11px;
+      background: #fff; color: var(--text-main); font-size: 13px; max-width: 100%;
+    }
+    input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--brand-green); outline-offset: 2px;
+    }
+    textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
+    form.inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    pre { background: #0F172A; color: #E2E8F0; border-radius: 12px; padding: 13px; overflow: auto; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5; }
+
+    .flash { padding: 11px 13px; border-radius: 10px; font-size: 12.5px; font-weight: 600; margin-bottom: 12px; border: 1px solid; }
+    .flash.ok { background: var(--mint-bg); border-color: var(--mint-border); color: var(--mint-text); }
+    .flash.err { background: var(--danger-bg); border-color: var(--danger-border); color: #991B1B; }
+    .empty-note { padding: 18px; color: var(--text-sub); font-size: 13px; text-align: center; }
+
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: fixed; inset: 0 auto 0 0; width: 270px; transform: translateX(-100%); box-shadow: 0 20px 60px rgba(15,23,42,.18); }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-overlay.open { display: block; }
+      .mobile-header { display: flex; }
+      .content { padding: 18px 14px 40px; }
+      .page-head h1 { font-size: 20px; }
+    }
+  </style>
+  {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=idle-logout-20261026-v1"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% set active = active_page|default('') %}
+  <div class="mobile-header">
+    <div class="brand-lockup">
+      <img class="brand-mark" src="/static/assets/eva-mark.svg?v=20261026-mark" alt="" width="26" height="26"><span class="brand-eva">EVA</span><span class="brand-by">Admin</span>
+    </div>
+    <button class="hamburger-btn" type="button" id="navToggle" aria-label="Buka menu" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="layout">
+    <aside id="sidebarDrawer" class="sidebar">
+      <div class="brand-lockup">
+        <img class="brand-mark" src="/static/assets/eva-mark.svg?v=20261026-mark" alt="" width="26" height="26"><span class="brand-eva">EVA</span><span class="brand-by">by DYENA</span><span class="admin-badge">ADMIN</span>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Utama</div>
+        <nav class="nav">
+          <a href="/admin" class="{{ 'active' if active == 'dashboard' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Dashboard</span></a>
+          <a href="/admin/jobs" class="{{ 'active' if active == 'jobs' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Monitor Job</span></a>
+          <a href="/admin/jobs?tab=boq" class="{{ 'active' if active == 'boq' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg><span>Riwayat BOQ</span></a>
+          <a href="/admin#stella-panel" class="{{ 'active' if active == 'stella' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg><span>Monitor Stella</span></a>
+          <a href="/admin/astri" class="{{ 'active' if active == 'astri' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg><span>ASTRI Gateway</span></a>
+          <a href="/admin/gdr" class="{{ 'active' if active == 'gdr' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Dokumen GDR</span></a>
+
+        <div class="nav-label">Konfigurasi</div>
+          <a href="/admin/boq-templates" class="{{ 'active' if active == 'boq-templates' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Template BOQ</span></a>
+          <a href="/admin/olt-catalog" class="{{ 'active' if active == 'olt' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span>Katalog OLT</span></a>
+          <a href="/admin/rules" class="{{ 'active' if active == 'rules' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>Rules &amp; Penamaan</span></a>
+          <a href="/admin/filename-rules" class="{{ 'active' if active == 'filename' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v16H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg><span>Aturan Nama File</span></a>
+          <a href="/admin/kmz-styles" class="{{ 'active' if active == 'kmz' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="12.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 22a10 10 0 1 1 10-10"/></svg><span>Style KMZ</span></a>
+          <a href="/admin/mancore" class="{{ 'active' if active == 'mancore' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"/><path d="M5 7h14"/><path d="M5 17h14"/></svg><span>Input Mancore</span></a>
+          <a href="/admin/dry-run" class="{{ 'active' if active == 'dry-run' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="5 3 19 12 5 21"/></svg><span>Dry-run Preview</span></a>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="/admin/users" class="btn-side {{ 'active' if active == 'users' }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Kelola Pengguna</span>
+        </a>
+        <a href="/admin/password" class="btn-side {{ 'active' if active == 'password' }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Ganti Password</span>
+        </a>
+        <button type="button" id="eva-logout" class="btn-side danger">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Keluar Sesi</span>
+        </button>
+      </div>
+    </aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <main class="content">
+      <header class="page-head">
+        <div>
+          <div class="page-kicker">{% block kicker %}Konfigurasi{% endblock %}</div>
+          <h1>{% block heading %}{% block page_h1 %}EVA Admin{% endblock %}{% endblock %}</h1>
+          <p>{% block subheading %}{% endblock %}</p>
+        </div>
+        <div class="head-actions">{% block actions %}{% endblock %}</div>
+      </header>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var drawer = document.getElementById('sidebarDrawer');
+      var overlay = document.getElementById('sidebarOverlay');
+      var toggle = document.getElementById('navToggle');
+      function close() { drawer.classList.remove('open'); overlay.classList.remove('open'); toggle && toggle.setAttribute('aria-expanded', 'false'); }
+      if (toggle) toggle.addEventListener('click', function () {
+        var open = drawer.classList.toggle('open');
+        overlay.classList.toggle('open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      if (overlay) overlay.addEventListener('click', close);
+      document.querySelectorAll('.sidebar .nav a').forEach(function (a) { a.addEventListener('click', close); });
+
+      // Waktu relatif untuk elemen [data-ts] (epoch detik)
+      function fmtRel(ts) {
+        var t = Number(ts || 0);
+        if (!t) return '-';
+        var diff = Math.max(0, Date.now() / 1000 - t);
+        if (diff < 60) return 'baru saja';
+        if (diff < 3600) return Math.floor(diff / 60) + ' mnt lalu';
+        if (diff < 86400) return Math.floor(diff / 3600) + ' jam lalu';
+        return Math.floor(diff / 86400) + ' hari lalu';
+      }
+      window.evaFmtRel = fmtRel;
+      document.querySelectorAll('[data-ts]').forEach(function (el) {
+        var iso = el.textContent.trim();
+        var stamp = Number(iso);
+        if (!stamp) { stamp = Date.parse(iso) / 1000 || 0; }
+        if (stamp) el.textContent = fmtRel(stamp);
+      });
+      document.querySelectorAll('[data-copy]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var value = btn.getAttribute('data-copy');
+          var done = function () { var old = btn.textContent; btn.textContent = 'Disalin'; setTimeout(function () { btn.textContent = old; }, 1200); };
+          if (navigator.clipboard) navigator.clipboard.writeText(value).then(done, done);
+          else done();
+        });
+      });
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
