@@ -1,0 +1,22 @@
+{
+  "approved": true,
+  "reviewer": "independent-a",
+  "closure_sha256": "c3f5dbf25cf058b3800bae52dded92e84230815112f1b64c373ab7bc00b285bf",
+  "findings": [],
+  "checks": [
+    "Verified closure SHA and all 22 member hashes before and after local checks; manifest matches exact baseline/candidate bytes.",
+    "Inspected complete baseline/candidate diff. Whole Python AST is unchanged after removing only the approved /akun registration and fixed /account redirect. Both routes retain eva_account_page; endpoint-keyed auth policies and require_login remain unchanged.",
+    "Download ownership joins, premium/expiry gates, no-follow archive opening, regular-file/link-count/size/digest checks, filename sanitization, private no-store headers and frontend result URL validation remain unchanged.",
+    "Conversion presentation uses five columns, hides PBF filenames and explicit job ID fields, formats output underscores as uppercase plus-separated labels, uses generic original-download link text. BOQ source job ID column removed; other BOQ fields retained.",
+    "Support/package template changes are exactly href=/account to href=/akun. No shared support behavior or support CSS changes; new CSS selectors are account-page scoped.",
+    "PASS: python3 -B test_pagination.py; 23 records, pages 1-6, five/page, filtering and personal isolation.",
+    "PASS: /home/ubuntu/kmz-validator/venv/bin/python -B test_route.py; canonical /akun GET/HEAD and url_for, local legacy redirects ignoring next, support/package links.",
+    "PASS: python3 -B test_publish.py; successful install, pre-reload rollback, uncertain-signal hold, foreign-byte hold, auth bind inode preservation.",
+    "PASS: independent private publisher fixture under umask 077; UID/GID/mode retained for atomic and in-place paths, auth inode retained. Candidate Python syntax compiles.",
+    "PASS: check.cjs executed from a disposable private copy. Exact candidate JS/CSS verified embedded in preview. Responsive widths 320-1440, five-column conversion, six-column BOQ, pagination, download labels, keyboard, error/empty/connection/logout states; zero production requests.",
+    "Publisher retains exact-file auth inode, verifies container-visible hashes before web HUP, pins gunicorn master PID/start identity, waits for previous children to retire, guards container/image/mount roles, never restarts workers or builds images. Auth source delta is limited to web routes; unchanged worker functionality remains compatible. Post-signal uncertainty fails closed without blind rollback."
+  ],
+  "limitations": [
+    "Read-only source/runtime review plus isolated local tests only; no production access, mutation, HUP or deployment performed. Actual runtime mount visibility and process retirement remain publisher-time checks."
+  ]
+}

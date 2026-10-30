@@ -190,27 +190,33 @@
     }
     function addRow(item) {
       const tr = document.createElement('tr');
-      const cells = Array.from({length:7}, () => tr.appendChild(document.createElement('td')));
+      const cells = Array.from({length:kind === 'convert' ? 5 : 6}, () => tr.appendChild(document.createElement('td')));
       if (kind === 'convert') {
-        line(cells[0], date(item.created_at), true); line(cells[0], item.job_id);
-        line(cells[1], (Array.isArray(item.original_filenames) ? item.original_filenames : []).join(', ') || item.download_name, true);
-        line(cells[2], statuses[item.status] || item.status, true); line(cells[2], Number.isFinite(item.progress) ? item.progress + '%' : '—');
-        line(cells[3], item.scope_type, true);line(cells[3], item.network_type);
-        line(cells[4], item.output_mode);
-        line(cells[5], item.error || item.message);
+        const filenames = (Array.isArray(item.original_filenames) ? item.original_filenames : [])
+          .filter(name => typeof name === 'string' && !/\.pbf$/i.test(name.trim()));
+        const fallback = typeof item.download_name === 'string' && !/\.pbf$/i.test(item.download_name.trim()) ? item.download_name : '';
+        line(cells[0], filenames.join(', ') || fallback, true);
+        line(cells[0], date(item.created_at) + ' WIB');
+        const statusLabel = line(cells[1], statuses[item.status] || item.status, true);
+        statusLabel.className = 'account-job-status';
+        statusLabel.dataset.status = String(item.status || '');
+        line(cells[1], Number.isFinite(item.progress) ? item.progress + '%' : '—');
+        line(cells[1], [item.scope_type, item.network_type].filter(Boolean).join(' · '));
+        line(cells[2], String(item.output_mode || '').replaceAll('_', ' + ').toUpperCase(), true).className = 'account-output-label';
+        line(cells[3], item.error || item.message);
         const expected = typeof item.job_id === 'string' && /^[0-9a-f]{32}$/.test(item.job_id)
           ? '/api/account/history/' + item.job_id + '/download' : null;
         if (item.download_state === 'ready' && expected && item.download_url === expected) {
           const link = document.createElement('a');
           link.className = 'account-button account-secondary account-history-download';
           link.href = expected; link.textContent = 'Unduh hasil';
-          cells[6].append(link);
+          cells[4].append(link);
         } else {
           const states = {expired:'Tautan kedaluwarsa', unavailable:'File tidak tersedia', pending:'Hasil belum tersedia', premium_required:'Perlu Premium atau Owner'};
-          line(cells[6], Object.prototype.hasOwnProperty.call(states, item.download_state) ? states[item.download_state] : states.unavailable, true);
+          line(cells[4], Object.prototype.hasOwnProperty.call(states, item.download_state) ? states[item.download_state] : states.unavailable, true);
         }
         if (typeof item.download_expires_at === 'number' && date(item.download_expires_at) !== '—') {
-          line(cells[6], 'Berlaku hingga ' + date(item.download_expires_at) + ' WIB');
+          line(cells[4], 'Berlaku hingga ' + date(item.download_expires_at) + ' WIB');
         }
         const inputs = Array.isArray(item.input_downloads) ? item.input_downloads : [];
         if (inputs.length) {
@@ -220,28 +226,28 @@
           label.className = 'account-input-label';
           label.textContent = 'File asli:';
           wrap.append(label);
-          inputs.forEach(f => {
+          inputs.forEach((f, index) => {
             if (!f || typeof f.url !== 'string') return;
             const a = document.createElement('a');
             a.className = 'account-button account-secondary account-input-download';
             a.href = f.url;
-            a.textContent = f.name || 'unduh';
+            a.textContent = 'Unduh file asli' + (inputs.length > 1 ? ' ' + (index + 1) : '');
             a.title = 'Unduh file asli yang Anda unggah (retensi 24 jam)';
             wrap.append(a);
           });
-          cells[6].append(wrap);
+          cells[4].append(wrap);
         } else if (item.status === 'done' || item.status === 'completed') {
           const note = document.createElement('span');
           note.className = 'account-input-expired';
           note.textContent = 'File asli sudah dibersihkan (retensi 24 jam)';
-          cells[6].append(note);
+          cells[4].append(note);
         }
       } else {
         line(cells[0], date(item.completed_at), true);
         line(cells[1], scopes[item.scope] || item.scope, true);line(cells[1], item.scope_code);line(cells[1], item.target_name);
         line(cells[2], item.work_order_number, true);line(cells[3], item.astri_username);
         line(cells[4], 'Total: ' + number(item.item_count), true);line(cells[4], 'Baru: ' + number(item.inserted_count));line(cells[4], 'Perbarui: ' + number(item.updated_count));line(cells[4], 'Sudah ada: ' + number(item.already_present_count));
-        line(cells[5], item.initial_status);line(cells[5], item.final_status, true);line(cells[6], item.source_job_id);
+        line(cells[5], item.initial_status);line(cells[5], item.final_status, true);
       }
       return tr;
     }
@@ -252,8 +258,8 @@
       const timeout = setTimeout(() => current.abort(), 30000);
       host.setAttribute('aria-busy', 'true'); search.disabled = refresh.disabled = prev.disabled = next.disabled = true;
       feedback.textContent = 'Memuat riwayat…'; rows.replaceChildren();summary.textContent = '';
-      headings(kind === 'convert' ? ['Dibuat (WIB) / Job ID','File','Status / Progress','Target Type / Jaringan','Output','Pesan / Error','Hasil']
-        : ['Selesai (WIB)','Target Type / Code / Name','Work Order Number','Akun ASTRI','Item','Status awal / akhir','Job asal']);
+      headings(kind === 'convert' ? ['Pekerjaan / Dibuat (WIB)','Status / Target Type','Output','Pesan / Error','Unduh']
+        : ['Selesai (WIB)','Target Type / Code / Name','Work Order Number','Akun ASTRI','Item','Status awal / akhir']);
       const params = new URLSearchParams({kind, page:String(page), q:query.value.trim(), scope:scope.value});
       if (kind === 'convert') params.set('status', status.value);
       try {

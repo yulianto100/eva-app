@@ -1,0 +1,37 @@
+{
+  "files": {
+    "templates/account.html": {
+      "name": "account.html",
+      "before": "941edee7bd350acb52aeea2b240b6268d60e58560c4505ab68a28f88511b950f",
+      "after": "66dc34b2650c9a15ea77b7355d2cf9d9805d3500520cd10db07c6a795b83d408"
+    },
+    "static/css/eva-account.css": {
+      "name": "eva-account.css",
+      "before": "f63356b8b128d65745d955d916845bd0bf69c507beecbc7aba12f471c11100c2",
+      "after": "245503a0b2deae40df506b84c073cfaeb2d5fcf231e6557c7d859549f70a0cdb"
+    },
+    "static/js/eva-account.js": {
+      "name": "eva-account.js",
+      "before": "ab85751c7a91e1c8f5407f4e0ee523c7a117440c4b824010c9d99bd5f8863dd9",
+      "after": "bc392c20fb22becb25b51f46bc452464d2900c3df2b0626b7e3084539a1f0cdd"
+    },
+    "eva_auth.py": {
+      "name": "eva_auth.py",
+      "before": "c2a8c99c048c00f807f372ca437e53f7a4c981d973a40fde542edcba99251e4a",
+      "after": "180f308300e3e32bcc62be0e45b0ee68697ca16c2313cf1619c8a4a966c1b5f1"
+    },
+    "templates/support.html": {
+      "name": "support.html",
+      "before": "4f643d629237d716fe182bd4c74e8884ece196a2843192307570b0c764e81a32",
+      "after": "fd78611b93701b39505720937fa2e9b664efb1c26dca1a7c37de88f2f874cd13"
+    },
+    "templates/langganan.html": {
+      "name": "langganan.html",
+      "before": "61bb05c2e874c8f7c4bb608ccb6aca0bf308276ccd1bcfd860d4f88e9deda168",
+      "after": "2b122181a16117efb5cba8294ac6f699b9845b9e977ff97d911b612f4512c02e"
+    }
+  },
+  "dependency": {},
+  "approval": "nah itu mantep, gas deploy",
+  "scope": "Approved soft personal history; hide PBF/job IDs, admin output labels, short original download labels, canonical /akun. Web HUP only."
+}

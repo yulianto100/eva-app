@@ -851,3 +851,31 @@ body[data-eva-account-page]{--account-ink:#18382e;--account-muted:#526b62;--acco
  [data-eva-account-page] .account-session .account-button{width:100%}
 }
 @media(prefers-reduced-motion:reduce){[data-eva-account-page] *,[data-eva-account-page] *::before,[data-eva-account-page] *::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Personal conversion history: compact, soft surfaces; BOQ columns remain intact. */
+[data-eva-account-page] .account-history{border-color:#e1eae4;box-shadow:0 2px 8px #08312703}
+[data-eva-account-page] .account-history-filters{background:#f8fbf9;border:1px solid #e6eee8;border-radius:9px;padding:14px;margin-top:18px;gap:12px}
+[data-eva-account-page] .account-history-filters :is(input,select){background:#fff;border-color:#dce7df}
+[data-eva-account-page] .account-history-scroll{border-color:#e5ece7;margin-top:16px}
+[data-eva-account-page] .account-history table{min-width:940px}
+[data-eva-account-page] .account-history table:not(:has(.account-output-label)) th{width:auto}
+[data-eva-account-page] .account-history table:has(.account-output-label){min-width:940px}
+[data-eva-account-page] .account-history table:has(.account-output-label) th:nth-child(1){width:27%}
+[data-eva-account-page] .account-history table:has(.account-output-label) th:nth-child(2){width:15%}
+[data-eva-account-page] .account-history table:has(.account-output-label) th:nth-child(3){width:16%}
+[data-eva-account-page] .account-history table:has(.account-output-label) th:nth-child(4){width:22%}
+[data-eva-account-page] .account-history table:has(.account-output-label) th:nth-child(5){width:20%}
+[data-eva-account-page] .account-history th{background:#f6f9f7;color:#597266;font-weight:600;padding:13px 16px;border-bottom-color:#e6ede8}
+[data-eva-account-page] .account-history td{padding:18px 16px;line-height:1.75;border-color:#edf2ee;color:#335447}
+[data-eva-account-page] .account-history td:first-child strong{font-size:13px;font-weight:600;color:#244638;line-height:1.7}
+[data-eva-account-page] .account-history td span{color:#60766b}
+[data-eva-account-page] .account-history td .account-job-status{display:inline-block;font-size:11px;font-weight:600;background:#edf5ef;color:#34604b;padding:3px 9px;border-radius:999px;margin-bottom:4px}
+[data-eva-account-page] .account-history td .account-job-status:not([data-status="done"]):not([data-status="completed"]){background:#f1f4f2;color:#5f6e66}
+[data-eva-account-page] .account-history td .account-output-label{font-size:11px;font-weight:600;line-height:1.9;color:#456453}
+[data-eva-account-page] .account-history-download{background:#edf5ef;border-color:#dce9df;color:#2d5e44!important;margin-bottom:6px}
+[data-eva-account-page] .account-input-downloads{margin-top:10px;gap:0}
+[data-eva-account-page] .account-input-label{display:none}
+[data-eva-account-page] .account-input-download{width:100%;font-size:11px!important;font-weight:500;background:white;border-color:#e1e9e3;color:#52705f!important;text-transform:none;padding:8px 10px!important}
+[data-eva-account-page] .account-input-expired{font-size:11px;font-style:normal;color:#718277}
+[data-eva-account-page] .account-history-pages .account-button{border-color:#e2eae4;font-weight:500}
+@media(max-width:760px){[data-eva-account-page] .account-history-filters{padding:12px;gap:10px}[data-eva-account-page] .account-history td{padding:16px 14px}}

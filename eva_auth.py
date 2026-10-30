@@ -844,6 +844,8 @@ class AuthGate:
         return response
 
     def account_page(self):
+        if request.path == '/account':
+            return redirect(url_for('eva_account_page'), code=302)
         return render_template('account.html')
 
     def account_history_input(self, job_id, index):
@@ -1077,6 +1079,7 @@ def register_auth(app):
     app.add_url_rule('/auth/google/callback','eva_google_callback',gate.callback)
     app.add_url_rule('/auth/me','eva_auth_me',gate.me)
     app.add_url_rule('/auth/activity','eva_auth_activity',gate.activity,methods=['POST'])
+    app.add_url_rule('/akun','eva_account_page',gate.account_page)
     app.add_url_rule('/account','eva_account_page',gate.account_page)
     app.add_url_rule('/api/account/history','eva_account_history',gate.account_history)
     app.add_url_rule('/api/account/history/<job_id>/input/<int:index>','eva_account_history_input',gate.account_history_input)
