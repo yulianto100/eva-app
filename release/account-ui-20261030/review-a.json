@@ -1,0 +1,14 @@
+{
+  "approved": true,
+  "reviewer": "independent-a",
+  "closure_sha256": "b0cd75acfb8c29ca72578ff8588cad5029d101e91add60151a5ad48b01cb9eec",
+  "findings": [],
+  "verified": [
+    "Exact requested closure SHA256 verified; all 18 closure file hashes verified.",
+    "Reconstructing the previous closure by substituting only the previous publish.py hash reproduces previous approved closure SHA256 6233e065d7d7ab705d3e5d6cf5b579a639f008e1344f6b91aa0cd5bb3736ba3c. Every other closure entry remains identical.",
+    "Reversing exactly one roles() return-line change reproduces previous approved publish.py SHA256 7c21a9d3233008f11b2191e5cbb1f2fa25e33be5e787dc46b1d502bf438c8178. Only change: Mounts sorted by Destination; Id, Image and all mount fields retained.",
+    "Isolated mocked roles() check passed: reversed mount order compares equal; changed mount Source or RW still compares unequal. No Docker calls executed.",
+    "Previous review remains applicable to unchanged candidate, manifest, pagination tests, publisher install/recovery tests and browser evidence: original body preserved; five-entry Convert/BOQ paging; auth/privacy unchanged; exact-file bind inode, backup preimages, runtime hashes, role pins and web-only pinned HUP safeguards unchanged."
+  ],
+  "boundary": "Local verification only; review-a.json is the sole requested output. No production actions or release source/test edits. Production preimage state and reported full-check rerun were not independently re-observed; no deployment or runtime acceptance claimed."
+}

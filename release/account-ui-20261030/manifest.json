@@ -1,0 +1,29 @@
+{
+  "files": {
+    "templates/account.html": {
+      "name": "account.html",
+      "before": "6856527f49f40643a06c57dd999eb1f022cc102569a9ebafbaba54b6cc8f2367",
+      "after": "941edee7bd350acb52aeea2b240b6268d60e58560c4505ab68a28f88511b950f"
+    },
+    "static/css/eva-account.css": {
+      "name": "eva-account.css",
+      "before": "dd0df92c66deea22c21c8ddacf50aa1b7eb01f554c055c37754c11d754396fc2",
+      "after": "f63356b8b128d65745d955d916845bd0bf69c507beecbc7aba12f471c11100c2"
+    },
+    "static/js/eva-account.js": {
+      "name": "eva-account.js",
+      "before": "a6eb96b1fd31636a1ea996c499c6d015a730694337e46e4e4cf2626602c1e9db",
+      "after": "ab85751c7a91e1c8f5407f4e0ee523c7a117440c4b824010c9d99bd5f8863dd9"
+    },
+    "eva_auth.py": {
+      "name": "eva_auth.py",
+      "before": "7d39f0b3ebc64efb5b9122e8e90d34b9943003eb4bba720cdd332eb49ebaab6a",
+      "after": "c2a8c99c048c00f807f372ca437e53f7a4c981d973a40fde542edcba99251e4a"
+    }
+  },
+  "dependency": {
+    "astri_boq_submissions.py": "a85fe5f9fd2e8ba1dc3fea0ed7798e7a03b0cb72de9340fa63a8e605856c14cc"
+  },
+  "approval": "gass, tapi buat maks job yang muncul 5 aja per page ya, gak usah banyak banyak",
+  "scope": "Approved account CSS; five personal Convert/BOQ records per page; web HUP only, no worker/build/ASTRI writes."
+}

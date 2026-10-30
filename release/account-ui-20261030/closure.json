@@ -1,0 +1,20 @@
+{
+  "baseline/account.html": "6856527f49f40643a06c57dd999eb1f022cc102569a9ebafbaba54b6cc8f2367",
+  "baseline/astri_boq_submissions.py": "a85fe5f9fd2e8ba1dc3fea0ed7798e7a03b0cb72de9340fa63a8e605856c14cc",
+  "baseline/eva-account.css": "dd0df92c66deea22c21c8ddacf50aa1b7eb01f554c055c37754c11d754396fc2",
+  "baseline/eva-account.js": "a6eb96b1fd31636a1ea996c499c6d015a730694337e46e4e4cf2626602c1e9db",
+  "baseline/eva_auth.py": "7d39f0b3ebc64efb5b9122e8e90d34b9943003eb4bba720cdd332eb49ebaab6a",
+  "baseline/rendered.html": "480cdfac83b1c9a0915ae5b2943f6cb8a703472fa33e301ac721e0a782085452",
+  "browser-results.json": "69732eb133c94b2ec8efc0b2b84ce0e1c22ed885b462233f55e7f79e7f720a2c",
+  "build_preview.py": "bb0c13005f9159468bb8543356117f9b8e597a8e7e2f35c6223bccaa88b0c68d",
+  "candidate/account.html": "941edee7bd350acb52aeea2b240b6268d60e58560c4505ab68a28f88511b950f",
+  "candidate/eva-account.css": "f63356b8b128d65745d955d916845bd0bf69c507beecbc7aba12f471c11100c2",
+  "candidate/eva-account.js": "ab85751c7a91e1c8f5407f4e0ee523c7a117440c4b824010c9d99bd5f8863dd9",
+  "candidate/eva_auth.py": "c2a8c99c048c00f807f372ca437e53f7a4c981d973a40fde542edcba99251e4a",
+  "candidate/refresh.css": "26a09f36a54633196c5832d88b4471f91349d711cba208f72661eb9402707130",
+  "check.cjs": "3a5e4074fd8efbf0f8514f6f30b526300ff70d68292a7d827d108becbeca6097",
+  "manifest.json": "8de944d4e8b843856a87545d380239be2e046fc27e1d3f35d5393a01491eb699",
+  "publish.py": "9141173f13464f08f40d5db37804d447272a9cc3db5d342bb6a1cc3b64d03a51",
+  "test_pagination.py": "30cb0d58101073dd1b06d92b9ba1a6d72060034d2b9496ddbc406d58ff489c0c",
+  "test_publish.py": "e66d5221501f8ef63089d9151b310258d57eedfd7ddd9d13711ec9b2072c5aa8"
+}

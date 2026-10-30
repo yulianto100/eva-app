@@ -1,0 +1,2035 @@
+{
+  "pass": true,
+  "simulated": true,
+  "productionRequests": 0,
+  "results": [
+    {
+      "version": "before",
+      "width": 1440,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 200,
+          "right": 331.484375,
+          "width": 131.484375,
+          "height": 47.59375,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 654.296875,
+          "right": 777.703125,
+          "width": 123.40625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 1100.515625,
+          "right": 1240,
+          "width": 139.484375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 227,
+          "right": 337.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 716.1875,
+          "right": 887.984375,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 895.984375,
+          "right": 997.90625,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 227,
+          "right": 304.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 312.453125,
+          "right": 396.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 227,
+          "right": 604.328125,
+          "width": 377.328125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 614.328125,
+          "right": 822.984375,
+          "width": 208.65625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 832.984375,
+          "right": 1041.640625,
+          "width": 208.65625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 1051.640625,
+          "right": 1105.640625,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 1115.640625,
+          "right": 1213,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 1083.375,
+          "right": 1200,
+          "width": 116.625,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 1083.375,
+          "right": 1200,
+          "width": 116.625,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 1005.453125,
+          "right": 1110.15625,
+          "width": 104.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 1118.15625,
+          "right": 1213,
+          "width": 94.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 1118.015625,
+          "right": 1240,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "width": 1024,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 24,
+          "right": 155.484375,
+          "width": 131.484375,
+          "height": 47.59375,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 446.296875,
+          "right": 569.703125,
+          "width": 123.40625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 860.515625,
+          "right": 1000,
+          "width": 139.484375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 51,
+          "right": 161.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 510.75,
+          "right": 682.546875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 690.546875,
+          "right": 792.46875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 51,
+          "right": 128.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 136.453125,
+          "right": 220.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 51,
+          "right": 396.328125,
+          "width": 345.328125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 406.328125,
+          "right": 598.984375,
+          "width": 192.65625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 608.984375,
+          "right": 801.640625,
+          "width": 192.65625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 811.640625,
+          "right": 865.640625,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 875.640625,
+          "right": 973,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 852.53125,
+          "right": 960,
+          "width": 107.46875,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 852.53125,
+          "right": 960,
+          "width": 107.46875,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 765.453125,
+          "right": 870.15625,
+          "width": 104.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 878.15625,
+          "right": 973,
+          "width": 94.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 878.015625,
+          "right": 1000,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "width": 768,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 24,
+          "right": 155.484375,
+          "width": 131.484375,
+          "height": 47.59375,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 318.296875,
+          "right": 441.703125,
+          "width": 123.40625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 604.515625,
+          "right": 744,
+          "width": 139.484375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 51,
+          "right": 161.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 393,
+          "right": 564.796875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 572.796875,
+          "right": 674.71875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 51,
+          "right": 128.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 136.453125,
+          "right": 220.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 51,
+          "right": 322,
+          "width": 271,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 332,
+          "right": 487.5,
+          "width": 155.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 497.5,
+          "right": 653,
+          "width": 155.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 663,
+          "right": 717,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 51,
+          "right": 148.359375,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 818.21875,
+          "right": 920,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 818.21875,
+          "right": 920,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 509.453125,
+          "right": 614.15625,
+          "width": 104.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 622.15625,
+          "right": 717,
+          "width": 94.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 622.015625,
+          "right": 744,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "width": 640,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 16,
+          "right": 147.484375,
+          "width": 131.484375,
+          "height": 47.59375,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 263.40625,
+          "right": 377.3125,
+          "width": 113.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 493.234375,
+          "right": 624,
+          "width": 130.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 37,
+          "right": 147.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 37,
+          "right": 208.796875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 216.796875,
+          "right": 318.71875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 37,
+          "right": 114.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 122.453125,
+          "right": 206.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 37,
+          "right": 603,
+          "width": 566,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 37,
+          "right": 229.3125,
+          "width": 192.3125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 239.3125,
+          "right": 431.640625,
+          "width": 192.328125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 441.640625,
+          "right": 495.640625,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 505.640625,
+          "right": 603,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 804.21875,
+          "right": 906,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 804.21875,
+          "right": 906,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 37,
+          "right": 316,
+          "width": 279,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 324,
+          "right": 603,
+          "width": 279,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 16,
+          "right": 624,
+          "width": 608,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "width": 390,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 16,
+          "right": 147.484375,
+          "width": 131.484375,
+          "height": 47.59375,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 260.09375,
+          "right": 374,
+          "width": 113.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 16,
+          "right": 146.765625,
+          "width": 130.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 37,
+          "right": 147.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 37,
+          "right": 208.796875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 216.796875,
+          "right": 318.71875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 37,
+          "right": 114.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 122.453125,
+          "right": 206.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 37,
+          "right": 353,
+          "width": 316,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 37,
+          "right": 190,
+          "width": 153,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 200,
+          "right": 353,
+          "width": 153,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 37,
+          "right": 91,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 101,
+          "right": 198.359375,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 804.21875,
+          "right": 906,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 804.21875,
+          "right": 906,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 37,
+          "right": 191,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 199,
+          "right": 353,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 16,
+          "right": 374,
+          "width": 358,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "before",
+      "width": 320,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 12,
+          "right": 131.484375,
+          "width": 119.484375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 194.09375,
+          "right": 308,
+          "width": 113.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 12,
+          "right": 138.765625,
+          "width": 126.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 29,
+          "right": 139.984375,
+          "width": 110.984375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 29,
+          "right": 291,
+          "width": 262,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 29,
+          "right": 291,
+          "width": 262,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 29,
+          "right": 106.453125,
+          "width": 77.453125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 114.453125,
+          "right": 198.421875,
+          "width": 83.96875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 29,
+          "right": 291,
+          "width": 262,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 29,
+          "right": 291,
+          "width": 262,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 29,
+          "right": 227,
+          "width": 198,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 237,
+          "right": 291,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 29,
+          "right": 126.359375,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 796.21875,
+          "right": 898,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 796.21875,
+          "right": 898,
+          "width": 101.78125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 29,
+          "right": 156,
+          "width": 127,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 164,
+          "right": 291,
+          "width": 127,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 12,
+          "right": 308,
+          "width": 296,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 1440,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 160,
+          "right": 280.46875,
+          "width": 120.46875,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 955.328125,
+          "right": 1103.234375,
+          "width": 147.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 1115.234375,
+          "right": 1280,
+          "width": 164.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 185,
+          "right": 602.5,
+          "width": 417.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 672.5,
+          "right": 844.296875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 852.296875,
+          "right": 954.21875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 190,
+          "right": 294,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 298,
+          "right": 402,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 185,
+          "right": 605.328125,
+          "width": 420.328125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 617.328125,
+          "right": 842.484375,
+          "width": 225.15625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 854.484375,
+          "right": 1079.640625,
+          "width": 225.15625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 1091.640625,
+          "right": 1145.640625,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 1157.640625,
+          "right": 1255,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 1063.96875,
+          "right": 1252,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 1063.96875,
+          "right": 1252,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 1039.453125,
+          "right": 1148.15625,
+          "width": 108.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 1156.15625,
+          "right": 1255,
+          "width": 98.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 1158.015625,
+          "right": 1280,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 1024,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 32,
+          "right": 152.46875,
+          "width": 120.46875,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 667.328125,
+          "right": 815.234375,
+          "width": 147.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 827.234375,
+          "right": 992,
+          "width": 164.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 57,
+          "right": 406.5,
+          "width": 349.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 476.5,
+          "right": 648.296875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 656.296875,
+          "right": 758.21875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 62,
+          "right": 166,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 170,
+          "right": 274,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 57,
+          "right": 397.328125,
+          "width": 340.328125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 409.328125,
+          "right": 594.484375,
+          "width": 185.15625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 606.484375,
+          "right": 791.640625,
+          "width": 185.15625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 803.640625,
+          "right": 857.640625,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 869.640625,
+          "right": 967,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 935.96875,
+          "right": 1124,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 935.96875,
+          "right": 1124,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 751.453125,
+          "right": 860.15625,
+          "width": 108.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 868.15625,
+          "right": 967,
+          "width": 98.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 870.015625,
+          "right": 992,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 768,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 32,
+          "right": 152.46875,
+          "width": 120.46875,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 411.328125,
+          "right": 559.234375,
+          "width": 147.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 571.234375,
+          "right": 736,
+          "width": 164.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 57,
+          "right": 297.6875,
+          "width": 240.6875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 367.6875,
+          "right": 539.484375,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 547.484375,
+          "right": 649.40625,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 62,
+          "right": 166,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 170,
+          "right": 274,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 57,
+          "right": 324,
+          "width": 267,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 336,
+          "right": 484.5,
+          "width": 148.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 496.5,
+          "right": 645,
+          "width": 148.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 657,
+          "right": 711,
+          "width": 54,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 57,
+          "right": 154.359375,
+          "width": 97.359375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 935.96875,
+          "right": 1124,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 935.96875,
+          "right": 1124,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 495.453125,
+          "right": 604.15625,
+          "width": 108.703125,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 612.15625,
+          "right": 711,
+          "width": 98.84375,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 614.015625,
+          "right": 736,
+          "width": 121.984375,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 640,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 16,
+          "right": 136.46875,
+          "width": 120.46875,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 299.328125,
+          "right": 447.234375,
+          "width": 147.90625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 459.234375,
+          "right": 624,
+          "width": 164.765625,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 37,
+          "right": 603,
+          "width": 566,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 37,
+          "right": 208.796875,
+          "width": 171.796875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 216.796875,
+          "right": 318.71875,
+          "width": 101.921875,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 42,
+          "right": 146,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 150,
+          "right": 254,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 37,
+          "right": 603,
+          "width": 566,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 37,
+          "right": 184.5,
+          "width": 147.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 196.5,
+          "right": 344,
+          "width": 147.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 356,
+          "right": 473.5,
+          "width": 117.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 485.5,
+          "right": 603,
+          "width": 117.5,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 915.96875,
+          "right": 1104,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 915.96875,
+          "right": 1104,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 37,
+          "right": 316,
+          "width": 279,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 324,
+          "right": 603,
+          "width": 279,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 16,
+          "right": 624,
+          "width": 608,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 390,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 16,
+          "right": 136.46875,
+          "width": 120.46875,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 16,
+          "right": 190,
+          "width": 174,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 200,
+          "right": 374,
+          "width": 174,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 35,
+          "right": 355,
+          "width": 320,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 35,
+          "right": 355,
+          "width": 320,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 35,
+          "right": 355,
+          "width": 320,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 40,
+          "right": 144,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 148,
+          "right": 252,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 35,
+          "right": 355,
+          "width": 320,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 35,
+          "right": 189,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 201,
+          "right": 355,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 35,
+          "right": 189,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 201,
+          "right": 355,
+          "width": 154,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 913.96875,
+          "right": 1102,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 913.96875,
+          "right": 1102,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 35,
+          "right": 191,
+          "width": 156,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 199,
+          "right": 355,
+          "width": 156,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 16,
+          "right": 374,
+          "width": 358,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    },
+    {
+      "version": "after",
+      "width": 320,
+      "overflow": false,
+      "controls": [
+        {
+          "id": "",
+          "text": "EVAby DYENA",
+          "x": 16,
+          "right": 131.53125,
+          "width": 115.53125,
+          "height": 45.1875,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Hubungi support",
+          "x": 16,
+          "right": 155,
+          "width": 139,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Kembali ke EVA",
+          "x": 165,
+          "right": 304,
+          "width": 139,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Buka Admin di tab baru",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-manage",
+          "text": "Kelola koneksi ASTRI",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-astri-refresh",
+          "text": "Cek koneksi",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Convert",
+          "x": 40,
+          "right": 144,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "Add BOQ",
+          "x": 148,
+          "right": 252,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-query",
+          "text": "",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-scope",
+          "text": "SemuaClusterSubfeederFeeder",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-status",
+          "text": "SemuaAktifSelesaiGagalDibatalkan",
+          "x": 35,
+          "right": 169,
+          "width": 134,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-search",
+          "text": "Cari",
+          "x": 181,
+          "right": 285,
+          "width": 104,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-refresh",
+          "text": "Muat ulang",
+          "x": 35,
+          "right": 285,
+          "width": 250,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 913.96875,
+          "right": 1102,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "",
+          "text": "DESIGN_CLUSTER_MELATI_AE.kmz",
+          "x": 913.96875,
+          "right": 1102,
+          "width": 188.03125,
+          "height": 44,
+          "insideTable": true
+        },
+        {
+          "id": "account-history-prev",
+          "text": "Sebelumnya",
+          "x": 35,
+          "right": 156,
+          "width": 121,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "account-history-next",
+          "text": "Berikutnya",
+          "x": 164,
+          "right": 285,
+          "width": 121,
+          "height": 44,
+          "insideTable": false
+        },
+        {
+          "id": "eva-logout",
+          "text": "Keluar dari EVA",
+          "x": 16,
+          "right": 304,
+          "width": 288,
+          "height": 44,
+          "insideTable": false
+        }
+      ]
+    }
+  ]
+}

@@ -262,11 +262,11 @@
         if (version !== generation) return;
         if (!response.ok) throw new Error('history unavailable');
         const items = kind === 'convert' ? payload.jobs : payload.history;
-        if (!Array.isArray(items) || items.length > 20 || items.some(item => !item || typeof item !== 'object')
-            || !Number.isSafeInteger(payload.total) || payload.total < 0 || payload.page !== page || payload.page_size !== 20) throw new Error('invalid history');
+        if (!Array.isArray(items) || items.length > 5 || items.some(item => !item || typeof item !== 'object')
+            || !Number.isSafeInteger(payload.total) || payload.total < 0 || payload.page !== page || payload.page_size !== 5) throw new Error('invalid history');
         total = payload.total;rows.replaceChildren(...items.map(addRow));
         feedback.textContent = items.length ? '' : (kind === 'boq' ? 'Belum ada Add BOQ sukses terverifikasi milik akun ini.' : 'Belum ada job konversi pada filter ini.');
-        summary.textContent = total + ' riwayat · Halaman ' + page + ' dari ' + Math.max(1,Math.ceil(total / 20));
+        summary.textContent = total + ' riwayat · Halaman ' + page + ' dari ' + Math.max(1,Math.ceil(total / 5));
       } catch {
         if (version !== generation) return;
         total = 0;rows.replaceChildren();feedback.textContent = 'Riwayat belum bisa dimuat. Klik Muat ulang untuk mencoba kembali.';
@@ -274,7 +274,7 @@
         clearTimeout(timeout);
         if (version === generation) {
           host.setAttribute('aria-busy', 'false');search.disabled = refresh.disabled = false;
-          prev.disabled = page <= 1;next.disabled = page * 20 >= total;
+          prev.disabled = page <= 1;next.disabled = page * 5 >= total;
         }
       }
     }
@@ -290,7 +290,7 @@
     document.getElementById('account-history-filters').addEventListener('submit', event => {event.preventDefault();page = 1;loadHistory();});
     refresh.addEventListener('click', loadHistory);
     prev.addEventListener('click', () => {if(page > 1){page--;loadHistory();}});
-    next.addEventListener('click', () => {if(page * 20 < total){page++;loadHistory();}});
+    next.addEventListener('click', () => {if(page * 5 < total){page++;loadHistory();}});
     window.addEventListener('pagehide', () => {generation++;controller?.abort();}, {once:true});
     loadHistory();
   }

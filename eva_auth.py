@@ -963,7 +963,10 @@ class AuthGate:
                 from config import Config
                 result = RedisBoqSubmissionStore(Config.REDIS_URL, prefix=Config.JOB_STORE_KEY_PREFIX,
                                                 ttl_seconds=Config.JOB_STORE_TTL_SECONDS).list_success_history(
-                    page=page, q=query, scope=scope, user_id=user['id'])
+                    page=(page - 1) // 4 + 1, q=query, scope=scope, user_id=user['id'])
+                # Native journal pages contain 20 events; personal pages expose five without changing Admin.
+                offset = ((page - 1) % 4) * 5
+                result.update(history=result['history'][offset:offset + 5], page=page, page_size=5)
                 return jsonify(result)
             from jobs import list_jobs as system_jobs
             with self.store.connect() as db:
@@ -993,7 +996,7 @@ class AuthGate:
                         ('job_id','download_name','original_filenames','output_mode','scope_type')).casefold()]
             clean = _history_text
             items = []
-            for job in jobs[(page - 1) * 20:page * 20]:
+            for job in jobs[(page - 1) * 5:page * 5]:
                 item = {key: clean(job.get(key)) for key in
                         ('job_id','status','scope_type','network_type','output_mode','message','error','download_name')}
                 item.update(progress=max(0, min(100, int(job.get('progress') or 0))),
@@ -1023,7 +1026,7 @@ class AuthGate:
                 if item['download_state'] == 'ready':
                     item['download_url'] = '/api/account/history/'+job['job_id']+'/download'
                 items.append(item)
-            return jsonify({'jobs': items, 'total': len(jobs), 'page': page, 'page_size': 20})
+            return jsonify({'jobs': items, 'total': len(jobs), 'page': page, 'page_size': 5})
         except ValueError:
             return jsonify({'error': 'Filter riwayat tidak valid.'}), 400
         except Exception:

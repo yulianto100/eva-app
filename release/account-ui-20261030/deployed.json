@@ -1,0 +1,71 @@
+{
+  "status": "deployed",
+  "files": {
+    "templates/account.html": "941edee7bd350acb52aeea2b240b6268d60e58560c4505ab68a28f88511b950f",
+    "static/css/eva-account.css": "f63356b8b128d65745d955d916845bd0bf69c507beecbc7aba12f471c11100c2",
+    "static/js/eva-account.js": "ab85751c7a91e1c8f5407f4e0ee523c7a117440c4b824010c9d99bd5f8863dd9",
+    "eva_auth.py": "c2a8c99c048c00f807f372ca437e53f7a4c981d973a40fde542edcba99251e4a"
+  },
+  "metadata": {
+    "templates/account.html": [
+      1000,
+      1000,
+      420
+    ],
+    "static/css/eva-account.css": [
+      1000,
+      1000,
+      420
+    ],
+    "static/js/eva-account.js": [
+      1000,
+      1000,
+      420
+    ],
+    "eva_auth.py": [
+      1000,
+      1000,
+      420
+    ]
+  },
+  "process_before": {
+    "master": {
+      "pid": 7,
+      "ppid": 1,
+      "start": "515862624"
+    },
+    "children": [
+      {
+        "pid": 4692,
+        "ppid": 7,
+        "start": "517254034"
+      },
+      {
+        "pid": 4694,
+        "ppid": 7,
+        "start": "517254035"
+      }
+    ]
+  },
+  "process_after": {
+    "master": {
+      "pid": 7,
+      "ppid": 1,
+      "start": "515862624"
+    },
+    "children": [
+      {
+        "pid": 6185,
+        "ppid": 7,
+        "start": "517724446"
+      },
+      {
+        "pid": 6187,
+        "ppid": 7,
+        "start": "517724447"
+      }
+    ]
+  },
+  "roles_unchanged": true,
+  "auth_inode_preserved": true
+}
