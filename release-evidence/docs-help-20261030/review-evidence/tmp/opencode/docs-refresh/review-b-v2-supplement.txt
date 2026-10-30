@@ -1,0 +1,17 @@
+PASS all nine original docs sections byte-retained after explicit additive help/checklist/glossary and shortcut-copy normalization.
+PASS unique docs IDs and all fragment destinations.
+PASS B publisher actual authority modes 0644/0664 + uid/gid under umask 077; single web reload
+PASS B publisher actual authority modes 0644/0664 + uid/gid under umask 077; recovery without HUP
+PASS final manifest and all 15 entries unchanged.
+PASS real keyboard: ? opens /docs#bantuan once, typing/modifiers suppressed; native consolidated docs link Enter opens /docs. Extracted functions only; no app boot.
+PASS docs 1280: no page overflow; native TOC Enter, checklist Enter/Space, glossary reachability.
+PASS docs 390: no page overflow; native TOC Enter, checklist Enter/Space, glossary reachability.
+PASS docs 320: no page overflow; native TOC Enter, checklist Enter/Space, glossary reachability.
+PASS isolated browser: 4 fulfilled local GETs; zero provider/production requests.
+PASS independent reload-foreign templates/docs.html: exact rejection, foreign/candidate files retained, metadata preserved, exactly one reload
+PASS independent reload-foreign static/js/app.js: exact rejection, foreign/candidate files retained, metadata preserved, exactly one reload
+PASS independent reload-foreign templates/index.html: exact rejection, foreign/candidate files retained, metadata preserved, exactly one reload
+PASS installed proof scripts syntax; inspected only, not run against production
+PASS final v2 manifest and 15 entries unchanged
+
+supplement_exit=0

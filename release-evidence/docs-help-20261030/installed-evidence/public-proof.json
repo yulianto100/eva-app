@@ -1,0 +1,10 @@
+{
+  "public_sha256": "2f384fb12dfa67cc7c6bfb5a747d6bc98f995846e72e0413db206962c5a17db9",
+  "health": {
+    "service": "eva-web",
+    "status": "ok",
+    "timestamp": 1793360149
+  },
+  "anonymous_docs": 401,
+  "authenticated_http": "not tested"
+}

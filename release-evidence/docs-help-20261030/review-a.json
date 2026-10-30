@@ -1,0 +1,36 @@
+{
+  "reviewer": "independent-reviewer-a-solo-docs-refresh-v3-20261030",
+  "approved": true,
+  "scope": "docs-help-three-files-web-hup",
+  "manifest_sha256": "c06491718aad1a4afe99333a918d5447f8289f759464bf7ff41293bd98b32dc8",
+  "gate_exit": 0,
+  "evidence": {
+    "release": "/tmp/opencode/docs-refresh/release-v3",
+    "gate_command": "python3 -B /tmp/opencode/docs-refresh/release-v3/check.py",
+    "gate_runs": 1,
+    "gate_log": "/tmp/opencode/docs-refresh/review-a-v3-gate.txt",
+    "gate_exit_file": "/tmp/opencode/docs-refresh/review-a-v3-gate.exit",
+    "manifest_validation": "Pinned manifest SHA and all 15 payload hashes verified before and after full gate; reverified after independent mutation and before review publication. No frozen files edited.",
+    "successor_delta": "Complete recursive v2/v3 comparison confirms only check.py, verify-installed.py and manifest changed. check.py records rejected flag, asserts expected rejection outside catch and exact reload count outside catch. verify-installed.py changes only local/remote release paths v2 to v3. Product bytes, publisher, authority, backups, browser proof and existing WO tests unchanged.",
+    "full_gate": "Exit 0. Exact JS openHelp-only delta and index header/modal/docs-label/cache delta; retained docs content/checklist; node syntax; 72/72 WO checks; 108/108 Schedule checks; all 10 publisher success/fault scenarios including actual reload-foreign rejection and exact reload count.",
+    "mutation_command": "python3 -B /tmp/opencode/docs-refresh/review-a-v3-mutation.py",
+    "mutation_exit": 1,
+    "mutation_result": "Unchanged frozen check.py executed through runpy. Import loader removes exactly one publisher final candidate-byte assertion in memory, preserving source line numbering and all disk bytes. MUTATION_APPLIED marker recorded. Genuine child exit 1 at frozen check.py line 53, AssertionError: ('Expected rejection', 'reload-foreign'). No PASS publisher reload-foreign. Confirms frozen regression rejects original false-positive.",
+    "publisher_review": "Publisher byte-identical to reviewed v2. Final candidate-byte assertion remains after reload/guard, before deployed status. reload_started retains publication on foreign-byte rejection or uncertain reload; no automatic rollback or second HUP. Three-target atomic staging preserves uid/gid/mode; runtime and non-target pins remain. Scope unchanged; installed scripts inspected, not run.",
+    "historical_evidence": "All v1/v2 review, gate and blocker/mutation evidence retained. No old artifact overwritten.",
+    "artifacts_sha256": {
+      "review-a-v3-gate.txt": "0e00ea02ee75c9578be7953faaa026ac48598724cb88c254ac585ebb9337a083",
+      "review-a-v3-gate.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "review-a-v3-mutation.py": "632234bf239fe822e5fa71b35af6dfc8b921cce4a63201522679e127e81b97c1",
+      "review-a-v3-mutation.txt": "2de17ae745dd9b96aca75f8958345bdcd45823c02b86798267b03e72be39e57f",
+      "review-a-v3-mutation.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    }
+  },
+  "risks": [
+    "Local read-only approval only. Fresh live preflight and installed host/container/public proof remain deployment responsibilities.",
+    "Publication remains atomic per file, not as a three-file group. No concurrent target/release-tree writers; ordinary Python without optimization required for safety assertions.",
+    "Installed proof uses an external installed-ui.js copy; retain its equality with frozen script. Synthetic Jinja/header/shortcut browser checks are not authenticated full-app HTTP acceptance."
+  ],
+  "blockers": [],
+  "production_mutations": false
+}

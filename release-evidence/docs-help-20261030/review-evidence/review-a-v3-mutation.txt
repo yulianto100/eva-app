@@ -1,0 +1,19 @@
+MUTATION_APPLIED: removed only publisher final candidate-byte assertion
+PASS scope: exact JS-only openHelp delta, exact header/modal/token delta, nine sections, full folders/glossary
+PASS publisher None
+PASS publisher templates/docs.html
+PASS publisher static/js/app.js
+PASS publisher templates/index.html
+PASS publisher reloaded
+PASS publisher reload
+Traceback (most recent call last):
+  File "/tmp/opencode/docs-refresh/review-a-v3-mutation.py", line 23, in <module>
+    runpy.run_path(str(ROOT/'check.py'),run_name='__main__')
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/tmp/opencode/docs-refresh/release-v3/check.py", line 53, in <module>
+    assert rejected == (fail is not None), ('Expected rejection',fail)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('Expected rejection', 'reload-foreign')

@@ -1,0 +1,66 @@
+{
+  "status": "deployed",
+  "files": {
+    "templates/docs.html": "9b6941717bd97db52227328cac9332d11c0eeed1e694c6aa35e4a139d667ba3b",
+    "static/js/app.js": "2f384fb12dfa67cc7c6bfb5a747d6bc98f995846e72e0413db206962c5a17db9",
+    "templates/index.html": "8e7bc3085651f6891ae04889487e55693a8cefa333fcbb0bdeb764322c7a906f"
+  },
+  "process_before": {
+    "master": {
+      "pid": 7,
+      "ppid": 1,
+      "start": "515862624"
+    },
+    "children": [
+      {
+        "pid": 3266,
+        "ppid": 7,
+        "start": "516800389"
+      },
+      {
+        "pid": 3268,
+        "ppid": 7,
+        "start": "516800390"
+      }
+    ]
+  },
+  "process_after": {
+    "master": {
+      "pid": 7,
+      "ppid": 1,
+      "start": "515862624"
+    },
+    "children": [
+      {
+        "pid": 4692,
+        "ppid": 7,
+        "start": "517254034"
+      },
+      {
+        "pid": 4694,
+        "ppid": 7,
+        "start": "517254035"
+      }
+    ]
+  },
+  "metadata": {
+    "templates/docs.html": {
+      "inode": 410390,
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420
+    },
+    "static/js/app.js": {
+      "inode": 411347,
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 436
+    },
+    "templates/index.html": {
+      "inode": 411144,
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420
+    }
+  }
+}

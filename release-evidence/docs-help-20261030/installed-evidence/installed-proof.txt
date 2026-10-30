@@ -1,0 +1,2 @@
+PASS installed-byte Chromium desktop/390/320, docs anchors, header entry, shortcut, typing guard; no network
+PASS host/container/public hashes, metadata receipt, health, anonymous auth denial, installed-byte browser

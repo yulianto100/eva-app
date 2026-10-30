@@ -1,0 +1,15 @@
+Private temporary copy only: remove post-reload candidate assertion. Frozen release unchanged.
+PASS scope: exact JS-only openHelp delta, exact header/modal/token delta, nine sections, full folders/glossary
+PASS publisher None
+PASS publisher templates/docs.html
+PASS publisher static/js/app.js
+PASS publisher templates/index.html
+PASS publisher reloaded
+PASS publisher reload
+Traceback (most recent call last):
+  File "/tmp/opencode/review-b-v3-mutation-pwg_6lp0/release/check.py", line 53, in <module>
+    assert rejected == (fail is not None), ('Expected rejection',fail)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('Expected rejection', 'reload-foreign')
+
+mutation_gate_exit=1

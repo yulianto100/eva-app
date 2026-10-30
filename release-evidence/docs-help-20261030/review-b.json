@@ -1,0 +1,44 @@
+{
+  "reviewer": "independent-reviewer-b-solo-20261030-v3",
+  "approved": true,
+  "scope": "docs-help-three-files-web-hup",
+  "manifest_sha256": "c06491718aad1a4afe99333a918d5447f8289f759464bf7ff41293bd98b32dc8",
+  "gate_exit": 0,
+  "production_mutations": false,
+  "blockers": [],
+  "evidence": {
+    "artifacts_sha256": {
+      "/tmp/opencode/docs-refresh/review-b-v3-run.py": "fa0edb0d39fb7ed2efe8166528358c9aebcf6ae0dce051f438789487f40def86",
+      "/tmp/opencode/docs-refresh/review-b-v3-gate.txt": "f19ba24e7200a3268a34fb353f5ce964709a55008cb86dfcd0be3c8a0b44faaf",
+      "/tmp/opencode/docs-refresh/review-b-v3-mutation.txt": "3ec4f9af971f83a572142a0ff7de6df4ee541465f2880d0816a34e87d69ba49f",
+      "/tmp/opencode/docs-refresh/review-b-v3-integrity.txt": "7593568f3acc192a12fc818665237976b9e36df4ce5128c0c51afde491533697",
+      "/tmp/opencode/docs-refresh/review-b-v2-supplement.py": "165ba50a8a21e9674864de65c7ed18b20232b8553c507430ca5d07142936d9f3",
+      "/tmp/opencode/docs-refresh/review-b-v2-supplement.txt": "87fde8f713a7d00ebbc52567b94bcf11403c70a2a1189fb9ef470722da5fd886",
+      "/tmp/opencode/docs-refresh/review-b-v2-retention.py": "21b55d6f63dea4c5852ef68a80808b1ab0569d992ae853a68d83cd3b942aa656",
+      "/tmp/opencode/docs-refresh/review-b-v2-supplement.js": "cc1934d728f5b1b9859f80d7c9c01fd7ae105115ec2b454fbb8706b6a3cef593"
+    },
+    "integrity": "Expected manifest and all 15 entries independently verified before full gate and after review; frozen files unchanged.",
+    "gate": {
+      "command": "python3 -B /tmp/opencode/docs-refresh/release-v3/check.py",
+      "log": "/tmp/opencode/docs-refresh/review-b-v3-gate.txt",
+      "exit": 0,
+      "result": "Full frozen scope, publisher fault/recovery/reload checks, JS syntax, 72 UI and 108 Schedule offline checks pass."
+    },
+    "negative_control": {
+      "log": "/tmp/opencode/docs-refresh/review-b-v3-mutation.txt",
+      "exit": 1,
+      "result": "Private temporary copy only: deleting post-reload candidate assertion causes check.py to fail at line 53: AssertionError: ('Expected rejection', 'reload-foreign'). Corrected rejection assertion is outside catch. Exact reload count assertion is also outside catch."
+    },
+    "scope_review": "Complete v2/v3 diff inspected. Only check.py, manifest and two v3 release paths in verify-installed.py changed. Product, publisher, authority, backups and existing WO suites identical to independently reviewed v2 bytes. No expanded deployment scope.",
+    "prior_independent_checks": "Own preserved v2 supplements apply to byte-identical product/publisher: all nine original sections retained; native docs link and Help keyboard navigation; typing/modifier guards; 1280/390/320 overflow/TOC/checklist/glossary. All-three-target reload foreign-byte injection rejects, retains foreign and remaining candidate bytes, preserves metadata, invokes exactly one reload. These supplements were run for v2, not rerun for v3.",
+    "publisher_review": "Post-reload candidate-byte validation retained. Per-file atomic replacement and durable fsync; ownership/modes preserved. Pre-HUP recovery refuses foreign overwrite; uncertain HUP holds files without blind rollback. Container/runtime/config/mount pins and backend/compose guards retained. Signal limited to pinned web Gunicorn master; worker roles unchanged.",
+    "installed_proof": "Scripts inspected, not executed against production. v3 local/remote release references verified. Authenticated HTTP acceptance remains explicitly untested.",
+    "boundaries": "No production operations, SSH calls, ASTRI mutations or frozen edits. Only own local evidence/private disposable mutation copy. Previous evidence preserved. No sibling evidence reused. Product screenshot approval accepted as user-provided authority."
+  },
+  "risks": [
+    "Approval covers only docs-help-three-files-web-hup; not a claim of deployment or authenticated production acceptance.",
+    "Per-file atomic replacement is not an atomic three-file transaction; brief mixed-asset interval remains possible. Post-HUP uncertainty intentionally requires investigation.",
+    "verify-installed.py still invokes external /tmp/opencode/docs-refresh/installed-ui.js, not its manifest-bound sibling. Before relying on installed browser proof, invoke the frozen sibling or verify that external copy matches its manifest hash. Output directory must exist.",
+    "Run publisher with Python assertions enabled; no -O or PYTHONOPTIMIZE."
+  ]
+}

@@ -5481,8 +5481,7 @@ if (!bar || !message || state.errorScope !== "job") return;
   }
 
   function openHelp() {
-    populateFolderChecklist();
-    openModal("helpModal");
+    window.open("/docs#bantuan", "_blank", "noopener");
   }
   if (typeof window !== "undefined") window.openHelp = openHelp;
 

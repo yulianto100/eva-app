@@ -1,0 +1,195 @@
+PASS cluster/nojob: main/modal status matrix
+PASS cluster/nojob: reconnect requests WO recovery
+PASS cluster/nojob: null read settles unavailable/fail-closed
+PASS cluster/nojob: duplicate/fresh reads
+PASS cluster/nojob: exact-WO retained lock detaches/reapplies
+PASS cluster/nojob: loading auto-locks exact siblings only
+PASS cluster/nojob: Successful precheck restores lock, no submit
+PASS cluster/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS cluster/JOB-TEST: main/modal status matrix
+PASS cluster/JOB-TEST: reconnect requests WO recovery
+PASS cluster/JOB-TEST: null read settles unavailable/fail-closed
+PASS cluster/JOB-TEST: duplicate/fresh reads
+PASS cluster/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS cluster/JOB-TEST: loading auto-locks exact siblings only
+PASS cluster/JOB-TEST: Successful precheck restores lock, no submit
+PASS cluster/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS subfeeder/nojob: main/modal status matrix
+PASS subfeeder/nojob: reconnect requests WO recovery
+PASS subfeeder/nojob: null read settles unavailable/fail-closed
+PASS subfeeder/nojob: duplicate/fresh reads
+PASS subfeeder/nojob: exact-WO retained lock detaches/reapplies
+PASS subfeeder/nojob: loading auto-locks exact siblings only
+PASS subfeeder/nojob: Successful precheck restores lock, no submit
+PASS subfeeder/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS subfeeder/JOB-TEST: main/modal status matrix
+PASS subfeeder/JOB-TEST: reconnect requests WO recovery
+PASS subfeeder/JOB-TEST: null read settles unavailable/fail-closed
+PASS subfeeder/JOB-TEST: duplicate/fresh reads
+PASS subfeeder/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS subfeeder/JOB-TEST: loading auto-locks exact siblings only
+PASS subfeeder/JOB-TEST: Successful precheck restores lock, no submit
+PASS subfeeder/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS feeder/nojob: main/modal status matrix
+PASS feeder/nojob: reconnect requests WO recovery
+PASS feeder/nojob: null read settles unavailable/fail-closed
+PASS feeder/nojob: duplicate/fresh reads
+PASS feeder/nojob: exact-WO retained lock detaches/reapplies
+PASS feeder/nojob: loading auto-locks exact siblings only
+PASS feeder/nojob: Successful precheck restores lock, no submit
+PASS feeder/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS feeder/JOB-TEST: main/modal status matrix
+PASS feeder/JOB-TEST: reconnect requests WO recovery
+PASS feeder/JOB-TEST: null read settles unavailable/fail-closed
+PASS feeder/JOB-TEST: duplicate/fresh reads
+PASS feeder/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS feeder/JOB-TEST: loading auto-locks exact siblings only
+PASS feeder/JOB-TEST: Successful precheck restores lock, no submit
+PASS feeder/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS required gate wiring uses exact main/modal identity
+PASS sync helper restores unrelated map snapshot without deleting Set lock
+PASS lock key trims scope/code/WO, rejects whitespace code
+PASS recovery skips hidden/idle/disconnected/needsLogin/missing target
+PASS recovery deduplicates inflight reads and reuses fresh proof
+PASS wake and trusted idle input invoke recovery
+PASS synthetic input does not renew activity/recover
+PASS connected auth recheck recovers even if previously connected; duplicate auth read guarded
+PASS stale WO response ignored: target
+PASS stale WO response ignored: job
+PASS stale WO response ignored: auth
+PASS stale WO response ignored: request
+PASS stale WO response ignored: disconnect
+PASS mismatched response fails closed
+PASS stale auth status cannot recover or overwrite a newer generation
+PASS actual action-read wrapper uses mocked GET only; stale queued reads skipped
+PASS stale BOQ precheck prevents submit: target
+PASS stale BOQ precheck prevents submit: job
+PASS stale BOQ precheck prevents submit: auth
+PASS stale BOQ precheck prevents submit: items
+PASS stale BOQ precheck prevents submit: modal
+PASS unknown submission transport outcome retains lock
+PASS read exception settles unavailable and clears inflight
+PASS main button double-click wrapper invokes one handler
+72/72 passed; source=/tmp/opencode/docs-refresh/release-v3/candidate/app.js
+Offline VM/source extraction; mocked DOM, timers, reads, submission lifecycle. No app boot, browser layout, backend, real network, or live ASTRI mutation.
+PASS cluster/nojob: real-handler race first=schedule
+PASS cluster/nojob: real-handler race first=boq
+PASS cluster/nojob: unknown retains original; new WO usable; return locked
+PASS cluster/nojob: failed retains original; new WO usable; return locked
+PASS cluster/nojob: null retains original; new WO usable; return locked
+PASS cluster/nojob: incomplete-verified retains original; new WO usable; return locked
+PASS cluster/nojob: transport retains original; new WO usable; return locked
+PASS cluster/nojob: stale target during precheck
+PASS cluster/nojob: stale target during post
+PASS cluster/nojob: stale job during precheck
+PASS cluster/nojob: stale job during post
+PASS cluster/nojob: stale auth during precheck
+PASS cluster/nojob: stale auth during post
+PASS cluster/nojob: pre-POST status exit null
+PASS cluster/nojob: pre-POST status exit {"unavailable":true}
+PASS cluster/nojob: pre-POST status exit {"closed":true}
+PASS cluster/nojob: pre-POST status exit {"successful":true}
+PASS cluster/nojob: verified triple releases original lock
+PASS cluster/JOB-TEST: real-handler race first=schedule
+PASS cluster/JOB-TEST: real-handler race first=boq
+PASS cluster/JOB-TEST: unknown retains original; new WO usable; return locked
+PASS cluster/JOB-TEST: failed retains original; new WO usable; return locked
+PASS cluster/JOB-TEST: null retains original; new WO usable; return locked
+PASS cluster/JOB-TEST: incomplete-verified retains original; new WO usable; return locked
+PASS cluster/JOB-TEST: transport retains original; new WO usable; return locked
+PASS cluster/JOB-TEST: stale target during precheck
+PASS cluster/JOB-TEST: stale target during post
+PASS cluster/JOB-TEST: stale job during precheck
+PASS cluster/JOB-TEST: stale job during post
+PASS cluster/JOB-TEST: stale auth during precheck
+PASS cluster/JOB-TEST: stale auth during post
+PASS cluster/JOB-TEST: pre-POST status exit null
+PASS cluster/JOB-TEST: pre-POST status exit {"unavailable":true}
+PASS cluster/JOB-TEST: pre-POST status exit {"closed":true}
+PASS cluster/JOB-TEST: pre-POST status exit {"successful":true}
+PASS cluster/JOB-TEST: verified triple releases original lock
+PASS subfeeder/nojob: real-handler race first=schedule
+PASS subfeeder/nojob: real-handler race first=boq
+PASS subfeeder/nojob: unknown retains original; new WO usable; return locked
+PASS subfeeder/nojob: failed retains original; new WO usable; return locked
+PASS subfeeder/nojob: null retains original; new WO usable; return locked
+PASS subfeeder/nojob: incomplete-verified retains original; new WO usable; return locked
+PASS subfeeder/nojob: transport retains original; new WO usable; return locked
+PASS subfeeder/nojob: stale target during precheck
+PASS subfeeder/nojob: stale target during post
+PASS subfeeder/nojob: stale job during precheck
+PASS subfeeder/nojob: stale job during post
+PASS subfeeder/nojob: stale auth during precheck
+PASS subfeeder/nojob: stale auth during post
+PASS subfeeder/nojob: pre-POST status exit null
+PASS subfeeder/nojob: pre-POST status exit {"unavailable":true}
+PASS subfeeder/nojob: pre-POST status exit {"closed":true}
+PASS subfeeder/nojob: pre-POST status exit {"successful":true}
+PASS subfeeder/nojob: verified triple releases original lock
+PASS subfeeder/JOB-TEST: real-handler race first=schedule
+PASS subfeeder/JOB-TEST: real-handler race first=boq
+PASS subfeeder/JOB-TEST: unknown retains original; new WO usable; return locked
+PASS subfeeder/JOB-TEST: failed retains original; new WO usable; return locked
+PASS subfeeder/JOB-TEST: null retains original; new WO usable; return locked
+PASS subfeeder/JOB-TEST: incomplete-verified retains original; new WO usable; return locked
+PASS subfeeder/JOB-TEST: transport retains original; new WO usable; return locked
+PASS subfeeder/JOB-TEST: stale target during precheck
+PASS subfeeder/JOB-TEST: stale target during post
+PASS subfeeder/JOB-TEST: stale job during precheck
+PASS subfeeder/JOB-TEST: stale job during post
+PASS subfeeder/JOB-TEST: stale auth during precheck
+PASS subfeeder/JOB-TEST: stale auth during post
+PASS subfeeder/JOB-TEST: pre-POST status exit null
+PASS subfeeder/JOB-TEST: pre-POST status exit {"unavailable":true}
+PASS subfeeder/JOB-TEST: pre-POST status exit {"closed":true}
+PASS subfeeder/JOB-TEST: pre-POST status exit {"successful":true}
+PASS subfeeder/JOB-TEST: verified triple releases original lock
+PASS feeder/nojob: real-handler race first=schedule
+PASS feeder/nojob: real-handler race first=boq
+PASS feeder/nojob: unknown retains original; new WO usable; return locked
+PASS feeder/nojob: failed retains original; new WO usable; return locked
+PASS feeder/nojob: null retains original; new WO usable; return locked
+PASS feeder/nojob: incomplete-verified retains original; new WO usable; return locked
+PASS feeder/nojob: transport retains original; new WO usable; return locked
+PASS feeder/nojob: stale target during precheck
+PASS feeder/nojob: stale target during post
+PASS feeder/nojob: stale job during precheck
+PASS feeder/nojob: stale job during post
+PASS feeder/nojob: stale auth during precheck
+PASS feeder/nojob: stale auth during post
+PASS feeder/nojob: pre-POST status exit null
+PASS feeder/nojob: pre-POST status exit {"unavailable":true}
+PASS feeder/nojob: pre-POST status exit {"closed":true}
+PASS feeder/nojob: pre-POST status exit {"successful":true}
+PASS feeder/nojob: verified triple releases original lock
+PASS feeder/JOB-TEST: real-handler race first=schedule
+PASS feeder/JOB-TEST: real-handler race first=boq
+PASS feeder/JOB-TEST: unknown retains original; new WO usable; return locked
+PASS feeder/JOB-TEST: failed retains original; new WO usable; return locked
+PASS feeder/JOB-TEST: null retains original; new WO usable; return locked
+PASS feeder/JOB-TEST: incomplete-verified retains original; new WO usable; return locked
+PASS feeder/JOB-TEST: transport retains original; new WO usable; return locked
+PASS feeder/JOB-TEST: stale target during precheck
+PASS feeder/JOB-TEST: stale target during post
+PASS feeder/JOB-TEST: stale job during precheck
+PASS feeder/JOB-TEST: stale job during post
+PASS feeder/JOB-TEST: stale auth during precheck
+PASS feeder/JOB-TEST: stale auth during post
+PASS feeder/JOB-TEST: pre-POST status exit null
+PASS feeder/JOB-TEST: pre-POST status exit {"unavailable":true}
+PASS feeder/JOB-TEST: pre-POST status exit {"closed":true}
+PASS feeder/JOB-TEST: pre-POST status exit {"successful":true}
+PASS feeder/JOB-TEST: verified triple releases original lock
+108/108 Schedule checks passed; real handlers, mocked DOM/reads/POSTs only. No network.
+PASS scope: exact JS-only openHelp delta, exact header/modal/token delta, nine sections, full folders/glossary
+PASS publisher None
+PASS publisher templates/docs.html
+PASS publisher static/js/app.js
+PASS publisher templates/index.html
+PASS publisher reloaded
+PASS publisher reload
+PASS publisher reload-foreign
+PASS publisher foreign
+PASS publisher atomic
+PASS publisher guard
+PASS docs-help final gate

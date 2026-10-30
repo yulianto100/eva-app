@@ -1,0 +1,13 @@
+eva-converter Up 4 hours (healthy)
+eva-worker2 Up 4 hours (healthy)
+eva-worker Up 4 hours (healthy)
+eva-admin-fixture-v4-20261019 Up 11 days
+9router Up 2 weeks
+eva-boqh-test-redis Up 2 weeks
+eva-redis Up 4 weeks
+dyena-mancore Up 5 weeks (healthy)
+dyena-rfs Up 5 weeks (healthy)
+headroom Up 8 weeks (healthy)
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda2        59G   56G  1.2G  98% /
+{"service":"eva-web","status":"ok","timestamp":1793360159}

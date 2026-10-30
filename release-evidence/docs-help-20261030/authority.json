@@ -1,0 +1,852 @@
+{
+  "files": {
+    "templates/docs.html": {
+      "sha256": "6e6b573fe38ab61adcacd8b3c6616d0317e96e47edcd3c2ee3902622f765105e",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420,
+      "inode": 413754,
+      "size": 32741
+    },
+    "templates/index.html": {
+      "sha256": "3c09ce98c88d4586f0c000e2abc0fc2e2f65143dd1dec4d2724cc09359ac40a9",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420,
+      "inode": 411285,
+      "size": 76322
+    },
+    "static/js/app.js": {
+      "sha256": "da5db1b5150b803d9c3f8b0a26a1e9251809797b5ad320d318dd2d4e23d6750d",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 436,
+      "inode": 411144,
+      "size": 460221
+    },
+    "app.py": {
+      "sha256": "d107338e682fed3d08c9944a46a69a2d08be69343d556a6c400ff88aa947ef75",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420,
+      "inode": 400397,
+      "size": 665961
+    },
+    "eva_auth.py": {
+      "sha256": "7d39f0b3ebc64efb5b9122e8e90d34b9943003eb4bba720cdd332eb49ebaab6a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 420,
+      "inode": 409687,
+      "size": 62395
+    },
+    "docker-compose.yml": {
+      "sha256": "5f5fc16596d476f3c3dd9104e91f65faa587d277810b5b333cd5ca5edd1f6ae3",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 420,
+      "inode": 405371,
+      "size": 10199
+    },
+    "docker-compose.override.yml": {
+      "sha256": "c38fe8681f27e1641bce42aeada84cf5695720045eba4045355795c4d573538b",
+      "uid": 1000,
+      "gid": 1001,
+      "mode": 436,
+      "inode": 409778,
+      "size": 3794
+    }
+  },
+  "roles": [
+    {
+      "name": "/eva-converter",
+      "id": "1e60b37263b3995d8307b93e457aada1476926d5f4a0e010f108d7685d1ccdf1",
+      "image": "sha256:91e197d36d5e30fe7b3396da91b35ecec301404bc48f0596aa52fec9cc18fb77",
+      "started": "2026-10-30T07:43:42.299725006Z",
+      "user": "appuser",
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets",
+          "Destination": "/app/.secrets",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/app.py",
+          "Destination": "/app/app.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/backups",
+          "Destination": "/app/backups",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/boq.py",
+          "Destination": "/app/boq.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/config.py",
+          "Destination": "/app/config.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/converter.py",
+          "Destination": "/app/converter.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/data",
+          "Destination": "/app/data",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_ai_safe.py",
+          "Destination": "/app/eva_ai_safe.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth.py",
+          "Destination": "/app/eva_auth.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_assets.json",
+          "Destination": "/app/eva_auth_assets.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_policy.json",
+          "Destination": "/app/eva_auth_policy.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_billing.py",
+          "Destination": "/app/eva_billing.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_notifications.py",
+          "Destination": "/app/eva_drm_notifications.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_revisions.py",
+          "Destination": "/app/eva_drm_revisions.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_successful.py",
+          "Destination": "/app/eva_drm_successful.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_email.py",
+          "Destination": "/app/eva_email.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_events.py",
+          "Destination": "/app/eva_events.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_metadata.py",
+          "Destination": "/app/eva_kmz_metadata.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_validation.py",
+          "Destination": "/app/eva_kmz_validation.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_paylink.py",
+          "Destination": "/app/eva_paylink.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_support.py",
+          "Destination": "/app/eva_support.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/geofabrik",
+          "Destination": "/app/geofabrik",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb.py",
+          "Destination": "/app/hpdb.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb_mancore.py",
+          "Destination": "/app/hpdb_mancore.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/job_queue.py",
+          "Destination": "/app/job_queue.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/kmz_standardizer.py",
+          "Destination": "/app/kmz_standardizer.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/metrics.py",
+          "Destination": "/app/metrics.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/outputs",
+          "Destination": "/app/outputs",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/static",
+          "Destination": "/app/static",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/tasks.py",
+          "Destination": "/app/tasks.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/templates",
+          "Destination": "/app/templates",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/uploads",
+          "Destination": "/app/uploads",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva-abd-runtime/squashfs-root",
+          "Destination": "/opt/oda",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets/secret_key.txt",
+          "Destination": "/run/secrets/eva_secret_key",
+          "Mode": "",
+          "RW": false,
+          "Propagation": "rprivate"
+        }
+      ],
+      "config_sha256": "582b23d3a0c33b6bff0df405a3206ec6f5ef7dd589fcd813d3086767e1961547",
+      "hostconfig_sha256": "6901af4e3cdfa5ada9915dd35c8b099626d97941628969474301fc0d173b1d8d"
+    },
+    {
+      "name": "/eva-worker",
+      "id": "fc4f0977cd1660d2052b76f59fef5f4beb7f3ee1012fb7a82868ddd45f2d4c3c",
+      "image": "sha256:c9f16f2a07fd14d1fa05f64117e0dde6f39ecd4ac27fd30d9f663248096698df",
+      "started": "2026-10-30T07:42:46.110876602Z",
+      "user": "appuser",
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets",
+          "Destination": "/app/.secrets",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/app.py",
+          "Destination": "/app/app.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/backups",
+          "Destination": "/app/backups",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/boq.py",
+          "Destination": "/app/boq.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/converter.py",
+          "Destination": "/app/converter.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/data",
+          "Destination": "/app/data",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_ai_safe.py",
+          "Destination": "/app/eva_ai_safe.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth.py",
+          "Destination": "/app/eva_auth.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_assets.json",
+          "Destination": "/app/eva_auth_assets.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_policy.json",
+          "Destination": "/app/eva_auth_policy.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_billing.py",
+          "Destination": "/app/eva_billing.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_notifications.py",
+          "Destination": "/app/eva_drm_notifications.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_revisions.py",
+          "Destination": "/app/eva_drm_revisions.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_successful.py",
+          "Destination": "/app/eva_drm_successful.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_events.py",
+          "Destination": "/app/eva_events.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_metadata.py",
+          "Destination": "/app/eva_kmz_metadata.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_validation.py",
+          "Destination": "/app/eva_kmz_validation.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_paylink.py",
+          "Destination": "/app/eva_paylink.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/geofabrik",
+          "Destination": "/app/geofabrik",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb.py",
+          "Destination": "/app/hpdb.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb_mancore.py",
+          "Destination": "/app/hpdb_mancore.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/job_queue.py",
+          "Destination": "/app/job_queue.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/kmz_standardizer.py",
+          "Destination": "/app/kmz_standardizer.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/metrics.py",
+          "Destination": "/app/metrics.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/outputs",
+          "Destination": "/app/outputs",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/tasks.py",
+          "Destination": "/app/tasks.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/uploads",
+          "Destination": "/app/uploads",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva-abd-runtime/squashfs-root",
+          "Destination": "/opt/oda",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets/secret_key.txt",
+          "Destination": "/run/secrets/eva_secret_key",
+          "Mode": "",
+          "RW": false,
+          "Propagation": "rprivate"
+        }
+      ],
+      "config_sha256": "0c49fe4648a8bcd16bf24c78352b967c008fc935e1498c9d494ef317ef25d4c1",
+      "hostconfig_sha256": "ff58e288e7bf741c1a6b552d34981f8a015368f7820f375988d9ce5af100e6bf"
+    },
+    {
+      "name": "/eva-worker2",
+      "id": "99d250da6e41bcb1235bb3e0280bf37dc26143869153534bcb548ea0e0a357a0",
+      "image": "sha256:520ff3ef4322209366904d25b83d7a1b277597b158c08d13f64bd551ae75f63e",
+      "started": "2026-10-30T07:43:02.689932685Z",
+      "user": "appuser",
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets",
+          "Destination": "/app/.secrets",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/app.py",
+          "Destination": "/app/app.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/backups",
+          "Destination": "/app/backups",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/boq.py",
+          "Destination": "/app/boq.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/converter.py",
+          "Destination": "/app/converter.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/data",
+          "Destination": "/app/data",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_ai_safe.py",
+          "Destination": "/app/eva_ai_safe.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth.py",
+          "Destination": "/app/eva_auth.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_assets.json",
+          "Destination": "/app/eva_auth_assets.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_auth_policy.json",
+          "Destination": "/app/eva_auth_policy.json",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_billing.py",
+          "Destination": "/app/eva_billing.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_notifications.py",
+          "Destination": "/app/eva_drm_notifications.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_revisions.py",
+          "Destination": "/app/eva_drm_revisions.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_drm_successful.py",
+          "Destination": "/app/eva_drm_successful.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_events.py",
+          "Destination": "/app/eva_events.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_metadata.py",
+          "Destination": "/app/eva_kmz_metadata.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_kmz_validation.py",
+          "Destination": "/app/eva_kmz_validation.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/eva_paylink.py",
+          "Destination": "/app/eva_paylink.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/geofabrik",
+          "Destination": "/app/geofabrik",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb.py",
+          "Destination": "/app/hpdb.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/hpdb_mancore.py",
+          "Destination": "/app/hpdb_mancore.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/job_queue.py",
+          "Destination": "/app/job_queue.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/kmz_standardizer.py",
+          "Destination": "/app/kmz_standardizer.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/metrics.py",
+          "Destination": "/app/metrics.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/outputs",
+          "Destination": "/app/outputs",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/tasks.py",
+          "Destination": "/app/tasks.py",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/uploads",
+          "Destination": "/app/uploads",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva-abd-runtime/squashfs-root",
+          "Destination": "/opt/oda",
+          "Mode": "ro",
+          "RW": false,
+          "Propagation": "rprivate"
+        },
+        {
+          "Type": "bind",
+          "Source": "/opt/eva/.secrets/secret_key.txt",
+          "Destination": "/run/secrets/eva_secret_key",
+          "Mode": "",
+          "RW": false,
+          "Propagation": "rprivate"
+        }
+      ],
+      "config_sha256": "6f359b46f2579a19993ca07de6e2c9c0f318b24b71bf19c97fd4f635d40dba7e",
+      "hostconfig_sha256": "5fc7f4464a487b98073f68f3b0682c09aafcb8b2fbe00af6d72ca377f4f6cae6"
+    },
+    {
+      "name": "/eva-redis",
+      "id": "467d651551cb6b7623005876acac6980610b0d3e226bd66bfe785aed591e46cf",
+      "image": "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+      "started": "2026-10-01T11:46:18.077116257Z",
+      "user": "",
+      "mounts": [
+        {
+          "Type": "volume",
+          "Name": "eva_redis-data",
+          "Source": "/var/lib/docker/volumes/eva_redis-data/_data",
+          "Destination": "/data",
+          "Driver": "local",
+          "Mode": "rw",
+          "RW": true,
+          "Propagation": ""
+        }
+      ],
+      "config_sha256": "9979ede1fc1c5bd8dc8a8acedad68fa98647b4d11015374c86e8bf3b82c5d17b",
+      "hostconfig_sha256": "4d10c6228e33e3c7cc578c603746526484083273013addc1443bce37e7760d0d"
+    }
+  ]
+}

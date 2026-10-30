@@ -1,0 +1,2 @@
+PASS before: expected manifest SHA256 and all 15 entries
+PASS after: expected manifest SHA256 and all 15 entries unchanged

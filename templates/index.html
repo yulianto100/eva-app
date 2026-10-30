@@ -234,19 +234,13 @@
                 <svg class="eva-drm-bell" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span id="evaDrmCount" class="eva-drm-unread-count" aria-hidden="true" hidden>0</span>
               </button>
-            <button id="header-help" type="button" class="icon-button" data-tour-target="header-help" data-tooltip="Bantuan & shortcut (?)" data-tooltip-side="bottom" aria-label="Bantuan" onclick="window.openHelp()">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
-                <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
             <a href="/tutorial" target="_blank" rel="noopener" class="icon-button" data-tooltip="Tutorial video" data-tooltip-side="bottom" aria-label="Tutorial video" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <rect x="2.5" y="5" width="19" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8"/>
                 <path d="M10 9.2v5.6l4.6-2.8z" fill="currentColor"/>
               </svg>
             </a>
-            <a href="/docs" target="_blank" rel="noopener" class="icon-button" data-tooltip="Dokumentasi" data-tooltip-side="bottom" aria-label="Dokumentasi" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
+            <a href="/docs" target="_blank" rel="noopener" class="icon-button" data-tooltip="Dokumentasi & bantuan" data-tooltip-side="bottom" aria-label="Dokumentasi & bantuan" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;justify-content:center;">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M4 19.5v-15A1.5 1.5 0 0 1 5.5 3H19l-1.5 1.5L19 6H5.5A1.5 1.5 0 0 0 4 7.5v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M9 10h6M9 14h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -1105,65 +1099,6 @@
 
 
 
-  <!-- Help modal -->
-  <div id="helpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="helpModalTitle">
-    <div class="modal-card modal-card-wide" role="document">
-      <div class="modal-header">
-        <div>
-          <h2 id="helpModalTitle">Panduan EVA</h2>
-          <p>Cara pakai cepat dan struktur folder yang dibutuhkan.</p>
-        </div>
-        <button type="button" class="modal-close" data-close-modal aria-label="Tutup">&times;</button>
-      </div>
-      <div class="modal-body">
-        <details class="help-panel" open>
-          <summary>Cara pakai</summary>
-          <div class="help-panel-body">
-            <ol>
-              <li>Unggah file <code>.kml</code> atau <code>.kmz</code> untuk data desain.</li>
-              <li>Untuk DXF, ABD, HPDB, atau ASTRI, pilih wilayah pada popup sebelum proses dimulai. ROAD OSM dipilih otomatis.</li>
-              <li>Pilih cakupan, tipe jaringan, dan format output.</li>
-              <li>Lihat checklist untuk memastikan konfigurasi sudah lengkap.</li>
-              <li>Klik <strong>Mulai Proses</strong> untuk menjalankan konversi.</li>
-              <li>Unduh hasil setelah proses selesai.</li>
-            </ol>
-          </div>
-        </details>
-        <details class="help-panel">
-          <summary>Folder KML/KMZ standar</summary>
-          <div class="help-panel-body">
-            <p>Sistem mendeteksi folder ini secara otomatis. Folder tertulis tebal wajib ada.</p>
-            <div class="folder-checklist mt-3" id="folderChecklistGrid"></div>
-          </div>
-        </details>
-        <details class="help-panel">
-          <summary>Istilah teknis</summary>
-          <div class="help-panel-body">
-            <ul>
-              <li><strong>BOQ</strong> - Bill of Quantity, daftar material dan jumlahnya.</li>
-              <li><strong>HPDB</strong> - Homepass Database, master data homepass per cluster.</li>
-              <li><strong>ASTRI</strong> - Workbook standar dari ASTRI yang merangkum HPDB + BOQ NRO.</li>
-              <li><strong>FDT</strong> - Fiber Distribution Terminal (titik distribusi utama).</li>
-              <li><strong>FAT</strong> - Fiber Access Terminal (titik akses ke homepass).</li>
-              <li><strong>NRO Cluster</strong> - Sheet ringkasan material per cluster.</li>
-              <li><strong>AE / UG</strong> - Aerial (di tiang) atau Underground (tanam).</li>
-            </ul>
-          </div>
-        </details>
-        <details class="help-panel">
-          <summary>Keyboard shortcut</summary>
-          <div class="help-panel-body">
-            <div class="kbd-row"><span>Mulai Proses</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span></div>
-            <div class="kbd-row"><span>Buka bantuan</span><span class="kbd-keys"><kbd>?</kbd></span></div>
-            <div class="kbd-row"><span>Buka monitor aktivitas</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>H</kbd></span></div>
-            <div class="kbd-row"><span>Cari folder KML</span><span class="kbd-keys"><kbd>Ctrl</kbd>+<kbd>K</kbd></span></div>
-            <div class="kbd-row"><span>Tutup modal / drawer</span><span class="kbd-keys"><kbd>Esc</kbd></span></div>
-          </div>
-        </details>
-      </div>
-    </div>
-  </div>
-
   <!-- Activity monitor drawer -->
   <div id="historyDrawer" class="drawer hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="historyDrawerTitle">
     <div class="drawer-backdrop" data-close-drawer></div>
@@ -1220,7 +1155,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="{{ url_for('static', filename='js/utils.js') }}?v=convert-abd-20261030-v1" defer></script>
   <script src="{{ url_for('static', filename='js/toast.js') }}?v=popup-neutral-20260819-211055"></script>
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=wo-recovery-20261030-v1" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=docs-help-20261030-v1" defer></script>
   <script src="/static/js/eva-astri-dialogs.js?v=astri-popup-20260926-v2" defer></script>
   <script src="/static/js/eva-support-modal-keys.js?v=astri-popup-20260926-v2" defer></script>
   <script src="{{ url_for('static', filename='js/stella.js') }}?v=stella-auto-refresh-20261017" defer></script>

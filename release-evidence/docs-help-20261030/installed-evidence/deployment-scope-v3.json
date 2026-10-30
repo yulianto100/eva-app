@@ -1,0 +1,25 @@
+{
+  "scope": "docs-help-three-files-web-hup",
+  "user_approval": "nah cakep, gas deploy",
+  "manifest_sha256": "c06491718aad1a4afe99333a918d5447f8289f759464bf7ff41293bd98b32dc8",
+  "product_hashes": {
+    "app.js": "2f384fb12dfa67cc7c6bfb5a747d6bc98f995846e72e0413db206962c5a17db9",
+    "index.html": "8e7bc3085651f6891ae04889487e55693a8cefa333fcbb0bdeb764322c7a906f",
+    "docs.html": "9b6941717bd97db52227328cac9332d11c0eeed1e694c6aa35e4a139d667ba3b"
+  },
+  "backup_archive_sha256": "9a8722e3b41645e4fd71fd8f59ffdf3333d09f75ca47700fe82b925d1116f803",
+  "approved_preview_hashes": {
+    "after-1440-top.png": "c86277e2424af82820dcfee13fd9b468edd7c01102f61894891faaa49d5c8035",
+    "after-390-top.png": "6052229f829a4dd41671cc8c2ca8d0f5872a0d0ce30212197cad92e48f927a6e"
+  },
+  "exclusions": [
+    "backend",
+    "workers",
+    "Redis",
+    "DB",
+    "images",
+    "Compose",
+    "ASTRI mutations"
+  ],
+  "acceptance_limit": "Authenticated live UI not available; installed-byte standalone Jinja render and source-extracted shortcut browser checks only."
+}

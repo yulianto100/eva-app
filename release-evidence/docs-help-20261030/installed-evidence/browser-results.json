@@ -1,0 +1,29 @@
+{
+  "boundary": "Installed template Jinja render without app bootstrap; header fragment; native source-extracted shortcut. Not authenticated HTTP acceptance.",
+  "results": [
+    {
+      "width": 1440,
+      "overflow": false,
+      "sections": 10,
+      "helpShortcut": true,
+      "inputIgnored": true,
+      "headerHelpRemoved": true
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "sections": 10,
+      "helpShortcut": true,
+      "inputIgnored": true,
+      "headerHelpRemoved": true
+    },
+    {
+      "width": 320,
+      "overflow": false,
+      "sections": 10,
+      "helpShortcut": true,
+      "inputIgnored": true,
+      "headerHelpRemoved": true
+    }
+  ]
+}

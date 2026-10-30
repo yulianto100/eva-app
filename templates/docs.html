@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ecfdf5">
-  <title>Panduan Operasional EVA</title>
+  <meta name="theme-color" content="#F7FAF8">
+  <title>Dokumentasi · EVA by DYENA</title>
   <style>
     :root {
-      --ink: #10231d;
-      --muted: #557066;
-      --line: #cde7db;
-      --canvas: #ecfdf5;
+      --ink: #183126;
+      --muted: #50655a;
+      --line: #dce7e1;
+      --canvas: #f7faf8;
       --paper: #ffffff;
-      --soft: #f6fffa;
-      --brand: #08795b;
-      --brand-dark: #04533e;
-      --brand-soft: #d9f8e9;
+      --soft: #f5f9f6;
+      --brand: #176d4e;
+      --brand-dark: #083127;
+      --brand-soft: #eaf5ee;
       --amber: #9a5b00;
       --amber-soft: #fff5d9;
       --blue: #175b91;
@@ -31,7 +31,7 @@
       margin: 0;
       min-width: 320px;
       color: var(--ink);
-      background: radial-gradient(circle at 100% 0, #d9f8e9 0, transparent 29rem), var(--canvas);
+      background: var(--canvas);
       font: 15px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     a { color: var(--brand-dark); font-weight: 750; text-underline-offset: 3px; }
@@ -78,19 +78,19 @@
     .button--quiet { border-color: #b8ddcb; background: rgba(255,255,255,.88); color: var(--brand-dark); }
     .button--quiet:hover { color: var(--brand-dark); background: #f5fff9; }
 
-    .quick-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--line); box-shadow: var(--shadow); }
+    .quick-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); box-shadow: var(--shadow); }
     .quick-item { min-height: 103px; padding: 17px; background: rgba(255,255,255,.91); }
     .quick-item b { display: grid; place-items: center; width: 25px; height: 25px; margin-bottom: 9px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-dark); font-size: 12px; }
     .quick-item strong { display: block; font-size: 13px; }
     .quick-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 
     .docs-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 28px; padding: 36px 0 64px; }
-    .toc { align-self: start; position: sticky; top: 18px; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
+    .toc { align-self: start; position: sticky; top: 18px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.78); }
     .toc strong { display: block; margin: 1px 9px 8px; color: var(--muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
     .toc a { display: block; padding: 7px 9px; border-radius: 8px; color: #416256; text-decoration: none; font-size: 13px; font-weight: 700; }
     .toc a:hover { color: var(--brand-dark); background: var(--brand-soft); }
     .docs { min-width: 0; }
-    .doc-section { scroll-margin-top: 22px; padding: 29px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,.91); box-shadow: 0 8px 28px rgba(10,88,63,.055); }
+    .doc-section { scroll-margin-top: 22px; padding: 29px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.91); box-shadow: 0 8px 28px rgba(10,88,63,.055); }
     .doc-section + .doc-section { margin-top: 20px; }
     .section-head { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; }
     .section-number { display: grid; flex: 0 0 auto; place-items: center; width: 31px; height: 31px; border: 1px solid #9ad7bb; border-radius: 10px; background: var(--brand-soft); color: var(--brand-dark); font-size: 12px; font-weight: 900; }
@@ -99,22 +99,22 @@
     ul, ol { margin: 12px 0; padding-left: 21px; }
     li + li { margin-top: 6px; }
     .steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-    .step { display: grid; grid-template-columns: 35px minmax(0, 1fr); gap: 12px; padding: 14px; border: 1px solid #d8ebe2; border-radius: 13px; background: var(--soft); }
+    .step { display: grid; grid-template-columns: 35px minmax(0, 1fr); gap: 12px; padding: 14px; border: 1px solid #d8ebe2; border-radius: 9px; background: var(--soft); }
     .step__count { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; background: var(--brand); font-size: 12px; font-weight: 900; }
     .step strong { display: block; margin-top: 1px; }
     .step p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
-    .note { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #b5e1ca; border-radius: 13px; background: #effcf4; color: #21563f; font-size: 13px; }
+    .note { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #b5e1ca; border-radius: 9px; background: #effcf4; color: #21563f; font-size: 13px; }
     .note b { color: #0e6848; }
     .note--amber { border-color: #efd69a; background: var(--amber-soft); color: #705006; }
     .note--amber b { color: #875400; }
     .note--blue { border-color: #bddcf1; background: var(--blue-soft); color: #265a80; }
     .note--red { border-color: #f0c2c7; background: var(--red-soft); color: #7e2430; }
     .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-    .mini-card { padding: 16px; border: 1px solid #d9ebe2; border-radius: 14px; background: #fbfffc; }
+    .mini-card { padding: 16px; border: 1px solid #d9ebe2; border-radius: 9px; background: #fbfffc; }
     .mini-card h3 { margin-bottom: 7px; }
     .mini-card p { margin: 0; color: var(--muted); font-size: 13px; }
     .chip { display: inline-flex; align-items: center; min-height: 24px; margin: 2px 4px 2px 0; padding: 2px 8px; border: 1px solid #c5e8d5; border-radius: 999px; background: #f4fff8; color: #216648; font-size: 11px; font-weight: 800; }
-    .table-wrap { overflow-x: auto; border: 1px solid #d6e9df; border-radius: 13px; }
+    .table-wrap { overflow-x: auto; border: 1px solid #d6e9df; border-radius: 9px; }
     table { width: 100%; min-width: 610px; border-collapse: collapse; font-size: 13px; }
     th, td { padding: 12px 13px; border-bottom: 1px solid #deeee6; text-align: left; vertical-align: top; }
     th { color: #426458; background: #f3fcf7; font-size: 11px; letter-spacing: .055em; text-transform: uppercase; }
@@ -122,7 +122,7 @@
     td p:last-child { margin-bottom: 0; }
     .folder-list { columns: 2; gap: 18px; margin: 10px 0 0; padding: 0; list-style: none; }
     .folder-list li { break-inside: avoid; margin: 0 0 6px; }
-    details { overflow: hidden; border: 1px solid #d6e9df; border-radius: 13px; background: #fcfffd; }
+    details { overflow: hidden; border: 1px solid #d6e9df; border-radius: 9px; background: #fcfffd; }
     details + details { margin-top: 10px; }
     summary { position: relative; padding: 14px 42px 14px 15px; cursor: pointer; color: #173d2d; font-size: 14px; font-weight: 850; list-style: none; }
     summary::-webkit-details-marker { display: none; }
@@ -132,7 +132,7 @@
     .details-body { padding: 15px; color: #46675b; font-size: 13px; }
     .details-body > :last-child { margin-bottom: 0; }
     .module-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 11px; }
-    .module { padding: 15px; border: 1px solid #d6e9df; border-radius: 13px; background: var(--soft); }
+    .module { padding: 15px; border: 1px solid #d6e9df; border-radius: 9px; background: var(--soft); }
     .module strong { display: block; color: #175138; }
     .module span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .faq { margin: 0; padding: 0; list-style: none; }
@@ -140,7 +140,7 @@
     .faq li:last-child { border: 0; padding-bottom: 0; }
     .faq b { display: block; color: #193f2f; }
     .faq span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
-    .glossary { display: grid; grid-template-columns: 145px minmax(0,1fr); gap: 0; margin: 0; border: 1px solid #d6e9df; border-radius: 13px; overflow: hidden; }
+    .glossary { display: grid; grid-template-columns: 145px minmax(0,1fr); gap: 0; margin: 0; border: 1px solid #d6e9df; border-radius: 9px; overflow: hidden; }
     .glossary dt, .glossary dd { margin: 0; padding: 11px 13px; border-bottom: 1px solid #dceee5; }
     .glossary dt { background: #f4fcf8; color: #276148; font-weight: 850; }
     .glossary dd { color: var(--muted); }
@@ -162,14 +162,83 @@
       .back-link { min-height: 34px; padding: 0 10px; font-size: 12px; }
       .hero { padding: 32px 0 22px; }
       .quick-item { min-height: 92px; padding: 13px; }
-      .doc-section { padding: 20px 16px; border-radius: 17px; }
+      .doc-section { padding: 20px 16px; border-radius: 10px; }
       .section-head { gap: 10px; }
       .two-col, .module-grid { grid-template-columns: 1fr; }
       .folder-list { columns: 1; }
       .glossary { grid-template-columns: 108px minmax(0,1fr); font-size: 12px; }
       .glossary dt, .glossary dd { padding: 10px; }
     }
-  </style>
+  
+    /* Documentation follows the main EVA workbench, without loading app-only styles. */
+    .shell { width: min(1325px, calc(100% - 48px)); }
+    .site-head { background: #fff; border-bottom: 1px solid var(--line); backdrop-filter: none; }
+    .site-head__row { min-height: 88px; }
+    .brand { display: block; }
+    .brand-heading { display: flex; align-items: baseline; gap: 7px; line-height: 1.08; }
+    .brand-eva { color: #083127; font-size: 22px; font-weight: 800; letter-spacing: -.035em; }
+    .brand-by { color: #176d4e; font-size: 12px; font-weight: 750; }
+    .brand-description { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .back-link { min-height: 44px; border-radius: 9px; border-color: var(--line); font-size: 12px; font-weight: 600; }
+    .hero { padding: 30px 0 22px; }
+    .eyebrow { margin-bottom: 6px; color: var(--muted); font-size: 11px; letter-spacing: .06em; font-weight: 650; }
+    h1 { font-size: clamp(26px, 3vw, 34px); letter-spacing: -.035em; }
+    h2 { font-size: 21px; }
+    .hero__lead { max-width: 820px; margin-top: 10px; font-size: 14px; line-height: 1.65; color: var(--muted); }
+    .hero__actions { gap: 8px; margin-top: 16px; }
+    .button { min-height: 44px; border-radius: 9px; background: #083127; color: #e7f8ef; border-color: #083127; font-size: 12px; font-weight: 650; }
+    .button--quiet { background: #fff; color: #244b3c; border-color: var(--line); }
+    .button--quiet:hover { background: var(--soft); }
+    .quick-strip { border-radius: 9px; box-shadow: none; }
+    .quick-item { display: grid; grid-template-columns: 24px 1fr; align-content: start; column-gap: 10px; padding: 14px 16px; min-height: 86px; background: #fff; }
+    .quick-item b { width: 24px; height: 24px; grid-row: span 2; margin: 0; font-size: 11px; }
+    .quick-item strong { font-size: 12px; }
+    .quick-item span { font-size: 12px; }
+    .docs-layout { grid-template-columns: 212px minmax(0, 1fr); gap: 24px; padding-top: 24px; }
+    .toc { padding: 12px; border: 0; background: transparent; top: 20px; }
+    .toc strong { font-size: 10px; font-weight: 650; letter-spacing: .06em; }
+    .toc a { min-height: 44px; display: flex; align-items: center; padding: 9px; font-size: 12px; font-weight: 550; white-space: normal; }
+    .toc a:hover { background: #eaf5ee; }
+    .doc-section { padding: 26px; background: #fff; box-shadow: 0 1px 2px #173b2506; }
+    .doc-section + .doc-section { margin-top: 16px; }
+    .section-head { gap: 12px; margin-bottom: 20px; }
+    .section-head p { font-size: 13px; line-height: 1.6; }
+    .section-number { width: 28px; height: 28px; border: 0; border-radius: 7px; font-size: 11px; }
+    .step { border-color: #e3ece6; background: #fff; padding: 12px 14px; }
+    .step__count { width: 25px; height: 25px; background: #eaf5ee; color: #176d4e; font-size: 11px; }
+    .step strong { font-size: 14px; font-weight: 650; }
+    .mini-card, .module { background: #f8fbf9; border-color: #e3ece6; }
+    .mini-card h3 { font-size: 14px; }
+    .note, .note--blue { border-color: #dce7e1; background: #f5f9f6; color: #385749; }
+    .note--amber { border-color: #eadfca; background: #fcfaf5; color: #6e562b; }
+    .note--red { border-color: #ecd5d5; background: #fcf7f7; }
+    .table-wrap { max-width: 100%; }
+    th { background: #f5f9f6; letter-spacing: .025em; }
+    table.shortcuts { min-width: 0; }
+    .shortcuts td:first-child { width: 43%; }
+    .shortcuts kbd { display: inline-block; margin: 2px 0; white-space: nowrap; }
+    code { overflow-wrap: anywhere; }
+    .foot { border-top: 1px solid var(--line); padding-top: 20px; }
+    @media (max-width: 850px) {
+      .docs-layout { grid-template-columns: 1fr; gap: 16px; }
+      .toc { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); padding: 8px; border: 1px solid var(--line); background: #fff; overflow: visible; }
+      .toc a { background: transparent; padding: 8px 10px; }
+    }
+    @media (max-width: 580px) {
+      .shell { width: calc(100% - 24px); }
+      .site-head__row { min-height: 82px; gap: 12px; }
+      .brand-eva { font-size: 20px; }
+      .brand-by { font-size: 11px; }
+      .brand-description { max-width: 165px; font-size: 11px; }
+      .back-link { min-height: 44px; padding: 0 10px; }
+      .hero { padding-top: 24px; }
+      .doc-section { padding: 20px 16px; }
+      h2 { font-size: 19px; }
+      .quick-item { padding: 12px; column-gap: 7px; }
+      .shortcuts th, .shortcuts td { padding: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
 
   {% if eva_account %}<meta name="eva-csrf" content="{{ eva_account.csrf }}"><meta name="eva-role" content="{{ eva_account.role }}">{% endif %}
   <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=idle-logout-20261026-v1"></script>
@@ -178,8 +247,8 @@
   <header class="site-head">
     <div class="shell site-head__row">
       <a class="brand" href="/" aria-label="Kembali ke EVA">
-        <span class="brand-mark" aria-hidden="true">EVA</span>
-        <span class="brand-copy"><strong>Engineering Vector Automation</strong><span>Panduan operasional</span></span>
+        <span class="brand-heading"><span class="brand-eva">EVA</span><span class="brand-by">by DYENA</span></span>
+        <span class="brand-description">Desain jaringan · Panduan penggunaan.</span>
       </a>
       <a class="back-link" href="/">← Kembali ke EVA</a>
     </div>
@@ -187,12 +256,12 @@
 
   <main>
     <section class="shell hero" aria-labelledby="pageTitle">
-      <p class="eyebrow">Panduan pengguna · EVA</p>
-      <h1 id="pageTitle">Dari file desain sampai hasil siap pakai.</h1>
+      <p class="eyebrow">Panduan penggunaan</p>
+      <h1 id="pageTitle">Dokumentasi EVA</h1>
       <p class="hero__lead">Gunakan panduan ini untuk menyiapkan KML/KMZ, memilih output, memantau konversi, memakai ASTRI, dan mengoperasikan modul pendukung EVA tanpa menebak-nebak alurnya.</p>
       <div class="hero__actions">
         <a class="button" href="#mulai">Mulai cepat</a>
-        <a class="button button--quiet" href="#astri">Panduan ASTRI</a>
+        <a class="button button--quiet" href="#bantuan">Bantuan & shortcut</a>
         <a class="button button--quiet" href="#masalah">Atasi masalah</a>
       </div>
     </section>
@@ -208,6 +277,7 @@
       <nav class="toc" aria-label="Daftar isi">
         <strong>Daftar isi</strong>
         <a href="#mulai">Mulai cepat</a>
+        <a href="#bantuan">Bantuan & shortcut</a>
         <a href="#konversi">Konversi utama</a>
         <a href="#sumber">File & folder</a>
         <a href="#lokasi">Wilayah & ROAD</a>
@@ -232,6 +302,29 @@
             <li class="step"><span class="step__count">5</span><div><strong>Periksa sebelum memakai hasil</strong><p>Cek Ringkasan Hasil, Preview, warning, dan log. Setelah sesuai, unduh output atau lanjutkan workflow ASTRI.</p></div></li>
           </ol>
           <p class="note"><b>Aturan kerja:</b> jangan membuat job kedua untuk file yang sama saat job pertama masih antre atau berjalan. Pantau dari <b>Monitor Aktivitas</b>.</p>
+        </section>
+
+
+        <section id="bantuan" class="doc-section" aria-labelledby="bantuanTitle">
+          <div class="section-head">
+            <span class="section-number" aria-hidden="true">?</span>
+            <div><h2 id="bantuanTitle">Bantuan & shortcut</h2><p>Panduan singkat dan pintasan halaman utama, sekarang di satu dokumentasi.</p></div>
+          </div>
+          <p>Unggah desain, pilih cakupan dan output, lengkapi wilayah bila diminta, lalu periksa checklist sebelum <b>Mulai Proses</b>. Setelah selesai, periksa hasil sebelum mengunduh.</p>
+          <div class="table-wrap">
+            <table class="shortcuts">
+              <caption style="text-align:left;padding:12px 13px;font-weight:650">Pintasan keyboard di halaman utama</caption>
+              <thead><tr><th>Pintasan</th><th>Fungsi</th></tr></thead>
+              <tbody>
+                <tr><td><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Enter</kbd></td><td>Mulai Proses setelah konfigurasi siap.</td></tr>
+                <tr><td><kbd>?</kbd></td><td>Buka bagian bantuan di dokumentasi saat tidak sedang mengetik.</td></tr>
+                <tr><td><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>H</kbd></td><td>Buka Monitor Aktivitas.</td></tr>
+                <tr><td><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></td><td>Fokus pencarian folder KML.</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Tutup modal atau drawer. Proses yang sedang berjalan tetap mengikuti pengaman masing-masing.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">Struktur folder ada di <a href="#sumber">File & folder</a>; istilah teknis ada di <a href="#istilah">Istilah</a>. Untuk kendala akun atau pekerjaan, gunakan <b>Hubungi support</b> pada header EVA.</p>
         </section>
 
         <section id="konversi" class="doc-section" aria-labelledby="konversiTitle">
@@ -291,6 +384,7 @@
               <p>Gunakan scope Feeder/Subfeeder hanya bila isi file memang jalur backbone; jangan memaksakan file cluster ke scope backbone.</p>
             </div>
           </details>
+          <details><summary>Checklist folder dari Bantuan</summary><div class="details-body"><p>Daftar yang sebelumnya tampil pada Bantuan. Kebutuhan tiap folder tetap mengikuti cakupan, tipe jaringan, dan asset desain; bukan berarti semua folder berlaku pada setiap pekerjaan.</p><h3>Wajib pada checklist bantuan</h3><ul class="folder-list"><li><code>BOUNDARY FAT</code></li><li><code>FAT</code></li><li><code>HP COVER</code></li><li><code>HP UNCOVER</code></li><li><code>EXISTING POLE EMR 7-2.5</code></li><li><code>EXISTING POLE EMR 7-3</code></li><li><code>EXISTING POLE EMR 7-4</code></li><li><code>EXISTING POLE EMR 9-4</code></li><li><code>EXISTING POLE PARTNER 7-4</code></li><li><code>EXISTING POLE PARTNER 9-4</code></li><li><code>NEW POLE 7-2.5</code></li><li><code>NEW POLE 7-3</code></li><li><code>NEW POLE 7-4</code></li><li><code>NEW POLE 9-4</code></li><li><code>DISTRIBUTION CABLE</code></li><li><code>SLACK HANGER</code></li><li><code>SLING WIRE</code></li><li><code>SUBDUCT 32/28</code></li><li><code>SUBDUCT 40/34</code></li><li><code>TALI PANCING</code></li><li><code>NEW HH 40X40X60</code></li><li><code>NEW HH 80X80X130</code></li><li><code>TWEY</code></li></ul><h3>Opsional pada checklist bantuan</h3><ul class="folder-list"><li><code>OLT</code></li><li><code>FDT</code></li><li><code>CABLE</code></li><li><code>JOINT CLOSURE</code></li><li><code>NEW POLE 7-5</code></li><li><code>NEW POLE 9-5</code></li><li><code>EXISTING POLE EMR 7-5</code></li><li><code>EXISTING POLE EMR 9-5</code></li></ul></div></details>
           <p class="note note--amber"><b>Jangan tertipu nama folder kosong:</b> folder yang ada tetapi tidak memiliki placemark/geometri yang benar bukan data asset yang valid. Periksa isi folder, bukan hanya namanya.</p>
         </section>
 
@@ -325,7 +419,7 @@
             <li>Unduh hasil hanya setelah preview dan warning sudah diterima atau diperbaiki.</li>
           </ol>
           <p class="note note--amber"><b>Output hilang atau tidak siap:</b> buka Monitor Aktivitas untuk melihat job asli. Jika file hasil sudah kedaluwarsa atau tidak tersedia, jalankan ulang setelah memperbaiki sumber/konfigurasi; jangan menganggap file lama masih valid.</p>
-          <p style="margin-top:15px"><b>Shortcut:</b> <kbd>Ctrl</kbd> + <kbd>Enter</kbd> mulai proses, <kbd>?</kbd> bantuan singkat, <kbd>Ctrl</kbd> + <kbd>H</kbd> Monitor Aktivitas, <kbd>Esc</kbd> tutup modal/drawer.</p>
+          <p style="margin-top:15px"><b>Shortcut:</b> <kbd>Ctrl</kbd> + <kbd>Enter</kbd> mulai proses, <kbd>?</kbd> buka dokumentasi bantuan, <kbd>Ctrl</kbd> + <kbd>H</kbd> Monitor Aktivitas, <kbd>Esc</kbd> tutup modal/drawer.</p>
         </section>
 
         <section id="astri" class="doc-section" aria-labelledby="astriTitle">
@@ -400,6 +494,8 @@
             <dt>FAT</dt><dd>Fiber Access Terminal: titik akses/distribusi menuju homepass.</dd>
             <dt>HPDB</dt><dd>Homepass Database: data cluster, FAT, dan homepass dalam workbook Excel.</dd>
             <dt>BOQ</dt><dd>Bill of Quantity: daftar material dan kuantitas pekerjaan.</dd>
+            <dt>NRO Cluster</dt><dd>Sheet ringkasan material per cluster.</dd>
+            <dt>ASTRI</dt><dd>Workbook standar yang merangkum HPDB dan BOQ NRO; juga nama sistem pekerjaan yang terhubung ke EVA.</dd>
             <dt>APD</dt><dd>Dokumen sumber desain dari ASTRI yang dapat diproses melalui EVA.</dd>
             <dt>ROAD OSM</dt><dd>Data jalan OpenStreetMap yang disediakan server EVA berdasarkan wilayah terpilih.</dd>
           </dl>
@@ -409,6 +505,6 @@
     </div>
   </main>
 
-  <footer class="shell foot">EVA · Engineering Vector Automation · Panduan operasional aplikasi.</footer>
+  <footer class="shell foot">EVA by DYENA · Dokumentasi dan bantuan penggunaan.</footer>
 </body>
 </html>
