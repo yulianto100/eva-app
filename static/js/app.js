@@ -6671,6 +6671,7 @@ function setAstriStatus(text, connected = false, needsLogin = false) {
   if (!wasConnected && state.astriConnected && activeAstriMatchForJob()) {
     refreshAstriDocumentVerification().catch(() => null);
   }
+  if (state.astriConnected) recoverAstriWorkOrderStatus();
 }
 
 const ASTRI_STATUS_CACHE_VERSION = 1;
@@ -6761,7 +6762,10 @@ function initAstriHybridPresence() {
     if (!event.isTrusted) return;
     const wasIdle = astriActivityAgeSeconds() * 1000 >= ASTRI_HUMAN_IDLE_MS;
     state.astriLastHumanAt = Date.now();
-    if (wasIdle && !document.hidden && !state.astriNeedsLogin) refreshAstriStatus();
+    if (wasIdle && !document.hidden && !state.astriNeedsLogin) {
+      refreshAstriStatus();
+      recoverAstriWorkOrderStatus();
+    }
   };
   const boundDocuments = new WeakSet();
   const bindDocument = doc => {
@@ -6787,6 +6791,7 @@ function initAstriHybridPresence() {
     const remaining = astriStatusCheckRemainingMs();
     if (remaining > 0) {
       scheduleAstriStatusRefresh(remaining);
+      recoverAstriWorkOrderStatus();
       if (state.astriConnected && !state.astriDocumentVerification?.available
         && !state.astriDocumentVerificationRetry?.timer
         && astriActivityAgeSeconds() * 1000 < ASTRI_HUMAN_IDLE_MS) {
@@ -7120,6 +7125,7 @@ function applyAstriWorkOrderStatus(status) {
   ["astriScheduleButton", "astriAddBoqButton"].forEach((id) => {
     const button = document.getElementById(id);
     if (!button) return;
+    syncAstriSubmitButtonLock(button, astriSubmitLockKey(activeAstriMatchForJob()));
     if (button.dataset.astriSubmitLoading === "1" || button.dataset.astriSubmitBlocked === "1") return;
     const locked = Boolean(
       !state.astriConnected
@@ -7135,7 +7141,7 @@ function applyAstriWorkOrderStatus(status) {
       ? "Login dan pilih target ASTRI dulu."
       : locked && (status?.closed || status?.successful)
         ? `Status WO ASTRI sudah ${status?.latest_status_label || "terminal"}`
-        : status?.unavailable
+        : !status || status.unavailable
           ? "Status WO ASTRI belum dapat diverifikasi"
           : "";
     button.style.opacity = locked ? "0.75" : "";
@@ -7211,6 +7217,13 @@ async function fetchAstriActionRead(url, isCurrent, maxAttempts = 3) {
   }
 }
 
+function recoverAstriWorkOrderStatus() {
+  if (!state.astriConnected || state.astriNeedsLogin || document.hidden
+    || astriActivityAgeSeconds() * 1000 >= ASTRI_HUMAN_IDLE_MS
+    || !activeAstriMatchForJob()) return;
+  refreshAstriWorkOrderStatus({ allowRecent: true }).catch(() => null);
+}
+
 async function refreshAstriWorkOrderStatus({ notify = false, matchOverride = null, allowRecent = false } = {}) {
   const match = { ...(matchOverride || activeAstriMatchForJob() || {}) };
   const scope = match.scope || match.target_type || state.astriTargetType || "cluster";
@@ -7232,7 +7245,7 @@ async function refreshAstriWorkOrderStatus({ notify = false, matchOverride = nul
   if (inflight?.key === key && inflight.requestId === state.astriWorkOrderStatusRequestId) return inflight.promise;
   const proof = state.astriWorkOrderProof;
   const age = proof ? Date.now() - proof.at : -1;
-  // ponytail: 15s memory-only reuse for modal opening; submit/default reads stay fresh.
+  // ponytail: 15s memory-only reuse for wake/modal opening; submit/default reads stay fresh.
   if (allowRecent && matchKey === astriBoqMatchKey(activeAstriScopeMatch(scope), scope)
     && proof?.key === key && proof.requestId === state.astriWorkOrderStatusRequestId
     && state.astriWorkOrderStatus && !state.astriWorkOrderStatus.unavailable
@@ -7250,7 +7263,8 @@ async function refreshAstriWorkOrderStatus({ notify = false, matchOverride = nul
   read.promise = (async () => {
     try {
       const status = await fetchAstriActionRead(`/api/astri/work-order/status?${query}`, isCurrent);
-      if (!status || !isCurrent()) return null;
+      if (!isCurrent()) return null;
+      if (!status) throw new Error("Pemeriksaan WO tertunda. Kembali ke tab EVA untuk memeriksa ulang.");
       if ((status.scope || status.target_type) !== scope || astriScopeCode(status, scope) !== scopeCode
         || status.work_order_number !== match.work_order_number
         || typeof status.latest_status_label !== "string" || !status.latest_status_label.trim()
@@ -7502,6 +7516,20 @@ function restoreAstriSubmitButton(button, original) {
   else button.setAttribute("title", original.title);
   delete button.dataset.astriSubmitLoading;
   delete button.dataset.astriSubmitBlocked;
+  delete button.dataset.astriSubmitLockKey;
+}
+
+function syncAstriSubmitButtonLock(button, key) {
+  if (!button || button.dataset.astriSubmitLoading === "1") return;
+  const previousKey = button.dataset.astriSubmitLockKey;
+  if (button.dataset.astriSubmitBlocked === "1" && previousKey !== key) {
+    const blocked = astriSubmitBlockedButtons.get(previousKey);
+    restoreAstriSubmitButton(button, blocked?.get(button));
+    blocked?.delete(button);
+    if (blocked?.size === 0) astriSubmitBlockedButtons.delete(previousKey);
+  }
+  // ponytail: retained uncertainty lasts for this tab; backend owns durable duplicate protection.
+  if (key && astriSubmitLocks.has(key)) markAstriSubmitBlocked(button, key);
 }
 
 function markAstriSubmitBlocked(button, key) {
@@ -7513,6 +7541,7 @@ function markAstriSubmitBlocked(button, key) {
   }
   blockedButtons.set(button, captureAstriSubmitButton(button));
   button.dataset.astriSubmitBlocked = "1";
+  button.dataset.astriSubmitLockKey = key;
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
   button.setAttribute("aria-disabled", "true");
@@ -7531,14 +7560,16 @@ function releaseAstriSubmitLock(key) {
 
 function lockAstriBoqSiblingControls(key, activeButton = null) {
   if (!key) return;
-  document.querySelectorAll("#astriAddBoqButton, #astriBoqSubmitButton").forEach((button) => {
-    if (button !== activeButton) markAstriSubmitBlocked(button, key);
+  document.querySelectorAll('#astriScheduleButton, #astriAddBoqButton, #astriBoqSubmitButton, #astriScheduleContent form button[type="submit"]').forEach((button) => {
+    const mainButton = ["astriScheduleButton", "astriAddBoqButton"].includes(button.id);
+    const buttonKey = mainButton ? astriSubmitLockKey(activeAstriMatchForJob()) : button.dataset.astriStatusKey;
+    if (button !== activeButton && buttonKey === key) markAstriSubmitBlocked(button, key);
   });
 }
 
 function astriSubmitLockKey(match) {
   const scope = String(match?.scope || match?.target_type || state.astriTargetType || "cluster").trim().toLowerCase();
-  const code = astriScopeCode(match || {}, scope);
+  const code = String(astriScopeCode(match || {}, scope)).trim();
   const workOrder = String(match?.work_order_number || "").trim();
   return code && workOrder ? [scope, code, workOrder].join(":") : "";
 }
@@ -7551,9 +7582,11 @@ function setAstriSubmitLoading(button, label = "Memproses...", lockKey = "") {
     return null;
   }
   if (key) astriSubmitLocks.add(key);
+  lockAstriBoqSiblingControls(key, button);
   if (!button) {
     return {
       update() {},
+      retain() {},
       restore() { releaseAstriSubmitLock(key); },
     };
   }
@@ -7572,6 +7605,12 @@ function setAstriSubmitLoading(button, label = "Memproses...", lockKey = "") {
   update(label);
   return {
     update,
+    retain() {
+      if (restored) return;
+      restored = true;
+      restoreAstriSubmitButton(button, original);
+      if (button.dataset.astriStatusKey === key) markAstriSubmitBlocked(button, key);
+    },
     restore() {
       if (restored) return;
       restored = true;
@@ -7582,6 +7621,7 @@ function setAstriSubmitLoading(button, label = "Memproses...", lockKey = "") {
 }
 
 function applyAstriModalSubmitWorkOrderStatus(button, status, action) {
+  syncAstriSubmitButtonLock(button, button?.dataset?.astriStatusKey || "");
   if (!button || button.dataset?.astriSubmitLoading === "1" || button.dataset?.astriSubmitBlocked === "1") return;
   const locked = Boolean(
     !status
@@ -8724,6 +8764,7 @@ async function submitAstriScheduleForm(event) {
   let progress = showAstriActionProgress("Approve Schedule", "Memeriksa status WO ASTRI...", true);
   let expectedWoStatus = "";
   let postStarted = false;
+  let keepSubmitLocked = false;
   try {
     const status = await refreshAstriWorkOrderStatus({ matchOverride: activeMatch });
     if (!status || !isCurrent() || status.unavailable || status.successful || status.closed
@@ -8734,10 +8775,12 @@ async function submitAstriScheduleForm(event) {
     const url = scope === "subfeeder" ? "/api/astri/subfeeder/schedule/approve" : scope === "feeder" ? "/api/astri/feeder/schedule/approve" : "/api/astri/schedule/approve";
     const formData = new FormData(form);
     postStarted = true;
+    keepSubmitLocked = true;
     const payload = await fetch(url, {
       method: "POST",
       body: formData,
     }).then(parseJsonResponse);
+    if (payload?.outcome === "verified" && payload.verified === true && payload.ok === true) keepSubmitLocked = false;
     if (!isCurrent()) return;
     if (payload?.outcome === "verified" && payload.verified === true && payload.ok === true) {
       expectedWoStatus = "In Progress";
@@ -8760,7 +8803,8 @@ async function submitAstriScheduleForm(event) {
     try {
       if (isCurrent()) await refreshAstriWorkOrderStatusAfterAction(activeMatch, expectedWoStatus).catch(() => null);
     } finally {
-      submitLoading.restore();
+      if (keepSubmitLocked) submitLoading.retain();
+      else submitLoading.restore();
       applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
       const scheduleSubmitButton = form.querySelector('button[type="submit"]');
       applyAstriModalSubmitWorkOrderStatus(
@@ -9489,7 +9533,6 @@ async function submitAstriBoq(items, type) {
   );
   if (!submitLoading) return;
   document.getElementById("astriBoqResult")?.remove();
-  lockAstriBoqSiblingControls(boqLockKey, activeSubmitButton);
   let progress = showAstriBoqDualProgress(type, "Add BOQ", "Memeriksa status WO ASTRI...", true);
   let keepSubmitLocked = false;
   let expectedWoStatus = "";
@@ -9514,7 +9557,6 @@ async function submitAstriBoq(items, type) {
       || renderedTable !== content?.querySelector("#astriBoqTableBody")) return;
     if (!status || status.unavailable) return;
     if (status.successful) {
-      keepSubmitLocked = true;
       submitLoading.update(`Status WO ASTRI sudah ${status.latest_status_label || "Successful"}`);
       return;
     }
@@ -9641,20 +9683,17 @@ async function submitAstriBoq(items, type) {
   } finally {
     progress?.remove?.();
     if (astriBoqReadCurrent(readContext, false)) await refreshAstriWorkOrderStatusAfterAction(activeBoqMatch, expectedWoStatus);
-    if (keepSubmitLocked) {
-      submitLoading.update("Cek status ASTRI sebelum retry");
-    } else {
-      submitLoading.restore();
-      applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
-      const boqSubmitButton = astriBoqReadCurrent(readContext) ? content?.querySelector("#astriBoqSubmitButton") : null;
-      applyAstriModalSubmitWorkOrderStatus(
-        boqSubmitButton,
-        astriSubmitMatchesStatusIdentity(boqSubmitButton, state.astriWorkOrderStatus)
-          ? state.astriWorkOrderStatus
-          : null,
-        "addboq",
-      );
-    }
+    if (keepSubmitLocked) submitLoading.retain();
+    else submitLoading.restore();
+    applyAstriWorkOrderStatus(state.astriWorkOrderStatus);
+    const boqSubmitButton = astriBoqReadCurrent(readContext) ? content?.querySelector("#astriBoqSubmitButton") : null;
+    applyAstriModalSubmitWorkOrderStatus(
+      boqSubmitButton,
+      astriSubmitMatchesStatusIdentity(boqSubmitButton, state.astriWorkOrderStatus)
+        ? state.astriWorkOrderStatus
+        : null,
+      "addboq",
+    );
   }
 }
 

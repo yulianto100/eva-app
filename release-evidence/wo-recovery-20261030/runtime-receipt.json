@@ -1,0 +1,31 @@
+[
+  {
+    "file": "static/js/app.js",
+    "host_runtime_sha256": "da5db1b5150b803d9c3f8b0a26a1e9251809797b5ad320d318dd2d4e23d6750d"
+  },
+  {
+    "file": "templates/index.html",
+    "host_runtime_sha256": "3c09ce98c88d4586f0c000e2abc0fc2e2f65143dd1dec4d2724cc09359ac40a9"
+  },
+  {
+    "public_asset": "https://eva.dyena.id/static/js/app.js?v=wo-recovery-20261030-v1",
+    "sha256": "da5db1b5150b803d9c3f8b0a26a1e9251809797b5ad320d318dd2d4e23d6750d"
+  },
+  {
+    "health": {
+      "service": "eva-web",
+      "status": "ok",
+      "timestamp": 1793355617
+    }
+  },
+  {
+    "containers_unchanged": [
+      "/eva-converter sha256:91e197d36d5e30fe7b3396da91b35ecec301404bc48f0596aa52fec9cc18fb77 2026-10-30T07:43:42.299725006Z 0",
+      "/eva-worker sha256:c9f16f2a07fd14d1fa05f64117e0dde6f39ecd4ac27fd30d9f663248096698df 2026-10-30T07:42:46.110876602Z 0",
+      "/eva-worker2 sha256:520ff3ef4322209366904d25b83d7a1b277597b158c08d13f64bd551ae75f63e 2026-10-30T07:43:02.689932685Z 0"
+    ]
+  },
+  {
+    "anonymous_wo_status_http": 401
+  }
+]

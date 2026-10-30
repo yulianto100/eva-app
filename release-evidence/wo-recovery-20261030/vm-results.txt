@@ -1,0 +1,74 @@
+PASS cluster/nojob: main/modal status matrix
+PASS cluster/nojob: reconnect requests WO recovery
+PASS cluster/nojob: null read settles unavailable/fail-closed
+PASS cluster/nojob: duplicate/fresh reads
+PASS cluster/nojob: exact-WO retained lock detaches/reapplies
+PASS cluster/nojob: loading auto-locks exact siblings only
+PASS cluster/nojob: Successful precheck restores lock, no submit
+PASS cluster/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS cluster/JOB-TEST: main/modal status matrix
+PASS cluster/JOB-TEST: reconnect requests WO recovery
+PASS cluster/JOB-TEST: null read settles unavailable/fail-closed
+PASS cluster/JOB-TEST: duplicate/fresh reads
+PASS cluster/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS cluster/JOB-TEST: loading auto-locks exact siblings only
+PASS cluster/JOB-TEST: Successful precheck restores lock, no submit
+PASS cluster/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS subfeeder/nojob: main/modal status matrix
+PASS subfeeder/nojob: reconnect requests WO recovery
+PASS subfeeder/nojob: null read settles unavailable/fail-closed
+PASS subfeeder/nojob: duplicate/fresh reads
+PASS subfeeder/nojob: exact-WO retained lock detaches/reapplies
+PASS subfeeder/nojob: loading auto-locks exact siblings only
+PASS subfeeder/nojob: Successful precheck restores lock, no submit
+PASS subfeeder/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS subfeeder/JOB-TEST: main/modal status matrix
+PASS subfeeder/JOB-TEST: reconnect requests WO recovery
+PASS subfeeder/JOB-TEST: null read settles unavailable/fail-closed
+PASS subfeeder/JOB-TEST: duplicate/fresh reads
+PASS subfeeder/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS subfeeder/JOB-TEST: loading auto-locks exact siblings only
+PASS subfeeder/JOB-TEST: Successful precheck restores lock, no submit
+PASS subfeeder/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS feeder/nojob: main/modal status matrix
+PASS feeder/nojob: reconnect requests WO recovery
+PASS feeder/nojob: null read settles unavailable/fail-closed
+PASS feeder/nojob: duplicate/fresh reads
+PASS feeder/nojob: exact-WO retained lock detaches/reapplies
+PASS feeder/nojob: loading auto-locks exact siblings only
+PASS feeder/nojob: Successful precheck restores lock, no submit
+PASS feeder/nojob: unknown outcome retains exact lock, duplicate click guarded
+PASS feeder/JOB-TEST: main/modal status matrix
+PASS feeder/JOB-TEST: reconnect requests WO recovery
+PASS feeder/JOB-TEST: null read settles unavailable/fail-closed
+PASS feeder/JOB-TEST: duplicate/fresh reads
+PASS feeder/JOB-TEST: exact-WO retained lock detaches/reapplies
+PASS feeder/JOB-TEST: loading auto-locks exact siblings only
+PASS feeder/JOB-TEST: Successful precheck restores lock, no submit
+PASS feeder/JOB-TEST: unknown outcome retains exact lock, duplicate click guarded
+PASS required gate wiring uses exact main/modal identity
+PASS sync helper restores unrelated map snapshot without deleting Set lock
+PASS lock key trims scope/code/WO, rejects whitespace code
+PASS recovery skips hidden/idle/disconnected/needsLogin/missing target
+PASS recovery deduplicates inflight reads and reuses fresh proof
+PASS wake and trusted idle input invoke recovery
+PASS synthetic input does not renew activity/recover
+PASS connected auth recheck recovers even if previously connected; duplicate auth read guarded
+PASS stale WO response ignored: target
+PASS stale WO response ignored: job
+PASS stale WO response ignored: auth
+PASS stale WO response ignored: request
+PASS stale WO response ignored: disconnect
+PASS mismatched response fails closed
+PASS stale auth status cannot recover or overwrite a newer generation
+PASS actual action-read wrapper uses mocked GET only; stale queued reads skipped
+PASS stale BOQ precheck prevents submit: target
+PASS stale BOQ precheck prevents submit: job
+PASS stale BOQ precheck prevents submit: auth
+PASS stale BOQ precheck prevents submit: items
+PASS stale BOQ precheck prevents submit: modal
+PASS unknown submission transport outcome retains lock
+PASS read exception settles unavailable and clears inflight
+PASS main button double-click wrapper invokes one handler
+72/72 passed; source=/tmp/opencode/wo-recovery/static/js/app.js
+Offline VM/source extraction; mocked DOM, timers, reads, submission lifecycle. No app boot, browser layout, backend, real network, or live ASTRI mutation.

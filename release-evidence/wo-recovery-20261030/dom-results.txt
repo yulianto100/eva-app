@@ -1,0 +1,48 @@
+PASS cluster/nojob: native main/modal status and aria matrix
+PASS cluster/nojob: retained lock detaches/restores native snapshots, preserves Set
+PASS cluster/nojob: unknown BOQ clears loading marker; source close listener dismisses
+PASS cluster/nojob: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS cluster/nojob: unknown Schedule retains lock without loading; source close listener dismisses
+PASS cluster/nojob: simultaneous native submit (schedule first): one POST total
+PASS cluster/nojob: simultaneous native submit (boq first): one POST total
+PASS cluster/JOB-TEST: native main/modal status and aria matrix
+PASS cluster/JOB-TEST: retained lock detaches/restores native snapshots, preserves Set
+PASS cluster/JOB-TEST: unknown BOQ clears loading marker; source close listener dismisses
+PASS cluster/JOB-TEST: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS cluster/JOB-TEST: unknown Schedule retains lock without loading; source close listener dismisses
+PASS cluster/JOB-TEST: simultaneous native submit (schedule first): one POST total
+PASS cluster/JOB-TEST: simultaneous native submit (boq first): one POST total
+PASS subfeeder/nojob: native main/modal status and aria matrix
+PASS subfeeder/nojob: retained lock detaches/restores native snapshots, preserves Set
+PASS subfeeder/nojob: unknown BOQ clears loading marker; source close listener dismisses
+PASS subfeeder/nojob: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS subfeeder/nojob: unknown Schedule retains lock without loading; source close listener dismisses
+PASS subfeeder/nojob: simultaneous native submit (schedule first): one POST total
+PASS subfeeder/nojob: simultaneous native submit (boq first): one POST total
+PASS subfeeder/JOB-TEST: native main/modal status and aria matrix
+PASS subfeeder/JOB-TEST: retained lock detaches/restores native snapshots, preserves Set
+PASS subfeeder/JOB-TEST: unknown BOQ clears loading marker; source close listener dismisses
+PASS subfeeder/JOB-TEST: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS subfeeder/JOB-TEST: unknown Schedule retains lock without loading; source close listener dismisses
+PASS subfeeder/JOB-TEST: simultaneous native submit (schedule first): one POST total
+PASS subfeeder/JOB-TEST: simultaneous native submit (boq first): one POST total
+PASS feeder/nojob: native main/modal status and aria matrix
+PASS feeder/nojob: retained lock detaches/restores native snapshots, preserves Set
+PASS feeder/nojob: unknown BOQ clears loading marker; source close listener dismisses
+PASS feeder/nojob: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS feeder/nojob: unknown Schedule retains lock without loading; source close listener dismisses
+PASS feeder/nojob: simultaneous native submit (schedule first): one POST total
+PASS feeder/nojob: simultaneous native submit (boq first): one POST total
+PASS feeder/JOB-TEST: native main/modal status and aria matrix
+PASS feeder/JOB-TEST: retained lock detaches/restores native snapshots, preserves Set
+PASS feeder/JOB-TEST: unknown BOQ clears loading marker; source close listener dismisses
+PASS feeder/JOB-TEST: native visibility wake; hidden skip, null fail-closed, visible recovery
+PASS feeder/JOB-TEST: unknown Schedule retains lock without loading; source close listener dismisses
+PASS feeder/JOB-TEST: simultaneous native submit (schedule first): one POST total
+PASS feeder/JOB-TEST: simultaneous native submit (boq first): one POST total
+42/42 passed; offline jsdom/native DOM replay, NOT actual browser.
+Source-extracted lifecycle, template main controls, source-created modals/close listeners; mocked GET/POST only. External eva-astri-dialogs.js absent: loading-only guard predicate replay, not integration proof. No layout, full boot, SSH, production or real network.
+da5db1b5150b803d9c3f8b0a26a1e9251809797b5ad320d318dd2d4e23d6750d  /tmp/opencode/wo-recovery/static/js/app.js
+3c09ce98c88d4586f0c000e2abc0fc2e2f65143dd1dec4d2724cc09359ac40a9  /tmp/opencode/wo-recovery/templates/index.html
+630af4a64a87352d817e84928d59834c8912bc8ed8b697c0fec5107b910f616d  /tmp/opencode/wo-recovery/tests/check_ui.js
+a20474eac0c71a8b8ceb799a43fb264aeaeef1d40e16295fa940c93539d87f9a  /tmp/opencode/wo-recovery/tests/dom_check.js
