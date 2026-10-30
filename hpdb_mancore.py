@@ -23,6 +23,7 @@ from hpdb import (
     collect_hpdb_placemarks,
     detect_parent_line_fdt,
     infer_network_type,
+    hpdb_fdt_identity,
     is_valid_coordinate,
     load_hpdb_defaults,
     normalize_city_value,
@@ -160,7 +161,11 @@ def mancore_admin_value(defaults: dict, *keys: str) -> str:
 def collect_hpdb_input_placemarks(input_paths: str | Path | Iterable[str | Path]) -> list[HpdbPlacemark]:
     placemarks: list[HpdbPlacemark] = []
     for path in [path for path in normalize_input_paths(input_paths) if is_kml_path(path)]:
-        collect_hpdb_placemarks(read_kml_root(path), [], placemarks)
+        source_marks: list[HpdbPlacemark] = []
+        collect_hpdb_placemarks(read_kml_root(path), [], source_marks)
+        for placemark in source_marks:
+            placemark.source_file = str(Path(path).resolve())
+        placemarks.extend(source_marks)
     return placemarks
 
 def is_hpdb_pole_placemark(placemark: HpdbPlacemark) -> bool:
@@ -211,18 +216,19 @@ def build_mancore_access_lookup(
     result: HpdbParseResult,
     placemarks: Sequence[HpdbPlacemark],
     network_type: str | None = None,
-) -> dict[tuple[int, str], HpdbPlacemark | None]:
+) -> dict[tuple[tuple[str, int], str], HpdbPlacemark | None]:
     transformer = build_transformer()
     if str(network_type or "").strip().upper() == "UG":
         access_placemarks = [placemark for placemark in placemarks if is_hpdb_handhole_placemark(placemark)]
     else:
         access_placemarks = [placemark for placemark in placemarks if is_hpdb_pole_placemark(placemark)]
     return {
-        (int(row.get("_fdt") or 0), str(row.get("FAT Code") or "")): nearest_access_for_fat(row, access_placemarks, transformer=transformer)
+        (hpdb_fdt_identity(row), str(row.get("FAT Code") or "")): nearest_access_for_fat(
+            row, [p for p in access_placemarks if p.source_file == row.get("_source_path", "")], transformer=transformer)
         for row in result.fat_rows
     }
 
-def build_mancore_pole_lookup(result: HpdbParseResult, placemarks: Sequence[HpdbPlacemark]) -> dict[tuple[int, str], HpdbPlacemark | None]:
+def build_mancore_pole_lookup(result: HpdbParseResult, placemarks: Sequence[HpdbPlacemark]) -> dict[tuple[tuple[str, int], str], HpdbPlacemark | None]:
     return build_mancore_access_lookup(result, placemarks, network_type="AE")
 
 MANCORE_BAND_IDENTITY_END = 7      # A-G: tray, port, line, capacity, tube, core, FAT ID
@@ -291,7 +297,7 @@ def write_mancore_metadata(worksheet, cluster_row: dict, rows: Sequence[dict], d
     worksheet["L3"] = "FDT TYPE"
     worksheet["M3"] = ": 48C"
     worksheet["A4"] = "OLT / Feeder Line"
-    worksheet["C4"] = f": {defaults.get('olt_code') or ''}"
+    worksheet["C4"] = f": {cluster_row.get('olt_code', defaults.get('olt_code')) or ''}"
     worksheet["L4"] = "HP / Construction type"
     worksheet["M4"] = f": {len(rows)} HP / {construction_type}"
     worksheet["A5"] = "Cluster Name"
@@ -316,7 +322,7 @@ def write_mancore_fdt_sheet(
     cluster_row: dict,
     rows: Sequence[dict],
     defaults: dict,
-    access_lookup: dict[tuple[int, str], HpdbPlacemark | None],
+    access_lookup: dict[tuple[tuple[str, int], str], HpdbPlacemark | None],
     network_type: str | None = None,
     fill_admin_location: bool = False,
 ) -> None:
@@ -351,11 +357,10 @@ def write_mancore_fdt_sheet(
     for fat_code in sorted_fat_codes:
         fat_rows = rows_by_fat[fat_code]
         first_row = fat_rows[0]
-        fdt_number = int(first_row.get("_fdt") or 0)
         line_name = line_name_from_fat_code(fat_code, str(first_row.get("_line") or ""))
         capacity = capacity_by_line.get(line_name, "24C/2T")
         core_pair = mancore_core_pair_for_fat(fat_code, capacity)
-        access = access_lookup.get((fdt_number, fat_code))
+        access = access_lookup.get((hpdb_fdt_identity(first_row), fat_code))
         access_id = access.name if access else ""
         access_lat = access.latitude if access else ""
         access_lon = access.longitude if access else ""
@@ -462,7 +467,7 @@ def generate_hpdb_mancore_excel(
         process_date=process_date,
         cluster_name_override=cluster_name_override,
     )
-    renamed = apply_final_kmz_homepass_names(input_paths, parse_result.homepass_rows, defaults.get("block", ""))
+    renamed = apply_final_kmz_homepass_names(input_paths, parse_result.homepass_rows, defaults.get("block", ""), defaults.get("fallback_fdt_code", ""))
     pipeline_log(pipeline_logger, "INFO", f"Final KMZ homepass names checked: {len(parse_result.homepass_rows)}, corrected: {renamed}.")
     access_label = mancore_access_item_label(resolved_network_type)
     access_item = "Handhole ID" if resolved_network_type == "UG" else "Pole ID"
@@ -486,26 +491,32 @@ def generate_hpdb_mancore_excel(
         )
     workbook = Workbook()
     workbook.remove(workbook.active)
-    rows_by_fdt: dict[int, list[dict]] = defaultdict(list)
+    rows_by_fdt: dict[tuple[str, int], list[dict]] = defaultdict(list)
     for row in parse_result.homepass_rows:
-        rows_by_fdt[int(row.get("_fdt") or 0)].append(row)
-    cluster_by_fdt = {int(row.get("_fdt") or 0): row for row in parse_result.cluster_rows}
-    for fdt_number in sorted(set(rows_by_fdt) | set(cluster_by_fdt)):
+        rows_by_fdt[hpdb_fdt_identity(row)].append(row)
+    cluster_by_fdt = {hpdb_fdt_identity(row): row for row in parse_result.cluster_rows}
+    source_indices = {source: index for index, source in enumerate(parse_result.source_results, start=1)}
+    for fdt_key in sorted(set(rows_by_fdt) | set(cluster_by_fdt), key=lambda key: (source_indices.get(key[0], 0), key[1])):
+        source_path, fdt_number = fdt_key
+        source_index = source_indices.get(source_path)
+        sheet_name = f"S{source_index}-FDT-{fdt_number}" if source_index is not None else f"FDT-{fdt_number}"
+        source_result = parse_result.source_results.get(source_path, parse_result)
+        sheet_defaults = {**defaults, **source_result.geocode_fields}
         fill_admin_location = bool(
-            parse_result.geocode_fields
-            or defaults.get("province")
-            or defaults.get("regency_city")
-            or defaults.get("city")
-            or defaults.get("district")
-            or defaults.get("sub_district")
-            or defaults.get("subdistrict")
+            source_result.geocode_fields
+            or sheet_defaults.get("province")
+            or sheet_defaults.get("regency_city")
+            or sheet_defaults.get("city")
+            or sheet_defaults.get("district")
+            or sheet_defaults.get("sub_district")
+            or sheet_defaults.get("subdistrict")
         )
         write_mancore_fdt_sheet(
             workbook,
-            f"FDT-{fdt_number}",
-            cluster_by_fdt.get(fdt_number, {}),
-            rows_by_fdt[fdt_number],
-            defaults,
+            sheet_name,
+            cluster_by_fdt.get(fdt_key, {}),
+            rows_by_fdt[fdt_key],
+            sheet_defaults,
             access_lookup,
             network_type=resolved_network_type,
             fill_admin_location=fill_admin_location,

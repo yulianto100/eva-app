@@ -684,10 +684,9 @@ def _extract_canonical_folder_from_stack(folder_stack: Sequence[str], *prefixes:
 
 def normalize_lookup_text(value: object) -> str:
     text = normalize_text(value).upper()
-    text = PROJECT_CODE_PREFIX_PATTERN.sub("", text)
-    text = re.sub(r"\bFDT\s*[-_ ]*\d+\b", "", text)
-    text = re.sub(r"[^A-Z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^[A-Z]{2,}\d+\s*-\s*", "", text)
+    text = re.sub(r"\s*-\s*FDT\s*[-_ ]*\d+$", "", text)
+    return re.sub(r"\s*-\s*", "-", text).strip()
 
 
 def comparable_olt_catalog_name(value: object) -> str:
@@ -1153,72 +1152,58 @@ def parse_fdt_coding_workbook(path: str | Path) -> list[FdtCodingRecord]:
 
 def lookup_score(project_name: str, site_name: str) -> float:
     project_key = normalize_lookup_text(project_name)
-    site_key = normalize_lookup_text(site_name)
-    if not project_key or not site_key:
-        return 0.0
-    if project_key == site_key:
-        return 1.0
-    if project_key in site_key or site_key in project_key:
-        shorter = min(len(project_key), len(site_key))
-        longer = max(len(project_key), len(site_key))
-        coverage = shorter / max(longer, 1)
-        if shorter < 6 or coverage < 0.2:
-            return 0.0
-        return 0.72 + (0.27 * coverage)
-    return difflib.SequenceMatcher(None, project_key, site_key).ratio()
+    return float(bool(project_key) and project_key == normalize_lookup_text(site_name))
 
 
 def select_project_records(records: Sequence[FdtCodingRecord], project_names: Sequence[str]) -> tuple[list[FdtCodingRecord], str, float]:
-    best_name = ""
-    best_key = ""
-    best_score = 0.0
-
-    for project_name in project_names:
-        for record in records:
-            score = lookup_score(project_name, record.site_name)
-            if score > best_score:
-                best_name = project_name
-                best_key = normalize_lookup_text(record.site_name)
-                best_score = score
-
-    if not best_key or best_score < 0.72:
-        return [], best_name, best_score
-
-    matched = [
-        record
-        for record in records
-        if normalize_lookup_text(record.site_name) == best_key
-    ]
-    matched.sort(key=lambda item: (item.fdt_order if item.fdt_order is not None else 9999, item.row_number))
-    return matched, best_name, best_score
-
-
-def subfeeder_lookup_key(value: object) -> str:
-    key = normalize_lookup_text(value)
-    key = re.sub(r"\b(?:SF|SUBFEEDER|SUB\s+FEEDER|FEEDER|ASPLAN|AS\s+PLAN|KMZ|KML)\b", " ", key)
-    return re.sub(r"\s+", " ", key).strip()
-
-
-def select_records_by_substring(records: Sequence[FdtCodingRecord], keyword: str) -> list[FdtCodingRecord]:
-    key = subfeeder_lookup_key(keyword)
-    if not key:
-        return []
-    tokens = key.split()
-    best_site_key = ""
-    best_score = 0
-    for r in records:
-        site_key = normalize_lookup_text(r.site_name)
-        haystack = f"{subfeeder_lookup_key(r.site_name)} {subfeeder_lookup_key(r.cluster_initial)} {subfeeder_lookup_key(r.fdt_code)}"
-        if all(token in haystack for token in tokens):
-            score = sum(1 for token in tokens if token in haystack)
-            if score > best_score:
-                best_score = score
-                best_site_key = site_key
-    if not best_site_key:
-        return []
-    results = [r for r in records if normalize_lookup_text(r.site_name) == best_site_key]
-    results.sort(key=lambda item: (item.fdt_order if item.fdt_order is not None else 9999, item.row_number))
-    return results
+    project_keys = {normalize_lookup_text(name) for name in project_names} - {""}
+    matched = [record for record in records if normalize_lookup_text(record.site_name) in project_keys]
+    keys = {normalize_lookup_text(record.site_name) for record in matched}
+    if len(keys) != 1:
+        return [], "", 0.0
+    by_order: dict[int, set[str]] = defaultdict(set)
+    by_code: dict[str, set[int]] = defaultdict(set)
+    groups: dict[tuple[int | None, str], list[FdtCodingRecord]] = defaultdict(list)
+    for record in matched:
+        code = normalize_text(record.fdt_code).upper()
+        ordinal_match = re.search(r"\s*-\s*FDT\s*[-_ ]*(\d+)$", normalize_text(record.site_name), re.I)
+        ordinal = int(ordinal_match.group(1)) if ordinal_match else None
+        if ordinal is not None:
+            by_order[ordinal].add(code)
+            if code:
+                by_code[code].add(ordinal)
+        groups[(ordinal, code)].append(record)
+    if any(len(codes) > 1 for codes in by_order.values()) or any(len(orders) > 1 for orders in by_code.values()):
+        return [], "", 0.0
+    # Coding can be identical across OLT contexts. Never borrow the first OLT.
+    olt_fields = ("olt_initial", "olt_name_initial", "hub_id", "olt_hostname")
+    contexts = {tuple(normalize_text(getattr(record, field)).upper() for field in olt_fields)
+                for record in matched}
+    if len(contexts) > 1 and any(ordinal is None for ordinal, _ in groups):
+        # Without explicit physical labels, competing context code sets cannot be aligned.
+        associations = {frozenset(association for association, rows in groups.items()
+                                 if any(tuple(normalize_text(getattr(row, field)).upper() for field in olt_fields) == context
+                                        for row in rows)) for context in contexts}
+        if len(associations) != 1:
+            return [], "", 0.0
+    if 0 in by_order or len({code for _, code in groups if code}) != sum(bool(code) for _, code in groups):
+        return [], "", 0.0
+    matched = []
+    used_orders = set(by_order)
+    ordered_groups = sorted(groups.items(), key=lambda item: (
+        item[1][0].fdt_order if item[1][0].fdt_order is not None else 9999, item[1][0].row_number))
+    for (ordinal, _), rows in ordered_groups:
+        if ordinal is None:
+            ordinal = next(order for order in range(1, len(groups) + len(used_orders) + 2) if order not in used_orders)
+            used_orders.add(ordinal)
+        group_contexts = {tuple(normalize_text(getattr(row, field)).upper() for field in olt_fields)
+                          for row in rows}
+        matched.append(replace(rows[0], fdt_order=ordinal,
+                               **({field: "" for field in olt_fields} if len(group_contexts) > 1 else {})))
+    key = next(iter(keys))
+    matched_from = next(name for name in project_names if normalize_lookup_text(name) == key)
+    matched.sort(key=lambda item: item.fdt_order)
+    return matched, matched_from, 1.0
 
 
 def _fdt_sharing_code_from_name(value: str | None) -> str:
@@ -1254,22 +1239,13 @@ def default_fdt_coding_records(fdt_placemarks: Sequence[FdtPlacemarkRef], projec
             sheet_name="FDT_SHARING_KMZ" if code != "XXX" else "DEFAULT",
             row_number=order,
             site_name=site_name,
-            fdt_order=order,
+            fdt_order=ref.source_order if ref else order,
             fdt_id="",
             fdt_code=code,
             index_code=code,
             cluster_initial=code,
         ))
     return records
-
-
-def _conversion_fdt_code(code: str, order: int) -> str:
-    """Keep existing EVA suffixes; plain XXX has no dotted ID to split."""
-    prefix, dot, fdt_id = code.rpartition(".")
-    base = prefix if prefix and dot and fdt_id.isdigit() else code
-    if re.search(r"-\d+$", base):
-        return code
-    return f"{base}-{order}.{fdt_id}" if base == prefix else f"{code}-{order}"
 
 
 def _subfeeder_saved_fdt_codes(root: ET.Element) -> list[str]:
@@ -4223,13 +4199,11 @@ def restore_quarantined_sling_folders(root: ET.Element, quarantined: Sequence[di
 def collect_organizer_fdt_refs(
     placemark_refs: Sequence[OrganizerPlacemarkRef],
     records: Sequence[FdtCodingRecord],
+    source_orders: dict[int, int] | None = None,
 ) -> list[OrganizerFdtRef]:
-    """Collect physical FDT ordinals from placemark order, not coding IDs.
+    """Keep recovered object ownership; resolve canonical codes before traversal order.
 
-    ``FdtCodingRecord.fdt_order`` may contain a spreadsheet/site ID such as
-    156.  That value is useful for coding/BOQ lookup only; it must never become
-    the physical parent-folder ordinal.  Explicit ``FDT N`` source labels stay
-    authoritative.  Otherwise the ordered FDT placemarks are FDT 1, FDT 2, ...
+    Selected records already carry conversion-local physical ordinals, not DB IDs.
     """
     refs: list[OrganizerFdtRef] = []
     for placemark_ref in placemark_refs:
@@ -4239,7 +4213,11 @@ def collect_organizer_fdt_refs(
             continue
         name = normalize_text(direct_child_text_by_name(placemark, "name"))
         explicit_order = extract_fdt_order(" ".join([*placemark_ref.folder_stack, name]))
-        order = explicit_order if explicit_order is not None else len(refs) + 1
+        record = record_for_fdt_code(records, _fdt_sharing_code_from_name(name))
+        order = ((source_orders or {}).get(id(placemark)) or explicit_order
+                 or (record.fdt_order if record else None) or len(refs) + 1)
+        if any(ref.order == order for ref in refs):
+            raise ValueError("Ambiguous physical FDT identity: multiple points resolve to the same local ordinal.")
         refs.append(OrganizerFdtRef(order=order, point=point))
     return refs
 
@@ -5478,10 +5456,11 @@ def organize_kmz_placemarks(
     network_type: str | None = "AE",
     line_local_ug: bool = False,
     cluster_ae_sling: bool = False,
+    source_orders: dict[int, int] | None = None,
 ) -> None:
     project_folder = find_project_container(root, namespace, project_folder_name)
     placemark_refs = collect_organizer_placemarks(root, [])
-    fdt_refs = collect_organizer_fdt_refs(placemark_refs, records)
+    fdt_refs = collect_organizer_fdt_refs(placemark_refs, records, source_orders)
     preliminary_fat_areas = collect_organizer_fat_areas(placemark_refs, [])
     cable_refs = collect_organizer_cable_refs(
         placemark_refs,
@@ -6038,15 +6017,8 @@ def walk_kml_for_standardization(
 
 
 def record_for_fdt_order(records: Sequence[FdtCodingRecord], order: int) -> FdtCodingRecord | None:
-    """Resolve a physical FDT ordinal to its coding record.
-
-    ``order`` is always the generated physical position (1-based). Never
-    compare it with ``FdtCodingRecord.fdt_order``: that field may be a source
-    spreadsheet/BOQ ID such as 156, not the physical FDT position.
-    """
-    if 1 <= order <= len(records):
-        return records[order - 1]
-    return None
+    """Records entering conversion carry local physical ordinals."""
+    return next((record for record in records if record.fdt_order == order), None)
 
 
 def record_for_fdt_code(records: Sequence[FdtCodingRecord], fdt_code: str) -> FdtCodingRecord | None:
@@ -6057,6 +6029,13 @@ def record_for_fdt_code(records: Sequence[FdtCodingRecord], fdt_code: str) -> Fd
     for record in records:
         if normalize_text(record.fdt_code).upper() == target:
             return record
+    # Read legacy conversion suffixes only to recover the authoritative DB code.
+    legacy = re.fullmatch(r"(.+)-(\d+)(\.\d+)", target)
+    if legacy:
+        plain = legacy.group(1) + legacy.group(3)
+        return next((record for record in records
+                     if normalize_text(record.fdt_code).upper() == plain
+                     and record.fdt_order == int(legacy.group(2))), None)
     return None
 
 
@@ -6114,9 +6093,9 @@ def subfeeder_pole_prefix(record: FdtCodingRecord) -> str:
     if record.sheet_name in {"FDT_SHARING_KMZ", "DEFAULT"}:
         # NoDB fallback carries coding only; never fabricate an OLT identity.
         return coding_fdt or "XXX"
-    if not olt or olt == "XXX" or not coding_fdt or coding_fdt == "XXX":
-        raise ValueError("Subfeeder pole naming membutuhkan INISIAL OLT dan CODING FDT yang valid.")
-    return f"{olt}.{coding_fdt}"
+    if not coding_fdt or coding_fdt == "XXX":
+        return "XXX"
+    return f"{olt or 'XXX'}.{coding_fdt}"
 
 
 def feeder_scope_tag(scope_type: str | None) -> str | None:
@@ -6782,6 +6761,7 @@ def _iter_cluster_cable_placemarks(
                 "order": len(cables),
                 "line": extract_parent_line_order(folder_stack, name),
                 "fdt": extract_parent_fdt_order(folder_stack),
+                "explicit_fdt": extract_fdt_order(" ".join(folder_stack)),
             })
     return cables
 
@@ -9067,8 +9047,8 @@ def _collect_feeder_geometry_indexes(
             folder_upper = (ancestor_standard_folder or "").upper()
             if folder_upper == "FDT":
                 # FDT code is in the placemark name (e.g., "PVMJ14.265")
-                code_match = FDT_CODE_PATTERN.search(placemark_name)
-                code = (code_match.group(0).upper() if code_match else placemark_name.upper()).removeprefix("EXT.")
+                code = (_fdt_sharing_code_from_name(placemark_name)
+                        or placemark_name.upper().removeprefix("EXT."))
                 fdt_entries.append({"code": code, "lon": coord[0], "lat": coord[1]})
             elif folder_upper == "SLACK HANGER":
                 slack_entries.append({"id": id(ch), "lon": coord[0], "lat": coord[1],
@@ -9192,7 +9172,7 @@ def _resolve_feeder_cable_record(
         chosen_code = candidates[0][1]["code"]
 
     record = record_for_fdt_code(records, chosen_code) or fallback_record
-    return record, chosen_code
+    return record, normalize_text(record.fdt_code).upper() if record else chosen_code
 
 
 
@@ -9204,40 +9184,14 @@ def _subfeeder_cable_fdt_code_map(root: ET.Element, fdt_entries: Sequence[dict])
         return {}
     ordered_cables = _order_oriented_subfeeder_cables(_orient_subfeeder_cable_chain(cables, fdt_entries), fdt_entries)
 
-    def fdt_order(entry: dict) -> int:
-        code_order = extract_fdt_order(entry.get("code", ""))
-        if code_order:
-            return code_order
-        match = re.search(r"\.(\d{1,3})\b", str(entry.get("code", "")))
-        return int(match.group(1)) if match else 999999
-
-    sorted_fdts = sorted(fdt_entries, key=fdt_order)
-    fdt_codes = [normalize_text(entry.get("code")).upper() for entry in sorted_fdts]
-    fdt_codes = [code for code in fdt_codes if code and not code.startswith("XXX")]
-    if len(set(fdt_codes)) < min(len(ordered_cables), len(fdt_codes)):
-        fdt_codes = []
-
-    if not fdt_codes:
-        seen_codes: set[str] = set()
-        for cable in sorted(cables, key=lambda item: int(item.get("order", 0))):
-            name = normalize_text(cable.get("name") or "")
-            matches = [match.group(0).upper() for match in FDT_CODE_PATTERN.finditer(name) if not match.group(0).upper().startswith("BKS.")]
-            for code in matches:
-                if code not in seen_codes:
-                    seen_codes.add(code)
-                    fdt_codes.append(code)
-        fdt_codes.sort(key=lambda code: extract_fdt_order(code) or 999999)
-
     mapping: dict[int, str] = {}
-    for index, cable in enumerate(ordered_cables):
+    for cable in ordered_cables:
         element = cable.get("element")
         if element is None:
             continue
-        code = fdt_codes[index] if index < len(fdt_codes) else ""
-        if not code:
-            target = _target_fdt_for_cable(cable, fdt_entries)
-            code = normalize_text(target.get("code") if target else "").upper()
-        if code and not code.startswith("XXX"):
+        target = _target_fdt_for_cable(cable, fdt_entries)
+        code = normalize_text(target.get("code") if target else "").upper()
+        if code:
             mapping[id(element)] = code
     return mapping
 
@@ -9333,18 +9287,10 @@ def standardize_distribution_cable_placemarks(
             mapped_fdt_code = normalize_text(feeder_context.get("cable_fdt_code_by_id", {}).get(id(child), "")).upper()
             if mapped_fdt_code:
                 record = record_for_fdt_code(records, mapped_fdt_code) or fallback_record
-                fdt_code = mapped_fdt_code
+                fdt_code = normalize_text(record.fdt_code if record else mapped_fdt_code).upper()
             elif existing_fdt_code_in_name and existing_fdt_code_in_name not in feeder_context["used_fdt_codes"]:
                 record = record_for_fdt_code(records, existing_fdt_code_in_name) or fallback_record
-                # A Subfeeder reconversion no longer has FDT points. Retain the
-                # already assigned multi-FDT cable identity instead of falling
-                # back to the first coding row for every cable.
-                if (normalize_scope_type(scope_type) == "Subfeeder"
-                        and not feeder_context["fdt_entries"]
-                        and re.search(r"-\d+\.\d{3}$", existing_fdt_code_in_name)):
-                    fdt_code = existing_fdt_code_in_name
-                else:
-                    fdt_code = normalize_text(record.fdt_code if record else existing_fdt_code_in_name).upper()
+                fdt_code = normalize_text(record.fdt_code if record else existing_fdt_code_in_name).upper()
             else:
                 record, snapped_code = _resolve_feeder_cable_record(
                     cable_start,
@@ -9780,7 +9726,9 @@ def sort_numbered_placemarks(root: ET.Element) -> None:
         root[i] = placemark
 
 
-def serialize_kml(root: ET.Element, *, protect_sling_owned: bool = False) -> bytes:
+def serialize_kml(root: ET.Element, *, protect_sling_owned: bool = False,
+                  fallback_fdt_names: dict[int, str] | None = None,
+                  physical_fdt_orders: dict[int, int] | None = None) -> bytes:
     namespace = kml_namespace(root)
     if namespace:
         ET.register_namespace("", namespace)
@@ -9824,6 +9772,16 @@ def serialize_kml(root: ET.Element, *, protect_sling_owned: bool = False) -> byt
             name_element.text = f"LINE {line_order}"
 
     sort_numbered_placemarks(root)
+    # Physical FDT ordinals are business ownership, not natural display order.
+    for parent in root.iter():
+        positions = [i for i, child in enumerate(parent) if id(child) in (physical_fdt_orders or {})]
+        ordered = sorted((parent[i] for i in positions), key=lambda child: physical_fdt_orders[id(child)])
+        for i, child in zip(positions, ordered):
+            parent[i] = child
+    # Restore only after every routing, naming and serialization ordering consumer.
+    for element in root.iter():
+        if fallback_fdt_names and id(element) in fallback_fdt_names:
+            ensure_direct_child(element, "name", namespace).text = fallback_fdt_names[id(element)]
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -11001,7 +10959,12 @@ def standardize_kmz_file(
     input_path = Path(input_path)
     root, kml_name = read_kmz_root_and_kml_name(input_path)
     namespace = kml_namespace(root)
+    original_names = {id(element): direct_child_by_name(element, "name").text or ""
+                      for element in root.iter() if local_name(element.tag) == "Placemark"
+                      and direct_child_by_name(element, "name") is not None}
     lookup_source_path = source_name or input_path
+    # Match raw business identity; the native envelope below is display/routing only.
+    match_identity = Path(lookup_source_path).stem
     lookup_source_path = normalize_filename_project_envelope(root, namespace, lookup_source_path, network_type, scope_type) or lookup_source_path
     from eva_kmz_metadata import clean_kmz_metadata
     metadata_cleanup = clean_kmz_metadata(root)
@@ -11036,7 +10999,7 @@ def standardize_kmz_file(
         spreadsheet_warnings.append("Spreadsheet coding FDT belum tersedia; memakai default XXX.")
     project_names = candidate_project_names(root, lookup_source_path)
     project_folder_name = preferred_project_folder_name(project_names, lookup_source_path)
-    matched_records, matched_from, match_score = select_project_records(records, project_names)
+    matched_records, matched_from, match_score = select_project_records(records, [match_identity])
 
     # Auto-detect scope type from project name if not explicitly set
     detected_scope = normalize_scope_type(scope_type) or ("Subfeeder" if is_subfeeder_project(project_folder_name) else "Feeder" if is_feeder_project(project_folder_name) else "Cluster")
@@ -11150,19 +11113,6 @@ def standardize_kmz_file(
                         frozen = ET.fromstring(ET.tostring(child))
                         source_fdt_anchors.append(FdtPlacemarkRef(frozen, list(stack), 1, label))
         capture_fdt(source_projects[0])
-    if normalize_scope_type(detected_scope) == "Subfeeder":
-        filename_cluster_name = extract_cluster_name_from_kmz_filename(lookup_source_path)
-        sr = select_project_records(records, [filename_cluster_name])
-        if not sr[0]:
-            sr = (select_records_by_substring(records, filename_cluster_name), filename_cluster_name, 0.0)
-        if sr[0]:
-            matched_records = list(sr[0])
-            matched_from = sr[1]
-            match_score = sr[2]
-        else:
-            matched_records = []
-            matched_from = filename_cluster_name
-            match_score = 0.0
     is_feeder = is_feeder_like_scope(detected_scope)
     line_local_ug = is_cluster_ug_scope(detected_scope, network_type)
     cluster_ae_sling = (
@@ -11204,13 +11154,34 @@ def standardize_kmz_file(
             if extract_fdt_order(" ".join([*ref.folder_stack, ref.current_name])):
                 continue
             code = _fdt_sharing_code_from_name(ref.current_name) or normalize_text(ref.current_name).upper().removeprefix("EXT.")
-            owners = {cable["fdt"] for cable in cables
-                if normalize_text(cable["name"]).upper().partition(" - CABLE LINE ")[0] == code}
+            owners = {cable["explicit_fdt"] for cable in cables if cable["explicit_fdt"]
+                and normalize_text(cable["name"]).upper().partition(" - CABLE LINE ")[0] == code}
+            if not owners:
+                point = placemark_point_coordinate(ref.element)
+                owners = {cable["explicit_fdt"] for cable in cables if cable["explicit_fdt"] and point is not None
+                          and any(point in (line[0], line[-1]) for line in cable["lines"] if line)}
+            if len(owners) > 1:
+                raise ValueError("Ambiguous physical FDT identity: multiple explicit cable owners.")
             if len(owners) == 1:
                 ref.source_order = next(iter(owners))
+    if matched_records:
+        for ref in initial_fdt_placemarks:
+            record = record_for_fdt_code(matched_records, _fdt_sharing_code_from_name(ref.current_name)
+                                         or normalize_text(ref.current_name).upper().removeprefix("EXT."))
+            if record is not None:
+                explicit = extract_fdt_order(" ".join([*ref.folder_stack, ref.current_name]))
+                if explicit is not None and explicit != record.fdt_order:
+                    raise ValueError("Source FDT ordinal conflicts with exact DB code ownership")
+                ref.source_order = record.fdt_order
+    if len({ref.source_order for ref in initial_fdt_placemarks}) != len(initial_fdt_placemarks):
+        raise ValueError("Ambiguous physical FDT identity: multiple points resolve to the same local ordinal.")
+    source_fdt_names = {id(ref.element): original_names[id(ref.element)]
+                        for ref in initial_fdt_placemarks if id(ref.element) in original_names}
+    fallback_fdt_names: dict[int, str] = {}
     wrapper_changes: list[dict] = []
     using_default_coding = not matched_records
     if using_default_coding:
+        fallback_fdt_names.update(source_fdt_names)
         matched_records = default_fdt_coding_records(initial_fdt_placemarks, project_folder_name)
         if detected_scope == "Subfeeder" and not initial_fdt_placemarks:
             saved_codes = _subfeeder_saved_fdt_codes(root)
@@ -11234,12 +11205,15 @@ def standardize_kmz_file(
             matched_records[0] = replace(first, cluster_initial=next(iter(prefixes)) if poles else plain)
         matched_from = matched_from or project_folder_name
         match_score = 0.0
+    available_records = list(matched_records) if not using_default_coding else []
     # A missing/blank DB code falls back for that physical FDT only.
     for ref in sorted(initial_fdt_placemarks, key=lambda ref: ref.source_order):
         record = record_for_fdt_placemark(matched_records, ref)
         if record is None:
+            fallback_fdt_names[id(ref.element)] = source_fdt_names.get(id(ref.element), ref.current_name)
             matched_records.extend(default_fdt_coding_records([ref], project_folder_name))
         elif not normalize_text(record.fdt_code):
+            fallback_fdt_names[id(ref.element)] = source_fdt_names.get(id(ref.element), ref.current_name)
             fallback = default_fdt_coding_records([ref], project_folder_name)[0]
             position = next(i for i, r in enumerate(matched_records) if r is record)
             matched_records[position] = replace(record, fdt_code=fallback.fdt_code,
@@ -11251,11 +11225,11 @@ def standardize_kmz_file(
             if position < len(matched_records) and not normalize_text(matched_records[position].fdt_code):
                 matched_records[position] = replace(matched_records[position], fdt_code=code)
         for code in saved_codes:
-            if not any(code == r.fdt_code or code == _conversion_fdt_code(r.fdt_code, i)
-                       for i, r in enumerate(matched_records, 1)):
+            if record_for_fdt_code(matched_records, code) is None:
                 fallback = default_fdt_coding_records([], project_folder_name)[0]
-                matched_records.append(replace(fallback, fdt_code=code, index_code=code,
-                    cluster_initial=code, sheet_name="FDT_SHARING_KMZ" if not code.startswith("XXX") else "DEFAULT"))
+                matched_records.append(replace(fallback, fdt_order=len(matched_records) + 1,
+                    fdt_code=code, index_code=code, cluster_initial=code,
+                    sheet_name="FDT_SHARING_KMZ" if not code.startswith("XXX") else "DEFAULT"))
     source_fdt_record_positions = {}
     for ref in initial_fdt_placemarks:
         record = (record_for_fdt_order(matched_records, ref.source_order) if using_default_coding
@@ -11336,6 +11310,7 @@ def standardize_kmz_file(
             network_type,
             line_local_ug,
             cluster_ae_sling,
+            {id(ref.element): ref.source_order for ref in initial_fdt_placemarks},
         )
         rebuild_raw_line_wrapper_folders(root, namespace, organizer_changes)
         
@@ -11366,6 +11341,9 @@ def standardize_kmz_file(
     fdt_placemarks: list[FdtPlacemarkRef] = []
     walk_kml_for_standardization(root, [], namespace, post_organize_folder_changes, fdt_placemarks)
     folder_changes.extend(post_organize_folder_changes)
+    recovered_fdt_orders = {id(ref.element): ref.source_order for ref in initial_fdt_placemarks}
+    for ref in fdt_placemarks:
+        ref.source_order = recovered_fdt_orders.get(id(ref.element), ref.source_order)
     output_fdt_placemarks = list(fdt_placemarks)
     if normalize_scope_type(detected_scope) == "Feeder":
         # Mainfeeder flattens FDT folders; retain surviving source identities
@@ -11376,21 +11354,6 @@ def standardize_kmz_file(
             ref for ref in initial_fdt_placemarks
             if id(ref.element) in live_elements and id(ref.element) not in seen_elements
         )
-    if len(output_fdt_placemarks) > 1:
-        # Derive conversion-only codes after physical routing. Keep the master
-        # records/cluster initials intact and retain source-code-first mapping.
-        output_records = []
-        for order, record in enumerate(matched_records, 1):
-            output_records.append(replace(record, fdt_code=_conversion_fdt_code(record.fdt_code, order)))
-        output_by_record = {id(record): output for record, output in zip(matched_records, output_records)}
-        for placemark in output_fdt_placemarks:
-            position = source_fdt_record_positions.get(id(placemark.element))
-            record = record_for_fdt_code(matched_records, existing_fdt_code_from_name(placemark.current_name))
-            output = (output_records[position] if position is not None else
-                      output_by_record[id(record)] if record else record_for_fdt_placemark(output_records, placemark))
-            if output is not None:
-                placemark.current_name = output.fdt_code
-        matched_records = output_records
 
     if not is_feeder:
         # Cluster AE Sling geometry is still quarantined here. Defer its one
@@ -11416,6 +11379,10 @@ def standardize_kmz_file(
     ug_work_placemarks_renamed = standardize_ug_work_placemark_names(
         root, [], namespace, name_changes
     )
+    for ref in output_fdt_placemarks:
+        position = source_fdt_record_positions.get(id(ref.element))
+        if position is not None:
+            ref.current_name = matched_records[position].fdt_code
     fdt_changes, warnings = standardize_fdt_placemarks(
         output_fdt_placemarks,
         matched_records,
@@ -11447,7 +11414,7 @@ def standardize_kmz_file(
                               and not re.fullmatch(r"FDT\s*[-_ ]*\d+", label, re.IGNORECASE)})
     warnings.extend(f"Folder tambahan dipertahankan tanpa dibuang: {label}" for label in unknown_folders)
     if using_default_coding:
-        warnings.insert(0, "Coding FDT tidak match di database; memakai label FDT KMZ, lalu XXX jika tidak tersedia.")
+        warnings.insert(0, "Coding FDT tidak ditemukan persis atau ambigu; nama placemark FDT sumber dipertahankan. OLT HPDB/ASTRI memakai XXX.XXX.XXX.")
     fat_counts_by_fdt = collect_fat_counts_by_fdt(root, [])
     fat_counts_by_line_fdt = collect_fat_counts_by_line_fdt(root, [])
     distribution_boq_totals = collect_distribution_cable_boq_totals(root, [], fat_counts_by_line_fdt)
@@ -11677,7 +11644,8 @@ def standardize_kmz_file(
         input_path,
         output_path,
         kml_name,
-        serialize_kml(root, protect_sling_owned=cluster_ae_sling),
+        serialize_kml(root, protect_sling_owned=cluster_ae_sling, fallback_fdt_names=fallback_fdt_names,
+                      physical_fdt_orders={id(ref.element): ref.source_order for ref in output_fdt_placemarks}),
     )
 
     # Validate the serialized artifact, not only the pre-write in-memory tree.
@@ -11713,8 +11681,8 @@ def standardize_kmz_file(
         "matched_sheet": matched_record.sheet_name if matched_record else "",
         "matched_row": matched_record.row_number if matched_record else None,
         "default_fdt_coding": using_default_coding,
-        "available_fdt_code_count": 0 if using_default_coding else len(matched_records),
-        "available_fdt_codes": [record.to_dict() for record in matched_records],
+        "available_fdt_code_count": len(available_records),
+        "available_fdt_codes": [record.to_dict() for record in available_records],
         "fdt_placemarks": len(fdt_placemarks),
         "fdt_renamed": len(fdt_changes),
         "folder_renamed": len(folder_changes),

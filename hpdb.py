@@ -169,6 +169,7 @@ class HpdbPlacemark:
     longitude: float | None
     description: str = ""
     kml_index: int = 0
+    source_file: str = ""
 
     @property
     def source_path(self) -> str:
@@ -191,7 +192,8 @@ class HpdbClusterInfo:
 @dataclass
 class HpdbParseResult:
     cluster_info: HpdbClusterInfo
-    fdt_map: dict[int, HpdbFdt] = field(default_factory=dict)
+    fdt_map: dict[int | tuple[str, int], HpdbFdt] = field(default_factory=dict)
+    source_results: dict[str, HpdbParseResult] = field(default_factory=dict)
     cluster_rows: list[dict] = field(default_factory=list)
     fat_rows: list[dict] = field(default_factory=list)
     homepass_rows: list[dict] = field(default_factory=list)
@@ -1128,6 +1130,34 @@ def fdt_for_number(fdt_map: dict[int, HpdbFdt], fdt_number: int, defaults: dict)
     return HpdbFdt(fdt_number=fdt_number, name="", fdt_code=fallback_code)
 
 
+def hpdb_defaults_for_fdt(defaults: dict, fdt: HpdbFdt) -> dict:
+    if "_fdt_coding_sources" not in defaults:
+        return defaults
+    missing = {"olt_code": "XXX.XXX.XXX", "olthostname": "XXX.XXX.XXX"}
+    source = defaults.get("_fdt_coding_source") or {}
+    records = source.get("available_fdt_codes") or []
+    code = normalize_fdt_code(fdt.fdt_code)
+    matches = [r for r in records if isinstance(r, dict)
+               and code and normalize_fdt_code(r.get("fdt_code")) == code]
+    if not matches and code.startswith("EXT."):
+        code = code.removeprefix("EXT.")
+        matches = [r for r in records if isinstance(r, dict)
+                   and normalize_fdt_code(r.get("fdt_code")) == code]
+    # Canonical DTO ordinals are source-local ownership, never spreadsheet IDs.
+    ordered = [r for r in records if isinstance(r, dict)
+               and str(r.get("fdt_order") or "") == str(fdt.fdt_number)]
+    if any(isinstance(r, dict) and r.get("fdt_order") for r in records):
+        matches = ordered if code and all(normalize_fdt_code(r.get("fdt_code")) == code for r in ordered) else []
+    pairs = {
+        (str(r.get("hub_id") or "").strip() or missing["olt_code"],
+         str(r.get("olt_hostname") or "").strip() or missing["olthostname"])
+        for r in matches
+    } if not source.get("default_fdt_coding") else set()
+    if len(pairs) == 1:
+        missing["olt_code"], missing["olthostname"] = next(iter(pairs))
+    return {**defaults, **missing}
+
+
 def build_cluster_rows_per_fdt(
     result: HpdbParseResult,
     referenced_fdt_numbers: set[int],
@@ -1144,6 +1174,7 @@ def build_cluster_rows_per_fdt(
         if fdt_number > HPDB_MAX_FDT:
             continue
         fdt = fdt_for_number(result.fdt_map, fdt_number, defaults)
+        fdt_defaults = hpdb_defaults_for_fdt(defaults, fdt)
         cluster_name = generate_cluster_name_for_fdt(result.cluster_info.base_cluster_name, fdt_number, include_fdt_suffix=include_fdt_suffix)
         pipeline_log(pipeline_logger, "INFO", f"Writing CLUSTER row for FDT {fdt_number}")
         rows.append(
@@ -1162,8 +1193,8 @@ def build_cluster_rows_per_fdt(
                 "acquisition_tier": defaults.get("acquisition_tier", ""),
                 "postal_code": defaults.get("postal_code", ""),
                 "sub_district": defaults.get("sub_district", ""),
-                "olt_code": defaults.get("olt_code", ""),
-                "olthostname": defaults.get("olthostname", ""),
+                "olt_code": fdt_defaults.get("olt_code", ""),
+                "olthostname": fdt_defaults.get("olthostname", ""),
                 "cluster_type": defaults.get("cluster_type", ""),
                 "complex": defaults.get("complex", ""),
                 "project_name": defaults.get("project_name", ""),
@@ -1234,6 +1265,7 @@ def extract_fat_rows(
             continue
         referenced_fdt_numbers.add(fdt_number)
         fdt = fdt_for_number(result.fdt_map, fdt_number, defaults)
+        fdt_defaults = hpdb_defaults_for_fdt(defaults, fdt)
         cluster_name = generate_cluster_name_for_fdt(result.cluster_info.base_cluster_name, fdt_number, include_fdt_suffix=include_fdt_suffix)
         fat_code = normalize_fat_code(placemark.name)
         pipeline_log(pipeline_logger, "INFO", f"Found FAT folder under {parent_label}")
@@ -1244,7 +1276,7 @@ def extract_fat_rows(
                 "FAT Code": fat_code,
                 "FDT Code": fdt.fdt_code,
                 "Port Count": defaults.get("port_count", 16),
-                "olthostname": defaults.get("olthostname", ""),
+                "olthostname": fdt_defaults.get("olthostname", ""),
                 "FAT Latitude": placemark.latitude,
                 "FAT Longitude": placemark.longitude,
                 "_fdt": fdt_number,
@@ -1335,6 +1367,7 @@ def extract_hp_cover_rows(
 
         referenced_fdt_numbers.add(fdt_number)
         fdt = fdt_for_number(result.fdt_map, fdt_number, defaults)
+        fdt_defaults = hpdb_defaults_for_fdt(defaults, fdt)
         cluster_name = generate_cluster_name_for_fdt(result.cluster_info.base_cluster_name, fdt_number, include_fdt_suffix=include_fdt_suffix)
         parsed_block, homenumber = parse_homepass_block_and_number(placemark.name)
         roll_out_id = generate_roll_out_id(result.cluster_info.cluster_code_astri, process_date)
@@ -1379,8 +1412,8 @@ def extract_hp_cover_rows(
                 "floor": defaults.get("floor", ""),
                 "unit": defaults.get("unit", ""),
                 "homepass_source": defaults.get("homepass_source", ""),
-                "oltcode": defaults.get("olt_code", ""),
-                "olthostname": defaults.get("olthostname", ""),
+                "oltcode": fdt_defaults.get("olt_code", ""),
+                "olthostname": fdt_defaults.get("olthostname", ""),
                 "fdtcode": fdt.fdt_code,
                 "fatcode": fat_code,
                 "RFSDate": process_date,
@@ -1480,6 +1513,10 @@ def extract_homepass_rows(
     )
 
 
+def hpdb_fdt_identity(row: dict) -> tuple[str, int]:
+    return str(row.get("_source_path") or ""), int(row.get("_fdt") or 0)
+
+
 def parse_hpdb_from_kmz(
     input_paths: str | Path | Iterable[str | Path],
     defaults: dict | None = None,
@@ -1496,6 +1533,35 @@ def parse_hpdb_from_kmz(
 
     defaults = normalize_hpdb_city_defaults_in_place(defaults if defaults is not None else dict(HPDB_DEFAULTS))
     process_date = process_date or current_process_date()
+    source_paths = [str(Path(path).resolve()) for path in paths]
+    if len(set(source_paths)) != len(source_paths):
+        raise ValueError("Duplicate HPDB source path.")
+    if len(paths) > 1:
+        # Parse physical/local FDT ordinals independently; never renumber geometry.
+        parts = [parse_hpdb_from_kmz(
+            [path], defaults=dict(defaults), street_lookup=street_lookup,
+            auto_geocode=auto_geocode, pipeline_logger=pipeline_logger,
+            progress_callback=progress_callback, process_date=process_date,
+            cluster_name_override=None,
+        ) for path in paths]
+        result = HpdbParseResult(cluster_info=parts[0].cluster_info, processed_files=len(paths))
+        for source_path, part in zip(source_paths, parts):
+            result.source_results[source_path] = part
+            result.fdt_map.update({(source_path, number): fdt for number, fdt in part.fdt_map.items()})
+            for name in ("cluster_rows", "fat_rows", "homepass_rows", "issues", "warnings"):
+                getattr(result, name).extend(getattr(part, name))
+            for name in ("hp_uncover_ignored", "fdt_detected_total", "fdt_skipped_over_max", "street_matched", "street_unmatched"):
+                setattr(result, name, getattr(result, name) + getattr(part, name))
+        # Legacy summary has one geocode receipt; per-source receipts stay on parts.
+        result.geocode_success = all(part.geocode_success for part in parts)
+        result.geocode_source_lat = parts[0].geocode_source_lat
+        result.geocode_source_lon = parts[0].geocode_source_lon
+        result.geocode_fields = dict(parts[0].geocode_fields)
+        return result
+    if "_fdt_coding_sources" in defaults:
+        sources = [s for s in defaults["_fdt_coding_sources"] if s.get("output_path")
+                   and Path(s["output_path"]).resolve() == Path(paths[0]).resolve()]
+        defaults["_fdt_coding_source"] = sources[0] if len(sources) == 1 else {}
     pipeline_progress(progress_callback, pipeline_logger, 16, "Parsing KMZ for HPDB")
     pipeline_log(pipeline_logger, "INFO", "Parsing KMZ for HPDB")
 
@@ -1585,28 +1651,44 @@ def parse_hpdb_from_kmz(
         include_fdt_suffix=include_fdt_suffix,
         pipeline_logger=pipeline_logger,
     )
+    for rows in (result.cluster_rows, result.fat_rows, result.homepass_rows):
+        for row in rows:
+            row["_source_path"] = source_paths[0]
     pipeline_log(pipeline_logger, "INFO", f"HP COVER exported rows: {len(result.homepass_rows):,}")
     pipeline_log(pipeline_logger, "INFO", f"HP UNCOVER ignored rows: {result.hp_uncover_ignored:,}")
     return result
 
 
-def apply_final_kmz_homepass_names(input_paths, rows: Sequence[dict], default_block: str = "") -> int:
+def apply_final_kmz_homepass_names(input_paths, rows: Sequence[dict], default_block: str = "", fallback_fdt_code: str = "") -> int:
     """Re-read final KMZ identity before writing either workbook; never nearest-match."""
-    placemarks: list[HpdbPlacemark] = []
+    sources: dict[str, list[HpdbPlacemark]] = {}
+    fdt_maps: dict[str, dict[int, HpdbFdt]] = {}
     for path in normalize_input_paths(input_paths):
         if is_kml_path(path):
-            collect_hpdb_placemarks(read_kml_root(path), [], placemarks)
+            source_path = str(Path(path).resolve())
+            if source_path in sources:
+                raise ValueError("Duplicate HPDB source path.")
+            sources[source_path] = []
+            collect_hpdb_placemarks(read_kml_root(path), [], sources[source_path])
+            fdt_maps[source_path], _, _, _ = parse_fdt_folder(sources[source_path])
     updates = []
     seen = set()
     for row in rows:
+        source_path = row.get("_source_path")
+        if source_path is None and len(sources) == 1:
+            source_path = next(iter(sources))
+        placemarks = sources.get(source_path, [])
         index = row.get("_kml_index")
-        if not isinstance(index, int) or index in seen or not 0 <= index < len(placemarks):
+        identity = (source_path, index)
+        if not isinstance(index, int) or identity in seen or not 0 <= index < len(placemarks):
             raise ValueError("HPDB/ASTRI final KMZ homepass identity is missing or duplicated.")
-        seen.add(index)
+        seen.add(identity)
         placemark = placemarks[index]
         parent = detect_parent_line_fdt(placemark.folder_stack)
         if (
             not parent or parent[:2] != (row.get("_line"), row.get("_fdt"))
+            or row.get("fdtcode") != fdt_for_number(
+                fdt_maps[source_path], parent[1], {"fallback_fdt_code": fallback_fdt_code}).fdt_code
             or detect_parent_fat_code(placemark.folder_stack, placemark.name) != row.get("fatcode")
             or nearest_folder_index(placemark.folder_stack, "HP COVER") is None
             or nearest_folder_index(placemark.folder_stack, "HP UNCOVER") is not None
@@ -1760,11 +1842,12 @@ def build_hpdb_preview(result: HpdbParseResult, limit: int | None = None) -> dic
     }
 
 
-def astri_fdt_file_name(download_name: str, fdt_number: int) -> str:
+def astri_fdt_file_name(download_name: str, fdt_number: int, source_index: int | None = None) -> str:
     stem = Path(download_name).stem
     match = re.search(r"_(AE|UG)$", stem, flags=re.IGNORECASE)
     variant = match.group(0).upper() if match else ""
-    return f"{stem[:match.start()] if match else stem} - FDT {fdt_number}{variant}.xlsx"
+    source = f" - Source {source_index}" if source_index is not None else ""
+    return f"{stem[:match.start()] if match else stem}{source} - FDT {fdt_number}{variant}.xlsx"
 
 
 def write_astri_output_zip(files: Sequence[dict], destination: str | Path,
@@ -1835,44 +1918,49 @@ def generate_astri_excel(
         process_date=process_date,
         cluster_name_override=cluster_name_override,
     )
-    renamed = apply_final_kmz_homepass_names(input_paths, parse_result.homepass_rows, defaults.get("block", ""))
+    renamed = apply_final_kmz_homepass_names(input_paths, parse_result.homepass_rows, defaults.get("block", ""), defaults.get("fallback_fdt_code", ""))
     pipeline_log(pipeline_logger, "INFO", f"Final KMZ homepass names checked: {len(parse_result.homepass_rows)}, corrected: {renamed}.")
     pipeline_progress(progress_callback, pipeline_logger, 78, "Loading ASTRI template")
     pipeline_progress(progress_callback, pipeline_logger, 86, "Writing ASTRI Excel")
     pipeline_log(pipeline_logger, "INFO", "Writing ASTRI Excel")
-    fdt_numbers = sorted({int(row.get("_fdt") or 0) for row in parse_result.cluster_rows if int(row.get("_fdt") or 0) > 0})
-    if split_by_fdt and len(fdt_numbers) > 1:
-        if len(parse_result.cluster_rows) != len(fdt_numbers) or any(
-            row.get("_fdt") not in fdt_numbers for row in parse_result.cluster_rows
+    source_indices = {source: index for index, source in enumerate(parse_result.source_results, start=1)}
+    fdt_keys = sorted({hpdb_fdt_identity(row) for row in parse_result.cluster_rows if int(row.get("_fdt") or 0) > 0},
+                      key=lambda key: (source_indices.get(key[0], 0), key[1]))
+    if split_by_fdt and len(fdt_keys) > 1:
+        if len(parse_result.cluster_rows) != len(fdt_keys) or any(
+            hpdb_fdt_identity(row) not in fdt_keys for row in parse_result.cluster_rows
         ):
             raise ValueError("ASTRI CLUSTER harus tepat satu baris per FDT.")
         for rows in (parse_result.fat_rows, parse_result.homepass_rows):
-            if any(row.get("_fdt") not in fdt_numbers for row in rows):
+            if any(hpdb_fdt_identity(row) not in fdt_keys for row in rows):
                 raise ValueError("ASTRI FAT/HOMEPASS tanpa FDT CLUSTER; ekspor dibatalkan.")
 
-    def save_workbook(path, fdt_number=None):
+    def save_workbook(path, fdt_key=None):
         workbook = load_hpdb_template(template_path, path, pipeline_logger=pipeline_logger)
         # Normalize template labels only; AE inside a source identity is not a topology.
         replacements = normalize_workbook_network_labels(workbook, resolved_network_type)
         if replacements:
             pipeline_log(pipeline_logger, "INFO", f"Normalized {replacements:,} ASTRI template AE label(s) to UG.")
-        selected = lambda rows: rows if fdt_number is None else [row for row in rows if int(row.get("_fdt") or 0) == fdt_number]
+        selected = lambda rows: rows if fdt_key is None else [row for row in rows if hpdb_fdt_identity(row) == fdt_key]
         write_cluster_sheet(workbook, selected(parse_result.cluster_rows))
         write_fat_sheet(workbook, selected(parse_result.fat_rows))
         write_homepass_sheet(workbook, selected(parse_result.homepass_rows))
         workbook.save(path)
 
     output_files = []
-    if split_by_fdt and len(fdt_numbers) > 1:
-        for fdt_number in fdt_numbers:
-            path = output_path.with_name(f"{output_path.stem}_FDT_{fdt_number}.xlsx")
-            save_workbook(path, fdt_number)
+    if split_by_fdt and len(fdt_keys) > 1:
+        for fdt_key in fdt_keys:
+            source_path, fdt_number = fdt_key
+            source_index = source_indices.get(source_path)
+            source_suffix = f"_SOURCE_{source_index}" if source_index is not None else ""
+            path = output_path.with_name(f"{output_path.stem}{source_suffix}_FDT_{fdt_number}.xlsx")
+            save_workbook(path, fdt_key)
             output_files.append({"fdt_number": fdt_number, "path": str(path),
-                                 "download_name": astri_fdt_file_name(download_name or output_path.name, fdt_number)})
+                                 "download_name": astri_fdt_file_name(download_name or output_path.name, fdt_number, source_index)})
         output_path.unlink(missing_ok=True)
     else:
         save_workbook(output_path)
-        output_files.append({"fdt_number": fdt_numbers[0] if len(fdt_numbers) == 1 else None,
+        output_files.append({"fdt_number": fdt_keys[0][1] if len(fdt_keys) == 1 else None,
                              "path": str(output_path), "download_name": download_name or output_path.name})
     pipeline_progress(progress_callback, pipeline_logger, 96, "Preparing ASTRI download")
     pipeline_log(pipeline_logger, "SUCCESS", "ASTRI Excel generated successfully")

@@ -9363,6 +9363,8 @@ def aggregate_standardizer_results(results: list[dict]) -> dict:
                 "matched_row": result.get("matched_row"),
                 "default_fdt_coding": bool(result.get("default_fdt_coding")),
                 "available_fdt_code_count": int(result.get("available_fdt_code_count", 0) or 0),
+                "available_fdt_codes": result.get("available_fdt_codes", []),
+                "fdt_changes": result.get("fdt_changes", []),
                 "fdt_renamed": int(result.get("fdt_renamed", 0) or 0),
                 "name_standardized": int(result.get("name_standardized", 0) or 0),
                 "folder_renamed": int(result.get("folder_renamed", 0) or 0),
@@ -9449,74 +9451,20 @@ def fdt_coding_count_from_standardizer(summary: dict | None) -> int:
     return len(codes) if isinstance(codes, list) else 0
 
 
-def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict[str, str]:
-    if not isinstance(summary, dict):
-        return {}
-    records = summary.get("available_fdt_codes")
-    if not isinstance(records, list):
-        return {}
-
-    # Pick first real Coding FDT value, not blindly records[0]. Some jobs may
-    # prepend DEFAULT/fallback rows with empty OLT fields; HPDB/ASTRI must still
-    # get olthostname from later matched Coding FDT rows.
-    olt_code = ""
-    olt_hostname = ""
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        if not olt_code:
-            olt_code = fdt_coding_db.normalize_text(record.get("hub_id")).upper()
-        if not olt_hostname:
-            olt_hostname = fdt_coding_db.normalize_text(record.get("olt_hostname")).upper()
-        if olt_code and olt_hostname:
-            break
-
-    default_record = summary.get("default_fdt_coding")
-    if isinstance(default_record, dict):
-        if not olt_code:
-            olt_code = fdt_coding_db.normalize_text(default_record.get("hub_id")).upper()
-        if not olt_hostname:
-            olt_hostname = fdt_coding_db.normalize_text(default_record.get("olt_hostname")).upper()
-
-    if olt_code and not olt_hostname:
-        # Backfill OLT hostname from Coding FDT DB by olt_code/hub_id. Some
-        # standardizer summaries carry hub_id but not olt_hostname, while
-        # fdt_coding_olts / fdt_coding_olt_catalog already have hostname.
-        try:
-            import sqlite3 as _sqlite3
-            if Config.FDT_CODING_DB_PATH.exists():
-                with _sqlite3.connect(Config.FDT_CODING_DB_PATH) as conn:
-                    cur = conn.cursor()
-                    cur.execute(
-                        """
-                        SELECT olt_hostname FROM fdt_coding_olts
-                        WHERE hub_id = ? AND IFNULL(olt_hostname, '') != ''
-                        LIMIT 1
-                        """,
-                        (olt_code,),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        cur.execute(
-                            """
-                            SELECT olt_hostname FROM fdt_coding_olt_catalog
-                            WHERE olt_code = ? AND IFNULL(olt_hostname, '') != ''
-                            LIMIT 1
-                            """,
-                            (olt_code,),
-                        )
-                        row = cur.fetchone()
-                    if row and row[0]:
-                        olt_hostname = fdt_coding_db.normalize_text(row[0]).upper()
-        except Exception:
-            LOGGER.exception("Failed to backfill olthostname from Coding FDT DB for olt_code=%s", olt_code)
-
-    defaults: dict[str, str] = {}
-    if olt_code:
-        defaults["olt_code"] = olt_code
-    if olt_hostname:
-        defaults["olthostname"] = olt_hostname
-    return defaults
+def hpdb_olt_defaults_from_standardizer(summary: dict | None) -> dict:
+    summary = summary if isinstance(summary, dict) else {}
+    files = summary.get("files") or [summary]
+    return {
+        "olt_code": "XXX.XXX.XXX",
+        "olthostname": "XXX.XXX.XXX",
+        "_fdt_coding_sources": [
+            {key: file.get(key) for key in (
+                "output_path", "source_name", "available_fdt_codes",
+                "default_fdt_coding", "fdt_changes",
+            )}
+            for file in files if isinstance(file, dict)
+        ],
+    }
 
 def standardize_kml_inputs_for_job(
     job_id: str,
@@ -10212,36 +10160,11 @@ def run_conversion_job(job_id: str, raise_on_error: bool = False) -> None:
                 network_type, scope_type,
             )
         hpdb_coding_defaults = hpdb_olt_defaults_from_standardizer(standardizer_summary)
-        if not hpdb_coding_defaults:
-            # If standardizer summary doesn't contain FDT coding info (e.g., fallback to default records),
-            # fall back directly to Coding FDT DB for OLT code and hostname.
-            try:
-                from fdt_coding_db import connect as fdt_connect, all_records
-                with fdt_connect(Config.FDT_CODING_DB_PATH) as conn:
-                    records = all_records(conn)
-                    if records:
-                        # Get the first record with non-empty olt_initial/hub_id
-                        best = next((r for r in records if r.hub_id), None)
-                        if best:
-                            olt_code = str(best.hub_id or "").strip().upper()
-                            olt_hostname = (best.olt_hostname or getattr(best, "olt_hostname", "") or "").strip().upper()
-                            if olt_code:
-                                hpdb_coding_defaults.setdefault("olt_code", olt_code)
-                            if olt_hostname:
-                                hpdb_coding_defaults.setdefault("olthostname", olt_hostname)
-                            if hpdb_coding_defaults:
-                                pipeline_logger.info(
-                                    "HPDB/ASTRI OLT fields use Coding FDT (fallback): "
-                                    + ", ".join(f"{k}={v}" for k, v in hpdb_coding_defaults.items())
-                                )
-            except Exception as exc:
-                pipeline_logger.warn(f"Fallback Coding FDT direct lookup failed: {exc}")
-        if hpdb_coding_defaults:
-            hpdb_defaults_override = {**(hpdb_defaults_override or {}), **hpdb_coding_defaults}
-            pipeline_logger.info(
-                "HPDB/ASTRI OLT fields use Coding FDT: "
-                + ", ".join(f"{key}={value}" for key, value in hpdb_coding_defaults.items())
-            )
+        hpdb_defaults_override = {**(hpdb_defaults_override or {}), **hpdb_coding_defaults}
+        pipeline_logger.info(
+            "HPDB/ASTRI OLT fields use selected Coding FDT or XXX.XXX.XXX: "
+            + ", ".join(f"{key}={hpdb_coding_defaults[key]}" for key in ("olt_code", "olthostname"))
+        )
         hpdb_defaults_override = require_admin_defaults_from_region_db(hpdb_defaults_override)
         pipeline_logger.info("Checking KML/KMZ readability...")
         ensure_not_cancelled()
