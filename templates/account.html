@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Akun saya — EVA by DYENA</title>
+  <meta name="eva-csrf" content="{{ eva_account.csrf }}">
+  <meta name="eva-role" content="{{ eva_account.role }}">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f4f8f6">
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-mark.svg?v=20261026-mark">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/eva-account.css') }}?v=account-ui-20261030-v2">
+  <script src="{{ url_for('static', filename='js/eva-account.js') }}?v=account-ui-20261030-v2" defer></script>
+</head>
+<body class="eva-account-page" data-eva-account-page>
+  <a class="account-skip" href="#account-main">Lewati ke akun</a>
+  <header class="account-topbar">
+    <div class="account-shell account-topbar-inner">
+      <a class="account-brand" href="/" aria-label="EVA by DYENA, kembali ke workspace"><strong>EVA</strong><span>by DYENA</span></a>
+      <a class="account-back eva-support-entry" href="/support">Hubungi support</a><a class="account-back" href="/">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Kembali ke EVA
+      </a>
+    </div>
+  </header>
+  <main id="account-main" class="account-shell" tabindex="-1">
+    <div class="account-heading"><p class="account-eyebrow">PENGATURAN PRIBADI</p><h1>Akun saya</h1><p>Profil pribadi dan koneksi ASTRI.</p></div>
+    <div class="account-grid">
+      <section class="account-card account-profile" aria-labelledby="account-profile-title">
+        <div class="account-person">
+          <span class="account-avatar" aria-hidden="true">{{ (eva_account.name or eva_account.email)[:1]|upper }}</span>
+          <div><h2 id="account-profile-title">{{ eva_account.name or 'Pengguna EVA' }}</h2><p class="account-email">{{ eva_account.email }}</p></div>
+        </div>
+        <dl class="account-facts">
+          <div><dt>Masuk menggunakan</dt><dd><span class="account-google" aria-hidden="true">G</span> Akun Google</dd></div>
+          <div><dt>Akses akun</dt><dd>{{ 'Owner EVA' if eva_account.role == 'owner' else 'Pengguna EVA' }}</dd></div>
+          <div><dt>Langganan</dt><dd><a href="/langganan">Kelola paket</a></dd></div>
+        </dl>
+        <p class="account-note">Nama dan email mengikuti akun Google saat masuk. Data ini tidak diubah dari EVA.</p>
+        {% if eva_account.role == 'owner' %}<a class="account-button account-secondary account-admin" href="https://dashboard.dyena.id/admin" target="_blank" rel="noopener">Buka Admin <span class="account-sr">di tab baru</span></a>{% endif %}
+      </section>
+      <section class="account-card account-connection" aria-labelledby="account-astri-title">
+        <div class="account-section-heading"><div><p class="account-eyebrow">INTEGRASI</p><h2 id="account-astri-title">Akun ASTRI</h2></div><span class="account-integration-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 15 6-6M8 17l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 7l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span></div>
+        <dl class="account-facts"><div><dt>Username terhubung</dt><dd id="account-astri-username">Memuat…</dd></div></dl>
+        <div class="account-connection-status"><span id="account-astri-badge" class="account-status-badge">Memeriksa</span><p id="account-astri-status" role="status" aria-live="polite" aria-busy="true">Memeriksa koneksi ASTRI…</p></div>
+        <div class="account-connection-actions"><a class="account-button account-primary" href="/#astriIntegrationPanel" id="account-astri-manage">Kelola koneksi ASTRI</a><button class="account-button account-secondary" type="button" id="account-astri-refresh">Cek koneksi</button></div>
+        <div class="account-credential-note"><h3>Password ASTRI berubah?</h3><p>Masukkan password baru di panel DRM APD dengan username yang sama saat diminta. Akun ASTRI tetap terikat ke akun EVA ini.</p></div>
+        <p class="account-note">EVA menjaga koneksi di background. Gangguan ASTRI sementara tidak menghapus login tersimpan.</p>
+      </section>
+    </div>
+    <section class="account-card account-history" aria-labelledby="account-history-title">
+      <div class="account-section-heading"><div><p class="account-eyebrow">AKTIVITAS PRIBADI</p><h2 id="account-history-title">Riwayat pekerjaan</h2></div><span class="account-history-private">Hanya akun ini</span></div>
+      <div class="account-history-tabs" role="group" aria-label="Jenis riwayat"><button type="button" class="account-button" data-history-kind="convert" aria-pressed="true">Convert</button><button type="button" class="account-button" data-history-kind="boq" aria-pressed="false">Add BOQ</button></div>
+      <p class="account-note" id="account-history-note">Hasil konversi sendiri dapat diunduh oleh Premium dan Owner hingga 7 hari setelah selesai. Riwayat tetap tersimpan setelah tautan kedaluwarsa.</p>
+      <form id="account-history-filters" class="account-history-filters" role="search" aria-label="Cari riwayat pribadi">
+        <label>Cari<input id="account-history-query" type="search" maxlength="200" placeholder="Nama file atau job ID" autocomplete="off"></label>
+        <label>Target Type<select id="account-history-scope"><option value="">Semua</option><option value="cluster">Cluster</option><option value="subfeeder">Subfeeder</option><option value="feeder">Feeder</option></select></label>
+        <label id="account-history-status-filter">Status<select id="account-history-status"><option value="">Semua</option><option value="active">Aktif</option><option value="done">Selesai</option><option value="error">Gagal</option><option value="cancelled">Dibatalkan</option></select></label>
+        <button type="submit" class="account-button account-secondary" id="account-history-search">Cari</button><button type="button" class="account-button account-secondary" id="account-history-refresh">Muat ulang</button>
+      </form>
+      <p class="account-note" id="account-history-feedback" role="status" aria-live="polite"></p>
+      <div class="account-history-scroll" tabindex="0" role="region" aria-label="Riwayat pribadi, geser tabel untuk melihat semua kolom">
+        <table><caption class="account-sr">Riwayat Convert dan Add BOQ akun ini</caption><thead id="account-history-head"></thead><tbody id="account-history-rows"></tbody></table>
+      </div>
+      <div class="account-history-pages"><p id="account-history-summary" class="account-note"></p><div><button type="button" id="account-history-prev" class="account-button account-secondary" disabled>Sebelumnya</button><button type="button" id="account-history-next" class="account-button account-secondary" disabled>Berikutnya</button></div></div>
+    </section>
+    <section class="account-session" aria-labelledby="account-session-title"><div><h2 id="account-session-title">Sesi EVA</h2><p>Keluar hanya mengakhiri sesi EVA di browser ini. Tautan akun ASTRI tetap tersimpan.</p><p id="eva-account-feedback" role="status" aria-live="polite"></p></div><button class="account-button account-secondary" type="button" id="eva-logout">Keluar dari EVA</button></section>
+    <footer class="account-footer">EVA by DYENA · Workspace desain jaringan</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,853 @@
+/* Account chrome only; preserve existing EVA layout and typography. */
+.eva-account-menu{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%}
+.eva-account-name{font-size:12px;color:#46675a;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eva-account-action{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:44px!important;padding:0 10px!important;border-radius:8px!important;border:1px solid #d6e8de!important;background:#ffffffb8!important;color:#176445!important;font-size:12px!important;font-weight:600!important;text-decoration:none!important;box-shadow:none!important}
+.eva-account-action:hover{background:#e9f7ee!important}.eva-account-action:focus-visible{outline:3px solid #087f5b!important;outline-offset:3px!important}
+.eva-account-menu [role=status]{font-size:11px;color:#7e342b}
+@media(max-width:640px){.eva-account-menu{gap:5px}.eva-account-name{max-width:100px;font-size:11px}.eva-account-action{padding:0 8px!important}}
+
+/* Personal account page; keep all workbench styles scoped and unchanged. */
+.account-history{margin-top:24px}
+.account-history-private{font-size:11px;color:var(--account-green);background:#eef8f2;border:1px solid #dcece2;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.account-history-tabs{display:flex;gap:8px}.account-history-tabs [aria-pressed="true"]{background:#e8f5ee;border-color:#087f5b;color:#087f5b}
+.account-history-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}.account-history-filters label{display:flex;flex-direction:column;gap:5px;font-size:12px;min-width:0;flex:1 1 130px}.account-history-filters label:first-child{flex:2 1 220px}.account-history-filters input,.account-history-filters select{font:inherit;min-height:44px;width:100%;min-width:0;padding:8px 10px;border:1px solid var(--account-line);border-radius:8px;background:#fff;color:var(--account-ink)}
+.account-history [hidden]{display:none!important}.account-history-filters :is(input,select):focus-visible{outline:3px solid #087f5b;outline-offset:3px}
+.account-history-scroll{max-width:100%;overflow-x:auto;border:1px solid var(--account-line);border-radius:8px;margin-top:14px}.account-history-scroll:focus-visible{outline:3px solid #087f5b;outline-offset:3px}
+.account-history table{border-collapse:collapse;width:100%;min-width:880px;table-layout:fixed}.account-history th,.account-history td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #e7eee9;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.account-history th{font-size:10px;font-weight:650;color:var(--account-muted);background:#f8fbf9}.account-history td strong,.account-history td span{display:block}.account-history td span{font-size:11px;color:var(--account-muted)}
+.account-history-download{min-width:44px;margin-bottom:6px}
+.account-history-pages{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center;margin-top:16px}.account-history-pages>div{display:flex;gap:8px}.account-history-pages .account-note{margin:0}
+@media(max-width:700px){.account-history-filters label:first-child{flex-basis:100%}.account-history-private{white-space:normal}.account-history .account-section-heading{align-items:flex-start}.account-history-pages>div{width:100%}.account-history-pages button{flex:1}}
+
+.eva-account-profile-link{gap:8px!important;max-width:160px}
+.eva-account-avatar{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;border-radius:50%;background:#e8f5ee;color:#176445;font-size:13px;font-weight:700}
+.eva-account-profile-link .eva-account-name{color:inherit;max-width:108px}
+body > .app-shell .app-header :is(.icon-button,.supported-files-trigger){width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;flex-shrink:0}
+@media(max-width:1100px){body > .app-shell .app-header > div{flex-direction:column!important;align-items:stretch!important}body > .app-shell .header-right{width:100%!important;flex-wrap:wrap!important;justify-content:flex-start!important}body > .app-shell .header-actions{flex-wrap:wrap;flex:1 1 240px;min-width:0;max-width:100%}}
+
+.eva-account-page{--account-ink:#18382e;--account-muted:#5a7065;--account-line:#dae6df;--account-green:#087f5b;margin:0;background:#f4f8f6;color:var(--account-ink);font:14px/1.6 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.eva-account-page *{box-sizing:border-box}
+.eva-account-page a,.eva-account-page button{touch-action:manipulation}
+.eva-account-page a{color:var(--account-green);text-decoration:none}
+.eva-account-page button{font:inherit;cursor:pointer}
+.eva-account-page :is(a,button):focus-visible{outline:3px solid #087f5b;outline-offset:4px}
+.eva-account-page button:disabled{opacity:.65;cursor:not-allowed}
+/* Busy cursor only while a mutation is actually in flight, never for idle disabled state. */
+.eva-account-page[data-support-busy] button:disabled{cursor:progress}
+.account-shell{width:min(1040px,calc(100% - 48px));margin-inline:auto}
+.account-topbar{background:#fff;border-bottom:1px solid var(--account-line)}
+.account-topbar-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:80px}
+.account-brand{display:inline-flex;align-items:baseline;gap:8px;min-height:44px;padding-block:7px;color:var(--account-ink)!important}
+.account-brand strong{font-size:28px;line-height:1.2;letter-spacing:-1px;font-weight:800}
+.account-brand span{color:var(--account-green);font-size:12px;font-weight:600}
+.account-back{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-weight:600;font-size:13px}
+.account-back svg{width:18px;height:18px}
+.account-heading{padding-block:38px 26px}
+.account-heading h1{font-size:30px;line-height:1.25;letter-spacing:-.7px;margin:5px 0 8px;font-weight:750}
+.account-heading>p:last-child{margin:0;color:var(--account-muted)}
+.account-eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:700;color:var(--account-muted);margin:0}
+.account-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:20px;align-items:start}
+.account-card{background:#fff;border:1px solid var(--account-line);border-radius:12px;padding:26px;min-width:0;box-shadow:0 2px 6px #18382e03}
+.account-person{display:flex;align-items:center;gap:14px;padding-block:0 24px}
+.account-person>div{min-width:0}
+.account-avatar{display:grid;place-items:center;background:#e8f5ee;color:var(--account-green);border:1px solid #d3e8dd;border-radius:50%;width:54px;height:54px;flex:0 0 54px;font-size:24px;font-weight:650}
+.account-person h2{font-size:19px;line-height:1.35;margin:0;font-weight:700;overflow-wrap:anywhere}
+.account-email{margin:4px 0 0;color:var(--account-muted);font-size:13px;overflow-wrap:anywhere}
+.account-facts{margin:0}
+.account-facts>div{display:flex;justify-content:space-between;gap:20px;border-top:1px solid #eef3ef;padding-block:15px;align-items:flex-start}
+.account-facts dt{color:var(--account-muted);font-size:12px;flex:0 0 auto}
+.account-facts dd{margin:0;font-size:13px;font-weight:600;text-align:right;overflow-wrap:anywhere;min-width:0}
+.account-google{font-weight:750;color:var(--account-muted);margin-right:5px}
+.account-note{color:var(--account-muted);font-size:12px;line-height:1.7;margin:16px 0 0}
+.account-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:20px}
+.account-section-heading h2{font-size:20px;letter-spacing:-.3px;margin:4px 0 0;font-weight:700}
+.account-integration-mark{display:grid;place-items:center;background:#f3f8f5;color:var(--account-green);border:1px solid #e1eee6;border-radius:9px;width:40px;height:40px;flex:0 0 40px}
+.account-integration-mark svg{width:20px;height:20px}
+.account-connection-status{background:#f5faf7;border:1px solid #e1eee6;border-radius:8px;padding:14px 16px;margin:4px 0 18px}
+.account-status-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--account-muted)}
+.account-status-badge::before{content:"";width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:currentColor}
+.account-status-badge[data-connected="true"]{color:var(--account-green)}
+#account-astri-status{margin:6px 0 0;color:var(--account-muted);font-size:12px;line-height:1.6}
+.account-connection-actions{display:flex;flex-wrap:wrap;gap:8px}
+.account-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--account-line);border-radius:8px;font-size:12px!important;font-weight:650;line-height:1.4;text-align:center;background:white;box-shadow:none}
+.eva-account-page .account-primary{background:var(--account-green);color:white;border-color:var(--account-green)}
+.eva-account-page .account-primary:hover{background:#086849;border-color:#086849}
+.account-secondary{color:var(--account-ink)!important;background:white}
+.account-secondary:hover{background:#f3f8f5;border-color:#bfd5c7}
+.account-credential-note{margin-top:24px;padding-top:20px;border-top:1px solid #eef3ef}
+.account-credential-note h3{font-size:13px;margin:0 0 6px;font-weight:650}
+.account-credential-note p{font-size:12px;color:var(--account-muted);margin:0;line-height:1.7}
+.account-admin{margin-top:22px}
+.account-session{display:flex;justify-content:space-between;align-items:center;gap:24px;border-top:1px solid var(--account-line);margin-top:28px;padding-block:24px}
+.account-session>div{min-width:0}
+.account-session h2{font-size:14px;font-weight:650;margin:0 0 6px}
+.account-session p{font-size:12px;color:var(--account-muted);margin:0;max-width:520px;line-height:1.7}
+.account-session #eva-account-feedback:not(:empty){color:#8c3934;margin-top:8px}
+.account-session .account-button{flex-shrink:0}
+.account-footer{font-size:11px;color:#63766d;padding:4px 0 28px}
+.account-sr,.account-skip:not(:focus){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.account-skip:focus{position:fixed;top:8px;left:8px;z-index:100;background:white;padding:12px;border:1px solid var(--account-line)}
+@media(max-width:700px){.account-shell{width:calc(100% - 32px)}.account-topbar-inner{min-height:72px}.account-grid{grid-template-columns:minmax(0,1fr);gap:16px}.account-heading{padding-block:26px 22px}.account-heading h1{font-size:26px}.account-card{padding:20px}.account-session{align-items:flex-start;flex-direction:column;gap:16px;margin-top:24px;padding-block:22px}.account-session .account-button{width:100%}.account-back{font-size:12px}.account-person{padding-bottom:20px}.account-facts>div{gap:12px}}
+@media(max-width:360px){.account-shell{width:calc(100% - 24px)}.account-card{padding:16px}.account-back{gap:4px}.account-brand strong{font-size:25px}.account-brand span{font-size:11px}.account-connection-actions{flex-direction:column}.account-facts>div{flex-direction:column;gap:6px}.account-facts dd{text-align:left}.account-person{gap:10px}.account-person h2{font-size:18px}.account-email{font-size:12px}}
+
+/* Additive support entry wraps without clipping existing navigation. */
+.eva-account-menu:has(>.eva-support-entry){flex-wrap:wrap}
+.eva-account-menu:has(>.eva-support-entry) .eva-account-action{min-width:44px}
+.eva-account-page .account-topbar-inner:has(>.eva-support-entry){flex-wrap:wrap;gap:8px 16px;padding-block:12px}
+/* Support-only additions: native account mint/white, no account overrides. */
+.eva-support-page .support-ticket{display:flex;flex-direction:column;align-items:flex-start;text-align:left;width:100%;min-height:44px;padding:14px 10px;border:1px solid transparent;border-bottom-color:var(--account-line);border-radius:8px;background:white;color:var(--account-ink);overflow-wrap:anywhere}
+.eva-support-page .support-ticket strong{font-size:13px;font-weight:650}
+.eva-support-page .support-ticket span{font-size:11px;color:var(--account-muted);margin-top:4px}
+.eva-support-page .support-ticket[aria-pressed=true]{background:#eef8f2;border-color:#bfd8ca}
+.eva-support-page .support-ticket .support-unread{color:#086849;font-weight:650}
+.eva-support-page .support-ticket-meta{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-top:8px}
+.eva-support-page .support-ticket-meta .account-note{margin:0}
+.eva-support-page .support-status{font-size:12px;padding:3px 8px;border:1px solid var(--account-line);border-radius:6px;background:#f4faf6}
+.eva-support-page .support-messages{max-height:440px;overflow-y:auto;overflow-wrap:anywhere;overscroll-behavior:contain;padding:4px 4px 4px 0;margin-block:16px}
+.eva-support-page .support-messages:focus-visible,.eva-support-page h2:focus-visible{outline:3px solid var(--account-green);outline-offset:3px}
+.eva-support-page .support-message{max-width:96%;padding:12px 14px;border:1px solid var(--account-line);border-radius:8px;margin-bottom:12px;background:#f7faf8}
+.eva-support-page .support-message-user{margin-left:auto;background:#eef8f2}
+.eva-support-page .support-message-meta{font-size:11px;color:var(--account-muted);margin:0 0 6px}
+.eva-support-page .support-message-text{font-size:14px;white-space:pre-wrap;margin:0}
+.eva-support-page .support-image-link{display:inline-flex;flex-direction:column;gap:4px;min-height:44px;max-width:100%;font-size:12px;padding-block:8px}
+.eva-support-page .support-image-link img{display:block;max-width:100%;width:220px;max-height:220px;object-fit:contain;border-radius:6px}
+.eva-support-page [hidden]{display:none!important}
+.eva-support-page .support-nav,.eva-support-page .support-section-head,.eva-support-page .support-heading,.eva-support-page .support-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.eva-support-page .support-nav{gap:20px}
+.eva-support-page .support-heading p:last-child{margin:0;color:var(--account-muted)}
+.eva-support-page .support-layout{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:20px;align-items:start;margin-bottom:28px}
+.eva-support-page h2{font-size:18px;line-height:1.4;margin:0;overflow-wrap:anywhere}
+.eva-support-page .support-tickets{list-style:none;padding:0;margin:16px 0}
+.eva-support-page .support-pages>div{display:flex;gap:8px;flex-wrap:wrap}
+.eva-support-page .support-pages button{flex:1;padding-inline:10px}
+.eva-support-page form{margin-top:20px}
+.eva-support-page label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}
+.eva-support-page :is(input,textarea,select){font:inherit;color:var(--account-ink);background:white;border:1px solid var(--account-line);border-radius:8px;min-height:44px;width:100%;min-width:0;padding:10px 12px}
+.eva-support-page textarea{resize:vertical}
+.eva-support-page :is(input,textarea,select):focus-visible{outline:3px solid var(--account-green);outline-offset:3px}
+.eva-support-page .support-previews{list-style:none;padding:0;margin:12px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px}
+.eva-support-page .support-previews li{display:flex;flex-direction:column;gap:6px;min-width:0;border:1px solid var(--account-line);border-radius:8px;padding:8px}
+.eva-support-page .support-previews img{width:100%;height:88px;object-fit:contain;background:#f4f8f6;border-radius:4px}
+.eva-support-page .support-previews span{overflow-wrap:anywhere;font-size:11px}
+.eva-support-page :is(input,textarea,select):disabled{background:#f3f6f4;color:var(--account-muted)}
+.eva-support-page input[type=file]{font-size:12px;padding:6px;overflow:hidden}
+.eva-support-page input[type=file]::file-selector-button{min-height:44px;font:inherit;background:#eef8f2;border:1px solid var(--account-line);border-radius:6px;color:var(--account-ink);margin-right:8px;padding-inline:12px}
+.eva-support-page [aria-invalid=true]{border-color:#9c3933}
+.eva-support-page .support-feedback{font-size:13px;overflow-wrap:anywhere}
+.eva-support-page .support-delivery{border:1px solid var(--account-line);border-radius:8px;background:#f4f8f6;padding:12px 16px;overflow-wrap:anywhere}
+.eva-support-page .support-retention{border-top:1px solid var(--account-line);padding-top:16px;margin-top:24px}
+.eva-support-page .support-actions{justify-content:flex-start;margin-top:16px}
+.eva-support-page .account-topbar-inner{flex-wrap:wrap;padding-block:12px;gap:4px 16px}
+@media(max-width:760px){.eva-support-page .support-layout{grid-template-columns:minmax(0,1fr);gap:16px}.eva-support-page .support-heading{align-items:flex-start}.eva-support-page .support-nav{gap:16px}.eva-support-page .support-tickets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+@media(max-width:420px){.eva-support-page .account-topbar-inner{align-items:flex-start;flex-direction:column}.eva-support-page .support-nav{width:100%;justify-content:space-between}.eva-support-page .support-tickets{grid-template-columns:minmax(0,1fr)}}
+/* EVA Support UI Upgrade - Modern Emerald Theme & Chat UI */
+:root {
+  --eva-forest: #083127;
+  --eva-forest-card: #0d4235;
+  --eva-forest-border: #135544;
+  --eva-emerald: #10b981;
+  --eva-emerald-dark: #059669;
+  --eva-emerald-light: #e6f7f0;
+  --eva-emerald-text: #064e3b;
+  --eva-surface: #ffffff;
+  --eva-bg: #f2f7f4;
+  --eva-border: #d1e3d9;
+  --eva-border-focus: #10b981;
+  --eva-text-main: #0f2920;
+  --eva-text-muted: #4b665c;
+  --eva-text-subtle: #718d83;
+}
+
+/* Base Body Support */
+.eva-support-page {
+  background: var(--eva-bg);
+  color: var(--eva-text-main);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Header & Topbar */
+.eva-support-page .account-topbar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--eva-border);
+  box-shadow: 0 1px 3px rgba(8, 49, 39, 0.04);
+}
+
+.eva-support-page .account-topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+}
+
+.eva-support-page .account-brand strong {
+  color: var(--eva-forest);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+}
+
+.eva-support-page .account-brand span {
+  color: var(--eva-emerald);
+  font-size: 13px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.eva-support-page .support-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eva-text-muted);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.eva-support-page .support-nav a:hover {
+  background: var(--eva-emerald-light);
+  color: var(--eva-forest);
+}
+
+/* Heading section */
+.eva-support-page .support-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0 20px;
+  border-bottom: 1px solid var(--eva-border);
+  margin-bottom: 24px;
+}
+
+.eva-support-page .account-eyebrow {
+  color: var(--eva-emerald-dark);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+
+.eva-support-page .support-heading h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--eva-forest);
+  margin: 0 0 4px;
+  letter-spacing: -0.5px;
+}
+
+.eva-support-page .support-heading p:last-child {
+  color: var(--eva-text-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Buttons */
+.eva-support-page .account-primary {
+  background: var(--eva-forest) !important;
+  color: #3ecf8e !important;
+  border: 1px solid var(--eva-forest-border) !important;
+  font-weight: 700 !important;
+  border-radius: 9px !important;
+  padding: 8px 18px !important;
+  box-shadow: 0 2px 5px rgba(8, 49, 39, 0.15) !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.eva-support-page .account-primary:hover:not(:disabled) {
+  background: var(--eva-forest-card) !important;
+  color: #4ade80 !important;
+  box-shadow: 0 4px 10px rgba(8, 49, 39, 0.25) !important;
+}
+
+.eva-support-page .account-secondary {
+  background: #ffffff !important;
+  color: var(--eva-forest) !important;
+  border: 1px solid var(--eva-border) !important;
+  font-weight: 600 !important;
+  border-radius: 9px !important;
+  padding: 8px 14px !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.eva-support-page .account-secondary:hover:not(:disabled) {
+  background: var(--eva-emerald-light) !important;
+  border-color: #bbf7d0 !important;
+}
+
+/* Layout Grid */
+.eva-support-page .support-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* Sidebar & Thread Card */
+.eva-support-page .account-card {
+  background: #ffffff;
+  border: 1px solid var(--eva-border);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 4px 12px rgba(8, 49, 39, 0.03);
+}
+
+.eva-support-page .support-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--eva-border);
+}
+
+.eva-support-page .support-section-head h2,
+.eva-support-page .support-thread h2 {
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--eva-forest);
+  margin: 0;
+}
+
+/* Ticket List Item */
+.eva-support-page .support-tickets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eva-support-page .support-ticket {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1.5px solid var(--eva-border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.eva-support-page .support-ticket:hover {
+  background: var(--eva-bg);
+  border-color: #a7f3d0;
+}
+
+.eva-support-page .support-ticket[aria-pressed="true"] {
+  background: #f0fdf4 !important;
+  border-color: var(--eva-emerald) !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15) !important;
+}
+
+.eva-support-page .support-ticket strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--eva-forest);
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.eva-support-page .support-ticket span {
+  font-size: 11.5px;
+  color: var(--eva-text-muted);
+}
+
+.eva-support-page .support-ticket .support-unread {
+  display: inline-block;
+  margin-top: 6px;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+/* Ticket Meta / Status Badge */
+.eva-support-page .support-ticket-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--eva-bg);
+  border: 1px solid var(--eva-border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.eva-support-page .support-status {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.eva-support-page .support-delivery {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 12.5px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+/* Messages & Chat Bubbles */
+.eva-support-page .support-messages {
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 12px;
+  background: #fafcfb;
+  border: 1px solid var(--eva-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.eva-support-page .support-message {
+  max-width: 82%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+/* User Message Bubble */
+.eva-support-page .support-message-user {
+  margin-left: auto;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #064e3b;
+  border-bottom-right-radius: 3px;
+}
+
+.eva-support-page .support-message-user .support-message-meta {
+  color: #059669;
+  font-weight: 600;
+}
+
+/* Operator / Team EVA Bubble */
+.eva-support-page .support-message-operator {
+  margin-right: auto;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #1f2937;
+  border-bottom-left-radius: 3px;
+}
+
+.eva-support-page .support-message-operator .support-message-meta {
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.eva-support-page .support-message-meta {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.eva-support-page .support-message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Images in Chat */
+.eva-support-page .support-image-link img {
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+  margin-top: 6px;
+  max-width: 240px;
+  transition: transform 0.15s ease;
+}
+
+.eva-support-page .support-image-link img:hover {
+  transform: scale(1.02);
+}
+
+/* Forms & Inputs */
+.eva-support-page label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--eva-forest);
+  margin: 14px 0 6px;
+}
+
+.eva-support-page :is(input, textarea, select) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  border: 1.5px solid var(--eva-border);
+  border-radius: 9px;
+  background: #ffffff;
+  color: var(--eva-text-main);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eva-support-page :is(input, textarea, select):focus {
+  border-color: var(--eva-emerald);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+}
+
+/* Retention & Footer */
+.eva-support-page .support-retention {
+  color: var(--eva-text-subtle);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--eva-border);
+}
+
+/* Responsive */
+@media (max-width: 820px) {
+  .eva-support-page .support-layout {
+    grid-template-columns: 1fr;
+  }
+}
+/* Support Modal Styles */
+.modal-card-support {
+  width: min(880px, calc(100vw - 2rem));
+  max-width: 880px;
+  height: min(650px, calc(100vh - 3rem));
+  max-height: calc(100vh - 3rem);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #c8e4d9;
+  box-shadow: 0 16px 40px rgba(8, 49, 39, 0.16);
+}
+
+.support-modal-header {
+  min-height: 4.25rem;
+  padding: .75rem 1.25rem;
+  border: 0;
+  border-bottom: 1px solid #dcebe5;
+  background: #f4fbf8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.support-modal-heading {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+}
+
+.support-modal-icon {
+  display: inline-flex;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 2.4rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c8e4d9;
+  border-radius: .72rem;
+  background: #fff;
+  color: #086849;
+}
+
+.support-modal-copy h2 {
+  margin: 0;
+  color: #083127;
+  font-size: 1.15rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.support-modal-copy p {
+  margin: .15rem 0 0;
+  color: #4b665c;
+  font-size: .8rem;
+  line-height: 1.35;
+}
+
+.support-modal-close {
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 2.4rem;
+  border: 1px solid #c8e4d9;
+  border-radius: .72rem;
+  background: #fff;
+  color: #286c58;
+  font-size: 1.35rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.support-modal-close:hover {
+  border-color: #9fd2bf;
+  background: #e9f7f1;
+  color: #0f694b;
+}
+
+.support-modal-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #f2f7f4;
+}
+/* Support in iframe helper */
+body.in-iframe .account-topbar,
+body.in-iframe .account-footer {
+  display: none !important;
+}
+
+/* Keep the primary action visible inside the modal; only drop the page title. */
+body.in-iframe .support-heading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  padding: 0 0 14px !important;
+  margin: 0 0 16px !important;
+  border-bottom: 1px solid var(--eva-border) !important;
+}
+
+body.in-iframe .support-heading > div {
+  display: none !important;
+}
+
+body.in-iframe .support-heading #support-new {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 44px !important;
+  padding: 0 20px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+body.in-iframe .support-heading #support-new::before {
+  content: "+";
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+body.in-iframe #support-main {
+  padding-top: 16px !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  padding-inline: 16px !important;
+}
+
+body.in-iframe .support-layout {
+  margin-bottom: 16px !important;
+}
+
+/* Empty-state wrapper: keeps the primary "Buat tiket baru" action reachable. */
+.eva-support-page .support-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 28px 20px;
+  border: 1px dashed var(--eva-border);
+  border-radius: 12px;
+  background: #fbfdfc;
+  margin-bottom: 8px;
+}
+
+.eva-support-page .support-empty .account-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--eva-text-muted);
+}
+
+.eva-support-page .support-empty .account-primary {
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body.in-iframe .support-empty {
+  padding: 24px 16px;
+}
+
+/* Tombol unduh file asli (upload user, retensi 24 jam) */
+.account-input-downloads{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.account-input-label{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--account-muted,#6b7280);text-transform:uppercase}
+.account-input-download{font-size:11px!important;padding:3px 8px!important;line-height:1.4!important;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-input-expired{display:block;margin-top:8px;font-size:11px;color:var(--account-muted,#6b7280);font-style:italic}
+
+/* Approved header grouping; package/profile destinations and native handlers unchanged. */
+body>.app-shell .app-header.eva-header-grouped{padding-block:0!important;background:#fff!important;box-shadow:none!important}
+body>.app-shell .eva-header-grouped>div{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:32px!important;min-height:88px;padding-top:14px!important;padding-bottom:14px!important}
+body>.app-shell .eva-header-grouped .brand-lockup{flex:1 1 400px;min-width:160px!important;max-width:480px;width:auto!important}
+body>.app-shell .eva-header-grouped .brand-heading{font-size:22px!important;max-width:none!important;overflow:visible!important}
+body>.app-shell .eva-header-grouped .brand-description{font-size:12px!important;line-height:1.65!important;max-width:480px;display:block!important;margin-top:4px}
+body>.app-shell .eva-header-grouped .header-right{flex:0 0 auto;width:auto!important;min-width:0!important;max-width:100%;display:flex!important}
+body>.app-shell .eva-header-grouped .header-actions{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:20px!important;min-width:0!important}
+body>.app-shell .eva-header-grouped .eva-account-menu{display:flex!important;flex-wrap:nowrap!important;gap:8px!important;align-items:center;max-width:none}
+body>.app-shell .eva-header-grouped .eva-account-action{height:44px!important;min-height:44px!important;padding:0 14px!important;white-space:nowrap;font-size:12px!important;border:1px solid #dce7e1!important;border-radius:9px!important;color:#244b3c!important;background:#fff!important}
+body>.app-shell .eva-header-grouped .eva-header-admin{background:#f3f7f5!important;border-color:#e0e9e4!important}
+body>.app-shell .eva-header-grouped .eva-header-tools{display:flex;align-items:center;gap:4px;border-left:1px solid #e0e9e4;padding-left:16px}
+body>.app-shell .eva-header-grouped .eva-header-tools :is(.icon-button,#evaDrmButton){width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;border:0!important;border-radius:9px!important;box-shadow:none!important;background:transparent!important;color:#5a7067!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
+body>.app-shell .eva-header-grouped .eva-header-tools svg{width:20px!important;height:20px!important}
+body>.app-shell .eva-header-grouped .eva-header-account{display:flex;align-items:center;gap:8px;border-left:1px solid #e0e9e4;padding-left:20px;min-width:0}
+body>.app-shell .eva-header-grouped .eva-account-profile-link{order:2;gap:10px!important;border:0!important;background:transparent!important;padding:0 0 0 4px!important;max-width:190px}
+body>.app-shell .eva-header-grouped .eva-account-avatar{width:34px;height:34px;flex-basis:34px;font-size:13px;background:#e8f4ee;color:#176445}
+body>.app-shell .eva-header-grouped .eva-account-name{font-size:12px!important;color:#244b3c;max-width:125px!important;font-weight:600}
+body>.app-shell .eva-header-grouped .eva-header-plan{order:1;min-width:44px!important;border:0!important;background:transparent!important;padding:0!important}
+body>.app-shell .eva-header-grouped .eva-header-plan span{font-size:11px;font-weight:600;line-height:20px;border-radius:6px;background:#eff6f2;color:#46685a;padding:1px 7px}
+body>.app-shell .eva-header-grouped :is(.eva-account-action,.icon-button):hover{background:#edf7f1!important;color:#176445!important}
+body>.app-shell .eva-header-grouped :is(a,button):focus-visible{outline:2px solid #16815e!important;outline-offset:3px!important}
+@media(max-width:1150px){
+ body>.app-shell .eva-header-grouped>div{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:'brand account' 'primary tools';gap:14px 24px!important;padding:18px 24px!important;max-width:100%!important}
+ body>.app-shell .eva-header-grouped .brand-lockup{grid-area:brand;max-width:400px}
+ body>.app-shell .eva-header-grouped .header-right,body>.app-shell .eva-header-grouped .header-actions{display:contents!important}
+ body>.app-shell .eva-header-grouped .eva-account-menu{grid-area:primary;justify-self:start}
+ body>.app-shell .eva-header-grouped .eva-header-tools{grid-area:tools;justify-self:end;border:0;padding-left:0}
+ body>.app-shell .eva-header-grouped .eva-header-account{grid-area:account;justify-self:end;border:0;padding-left:0}
+}
+@media(max-width:600px){
+ body>.app-shell .eva-header-grouped>div{grid-template-areas:'brand account' 'primary primary' 'tools tools';grid-template-columns:minmax(0,1fr) auto!important;gap:8px 12px!important;padding:12px 16px!important}
+ body>.app-shell .eva-header-grouped .brand-lockup{min-width:0!important;max-width:100%!important}
+ body>.app-shell .eva-header-grouped .brand-heading{font-size:18px!important;gap:5px}
+ body>.app-shell .eva-header-grouped .brand-by{font-size:10px!important;letter-spacing:0!important}
+ body>.app-shell .eva-header-grouped .brand-description{display:none!important}
+ body>.app-shell .eva-header-grouped .eva-header-account{gap:6px}
+ body>.app-shell .eva-header-grouped .eva-account-avatar{width:28px;height:28px;flex-basis:28px}
+ body>.app-shell .eva-header-grouped .eva-account-profile-link{gap:6px!important;max-width:140px;padding:0!important}
+ body>.app-shell .eva-header-grouped .eva-account-name{max-width:85px!important}
+ body>.app-shell .eva-header-grouped .eva-header-plan span{font-size:10px;padding:1px 5px}
+ body>.app-shell .eva-header-grouped .eva-account-menu{width:100%;display:grid!important;grid-template-columns:1fr 2fr;gap:8px!important}
+ body>.app-shell .eva-header-grouped .eva-account-menu .eva-account-action{width:100%;font-size:12px!important}
+ body>.app-shell .eva-header-grouped .eva-header-tools{justify-self:stretch;justify-content:space-between;gap:8px;padding:4px 8px 0;border-top:1px solid #edf2ef}
+}
+@media(max-width:350px){body>.app-shell .eva-header-grouped>div{padding:14px 12px!important;gap:10px 8px!important}body>.app-shell .eva-header-grouped .eva-account-name{max-width:69px!important}body>.app-shell .eva-header-grouped .brand-heading{font-size:17px!important}}
+
+@media(max-width:600px){body>.app-shell .eva-header-grouped .eva-account-menu:not(:has(.eva-header-admin)){grid-template-columns:1fr!important}}
+
+/* Account-only visual refresh; shared support and workspace chrome stay unchanged. */
+body[data-eva-account-page]{--account-ink:#18382e;--account-muted:#526b62;--account-line:#dce7e1;--account-green:#087453;background:radial-gradient(ellipse at 85% 0%,#dff0e7 0,transparent 46%),#f5f8f6;color:var(--account-ink)}
+[data-eva-account-page] .account-shell{width:min(1120px,calc(100% - 64px))}
+[data-eva-account-page] .account-topbar{background:#ffffffeb}
+[data-eva-account-page] .account-topbar-inner:has(>.eva-support-entry){min-height:84px;gap:12px;padding-block:14px}
+[data-eva-account-page] .account-brand{gap:8px}
+[data-eva-account-page] .account-brand strong{color:#083127;font-size:26px;letter-spacing:-1px}
+[data-eva-account-page] .account-brand span{color:#526b62;font-weight:500}
+[data-eva-account-page] .account-back{justify-content:center;padding:0 16px;border:1px solid var(--account-line);border-radius:999px;color:#345649;font-size:12px;background:#fff}
+[data-eva-account-page] .eva-support-entry{margin-left:auto;border-color:transparent;background:transparent}
+[data-eva-account-page] .account-back:hover{background:#eef6f1;border-color:#bed6c9}
+[data-eva-account-page] .account-heading{padding-block:32px 24px}
+[data-eva-account-page] .account-heading h1{font-size:26px;letter-spacing:-.65px;margin:5px 0 6px;color:#083127}
+[data-eva-account-page] .account-heading>p:last-child{font-size:13px}
+[data-eva-account-page] .account-eyebrow{font-size:10px;letter-spacing:1.3px}
+[data-eva-account-page] .account-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:20px;align-items:stretch}
+[data-eva-account-page] .account-card{padding:24px;border-radius:10px;box-shadow:0 3px 12px #08312704}
+[data-eva-account-page] .account-person{padding-bottom:22px;gap:14px}
+[data-eva-account-page] .account-avatar{width:48px;height:48px;flex-basis:48px;font-size:21px;background:#edf6f0;color:#0d6246;border-color:#dcebe2}
+[data-eva-account-page] .account-person h2{font-size:18px;letter-spacing:-.25px}
+[data-eva-account-page] .account-email{font-size:12px}
+[data-eva-account-page] .account-facts>div{padding-block:13px;border-color:#eaf0ec}
+[data-eva-account-page] .account-facts dt{font-size:12px}
+[data-eva-account-page] .account-facts dd{font-size:12px}
+[data-eva-account-page] .account-facts a{text-decoration:underline;text-underline-offset:3px;display:inline-flex;align-items:center;min-height:44px;margin-block:-12px}
+[data-eva-account-page] .account-note{font-size:12px;line-height:1.7}
+[data-eva-account-page] .account-admin{margin-top:18px;width:100%;background:#f8fbf9}
+[data-eva-account-page] .account-section-heading{padding-bottom:18px}
+[data-eva-account-page] .account-section-heading h2{font-size:18px;letter-spacing:-.35px;color:#083127}
+[data-eva-account-page] .account-integration-mark{width:38px;height:38px;flex-basis:38px;border-radius:8px;background:#f7faf8}
+[data-eva-account-page] .account-connection-status{background:#f8fbf9;border-color:#e4ede7;padding:12px 14px;margin:4px 0 16px}
+[data-eva-account-page] .account-status-badge{font-size:12px}
+[data-eva-account-page] .account-status-badge[data-connected="true"]{color:#086849}
+[data-eva-account-page] .account-button{font-size:12px!important;border-radius:8px;min-height:44px;padding:9px 14px}
+[data-eva-account-page] .account-primary{background:#083127;color:#72e5b1;border-color:#083127}
+[data-eva-account-page] .account-primary:hover{background:#0d4235;border-color:#0d4235}
+[data-eva-account-page] .account-secondary:hover:not(:disabled){background:#f0f7f3;border-color:#b9d1c3}
+[data-eva-account-page] .account-credential-note{margin-top:20px;padding-top:16px}
+[data-eva-account-page] .account-credential-note h3{font-size:12px}
+[data-eva-account-page] .account-history{margin-top:20px}
+[data-eva-account-page] .account-history-private{font-size:11px;border-color:#dfe9e3;background:#f6faf7;color:#526b62;border-radius:999px;padding:5px 10px}
+[data-eva-account-page] .account-history-tabs{display:inline-flex;max-width:100%;gap:4px;padding:4px;border:1px solid #e4ece7;border-radius:9px;background:#f4f7f5}
+[data-eva-account-page] .account-history-tabs .account-button{min-width:104px;background:transparent;border-color:transparent;color:#526b62}
+[data-eva-account-page] .account-history-tabs [aria-pressed="true"]{background:#fff;color:#085c40;border-color:#d5e5db;box-shadow:0 1px 3px #08312708}
+[data-eva-account-page] #account-history-note{margin-top:12px;max-width:760px}
+[data-eva-account-page] .account-history-filters{gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #eaf0ec}
+[data-eva-account-page] .account-history-filters label{font-weight:600;flex:1 1 130px;gap:6px}
+[data-eva-account-page] .account-history-filters label:first-child{flex:2 1 230px}
+[data-eva-account-page] .account-history-filters :is(input,select){border-color:#ccdcd2;font-size:13px;font-weight:400;border-radius:7px;padding:10px 12px}
+[data-eva-account-page] :is(a,button,input,select):focus-visible{outline:2px solid #087453;outline-offset:3px}
+[data-eva-account-page] #account-history-search{background:#f0f7f3;border-color:#cbded2}
+[data-eva-account-page] #account-history-feedback:empty{margin:0}
+[data-eva-account-page] #account-history-feedback:not(:empty){padding:12px 14px;border:1px solid #e1eae4;border-radius:7px;background:#f8fbf9}
+[data-eva-account-page] .account-history-scroll{border-radius:8px;border-color:#e0e9e3;margin-top:18px}
+[data-eva-account-page] .account-history table{min-width:1080px}
+[data-eva-account-page] .account-history th{font-size:11px;background:#f4f8f5;padding:12px 14px;color:#496457;line-height:1.5}
+[data-eva-account-page] .account-history td{font-size:12px;padding:16px 14px;border-color:#eaf0ec}
+[data-eva-account-page] .account-history tbody tr:last-child td{border-bottom:0}
+[data-eva-account-page] .account-history tbody tr:hover{background:#fbfdfb}
+[data-eva-account-page] .account-history th:nth-child(1){width:15%}
+[data-eva-account-page] .account-history th:nth-child(2){width:18%}
+[data-eva-account-page] .account-history th:nth-child(3){width:11%}
+[data-eva-account-page] .account-history th:nth-child(4){width:12%}
+[data-eva-account-page] .account-history th:nth-child(5){width:10%}
+[data-eva-account-page] .account-history th:nth-child(6){width:14%}
+[data-eva-account-page] .account-history th:nth-child(7){width:20%}
+[data-eva-account-page] .account-history td strong{font-weight:600}
+[data-eva-account-page] .account-history td span{margin-top:4px}
+[data-eva-account-page] .account-history-download{width:100%;background:#f6faf7}
+[data-eva-account-page] .account-input-download{min-height:44px;white-space:normal;overflow-wrap:anywhere}
+[data-eva-account-page] .account-history-pages{margin-top:18px;gap:12px}
+[data-eva-account-page] .account-history-pages .account-button{padding-inline:16px}
+[data-eva-account-page] .account-session{margin-top:24px;padding-block:24px;gap:20px}
+[data-eva-account-page] #eva-logout{color:#7c3932!important;border-color:#e4d9d6;background:#fff}
+[data-eva-account-page] #eva-logout:hover{background:#fdf7f6;border-color:#cfaca5}
+[data-eva-account-page] .account-footer{font-size:11px;padding-bottom:24px}
+@media(max-width:760px){
+ [data-eva-account-page] .account-shell{width:calc(100% - 32px)}
+ [data-eva-account-page] .account-grid{grid-template-columns:minmax(0,1fr);gap:16px}
+ [data-eva-account-page] .account-heading{padding-block:24px 20px}
+ [data-eva-account-page] .account-heading h1{font-size:24px}
+ [data-eva-account-page] .account-card{padding:20px}
+ [data-eva-account-page] .account-history{margin-top:16px}
+ [data-eva-account-page] .account-history-filters label:first-child{flex-basis:100%}
+ [data-eva-account-page] .account-history-filters>button{flex:1 1 100px}
+ [data-eva-account-page] .account-history-pages{align-items:stretch}
+ [data-eva-account-page] .account-history-pages>div{width:100%}
+ [data-eva-account-page] .account-history-pages button{flex:1}
+}
+@media(max-width:480px){
+ [data-eva-account-page] .account-topbar-inner:has(>.eva-support-entry){display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding-block:12px}
+ [data-eva-account-page] .account-brand{grid-column:1/-1;justify-self:start}
+ [data-eva-account-page] .account-back{font-size:12px;padding-inline:10px;width:100%}
+ [data-eva-account-page] .eva-support-entry{margin:0;justify-content:flex-start;padding-left:0}
+ [data-eva-account-page] .account-card{padding:18px}
+ [data-eva-account-page] .account-section-heading{align-items:flex-start}
+ [data-eva-account-page] .account-history-private{white-space:normal;text-align:right;max-width:90px}
+ [data-eva-account-page] .account-connection-actions{flex-direction:column}
+ [data-eva-account-page] .account-connection-actions .account-button{width:100%}
+ [data-eva-account-page] .account-session{flex-direction:column;align-items:stretch;gap:16px}
+ [data-eva-account-page] .account-session .account-button{width:100%}
+}
+@media(prefers-reduced-motion:reduce){[data-eva-account-page] *,[data-eva-account-page] *::before,[data-eva-account-page] *::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}

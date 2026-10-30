@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Langganan — EVA by DYENA</title>
+  <meta name="eva-csrf" content="{{ eva_account.csrf }}">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f4f8f6">
+  <link rel="icon" type="image/svg+xml" href="/static/assets/eva-mark.svg?v=20261026-mark">
+  <link rel="stylesheet" href="/static/css/langganan.css?v=20261019-readable-59k-v3">
+  <style>.eva-billing-page [hidden]{display:none!important}</style>
+  <script src="/static/js/qrcode.min.js?v=1.0.0" defer></script>
+  <script src="/static/js/langganan.js?v=20261020-prorate-v4" defer></script>
+  <script src="/static/js/eva-account.js?v=idle-logout-20261026-v1"></script>
+</head>
+<body class="eva-billing-page" data-eva-billing-page>
+  <a class="billing-skip" href="#billing-main">Lewati ke langganan</a>
+  <header class="billing-topbar">
+    <div class="billing-shell billing-topbar-inner">
+      <a class="billing-brand" href="/" aria-label="EVA by DYENA, kembali ke workspace"><strong>EVA</strong><span>by DYENA</span></a>
+      <a class="billing-back" href="/account">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Kembali ke Akun
+      </a>
+    </div>
+  </header>
+  <main id="billing-main" class="billing-shell" tabindex="-1">
+    <div class="billing-heading">
+      <p class="billing-eyebrow">LANGGANAN</p>
+      <h1 id="billing-title">Paket EVA kamu</h1>
+      <p id="billing-plan-line">Memuat status paket…</p>
+    </div>
+
+    <section id="billing-trial" class="billing-card" hidden aria-labelledby="billing-trial-title">
+      <div class="billing-section-heading"><h2 id="billing-trial-title">Kenali fitur Premium</h2></div>
+      <p class="billing-note" id="billing-trial-note">Akses Premium 72 jam, satu kali per akun. Gratis, tidak ada tagihan otomatis. Uji coba baru dimulai saat kamu memilihnya.</p>
+      <div class="billing-actions">
+        <button type="button" id="billing-start-trial" class="billing-button billing-secondary" aria-describedby="billing-trial-note billing-trial-error">Coba Premium gratis 3 hari</button>
+      </div>
+      <p id="billing-trial-error" class="billing-note billing-badge--bad" role="alert" aria-live="assertive" tabindex="-1" hidden></p>
+    </section>
+
+    <section id="billing-current" class="billing-card billing-current" hidden aria-labelledby="billing-current-title">
+      <div class="billing-current-main">
+        <div class="billing-current-copy">
+          <p class="billing-eyebrow">MASA AKTIF</p>
+          <h2 id="billing-current-title">Paket Standar</h2>
+          <p id="billing-current-until" class="billing-current-until">—</p>
+          <p id="billing-current-note" class="billing-note">Perpanjang kapan saja — masa aktif otomatis bertambah 30 hari setiap pembayaran.</p>
+        </div>
+        <span id="billing-current-badge" class="billing-badge billing-badge--ok">Aktif</span>
+      </div>
+      <div class="billing-actions"><a href="/" class="billing-button billing-secondary">Lanjut ke workspace</a></div>
+    </section>
+
+    <section id="billing-pending" class="billing-card billing-pending" hidden aria-labelledby="billing-pending-title">
+      <div class="billing-pending-grid">
+        <div class="billing-qr-wrap">
+          <div id="billing-qr" class="billing-qr" role="img" aria-label="Kode QRIS pembayaran"></div>
+          <p class="billing-qr-note">Scan dengan aplikasi bank atau e-wallet apa pun yang mendukung QRIS.</p>
+        </div>
+        <div class="billing-pending-info">
+          <h2 id="billing-pending-title">Selesaikan pembayaran</h2>
+          <dl class="billing-facts">
+            <div><dt>Paket</dt><dd id="billing-pending-plan">—</dd></div>
+            <div><dt>Nominal</dt><dd id="billing-pending-amount">—</dd></div>
+            <div><dt>Bayar sebelum</dt><dd id="billing-pending-expiry">—</dd></div>
+            <div><dt>Status</dt><dd><span id="billing-pending-status" class="billing-badge billing-badge--wait">Menunggu pembayaran</span></dd></div>
+          </dl>
+          <p class="billing-note" id="billing-unique-note" hidden></p>
+          <p class="billing-note" id="billing-pending-extra" hidden></p>
+          <p class="billing-note" id="billing-pending-note" role="status" aria-live="polite">Halaman ini memeriksa pembayaran secara otomatis. Paket aktif begitu pembayaran terverifikasi — kamu boleh menutup halaman ini.</p>
+          <div class="billing-actions">
+            <button type="button" id="billing-cancel" class="billing-button billing-secondary">Batalkan tagihan</button>
+            <button type="button" id="billing-recheck" class="billing-button billing-primary">Cek sekarang</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="billing-success" class="billing-card billing-success" hidden aria-labelledby="billing-success-title">
+      <div class="billing-success-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2 id="billing-success-title">Pembayaran berhasil — paket aktif!</h2>
+      <p id="billing-success-line">Paket kamu sudah aktif. Terima kasih!</p>
+    </section>
+
+    <section class="billing-plans" hidden aria-label="Paket langganan">
+      <article class="billing-card billing-plan" data-plan="standar">
+        <div class="billing-plan-head">
+          <div>
+            <h2>Standar</h2>
+            <p class="billing-plan-tagline">Untuk konversi BOQ harian dan standarisasi data desain.</p>
+          </div>
+        </div>
+        <div class="billing-plan-price"><span class="billing-amount">Rp 29.000</span><span class="billing-period">/ bulan</span></div>
+        <ul class="billing-feat">
+          <li><span class="ic yes">✓</span> Konversi <b>BOQ</b> (Bill of Quantity)</li>
+          <li><span class="ic yes">✓</span> Standarisasi <b>KMZ</b></li>
+          <li><span class="ic yes">✓</span> Integrasi <b>ASTRI</b> + riwayat BOQ</li>
+          <li><span class="ic yes">✓</span> Cakupan AE &amp; UG, semua scope</li>
+          <li><span class="ic yes">✓</span> Riwayat job &amp; unduh hasil</li>
+          <li><span class="ic no">✕</span> <span class="muted">Konversi DXF (AutoCAD)</span></li>
+          <li><span class="ic no">✕</span> <span class="muted">Konversi ABD DWG (As Built Drawing AutoCAD)</span></li>
+          <li><span class="ic no">✕</span> <span class="muted">Konversi HPDB (Homepass DB)</span></li>
+        </ul>
+        <button type="button" class="billing-button billing-secondary billing-choose" data-plan="standar">Pilih Standar — Rp 29.000</button>
+      </article>
+      <article class="billing-card billing-plan billing-plan--featured" data-plan="premium">
+        <span class="billing-badge-featured">Paling lengkap</span>
+        <div class="billing-plan-head">
+          <div>
+            <h2>Premium</h2>
+            <p class="billing-plan-tagline">Akses penuh — semua jenis output, termasuk DXF, ABD DWG &amp; HPDB.</p>
+          </div>
+        </div>
+        <div class="billing-plan-price"><span class="billing-amount">Rp 59.000</span><span class="billing-period">/ bulan</span></div>
+        <ul class="billing-feat">
+          <li><span class="ic yes">✓</span> <b>Semua fitur paket Standar</b></li>
+          <li><span class="ic yes">✓</span> Konversi <b>DXF</b> (AutoCAD, layout siap cetak)</li>
+          <li><span class="ic yes">✓</span> Konversi <b>ABD DWG</b> (As Built Drawing AutoCAD) — pilihan alternatif DXF</li>
+          <li><span class="ic yes">✓</span> Konversi <b>HPDB</b> (Homepass Database)</li>
+          <li><span class="ic yes">✓</span> Output gabungan (DXF + BOQ + HPDB sekaligus)</li>
+          <li><span class="ic yes">✓</span> Dukungan prioritas</li>
+        </ul>
+        <button type="button" class="billing-button billing-primary billing-choose" data-plan="premium">Pilih Premium — Rp 59.000</button>
+        <p class="billing-note billing-upgrade-note" id="billing-upgrade-note" hidden></p>
+      </article>
+    </section>
+
+    <section class="billing-card billing-history" aria-labelledby="billing-history-title">
+      <div class="billing-section-heading">
+        <div><p class="billing-eyebrow">RIWAYAT</p><h2 id="billing-history-title">Tagihan</h2></div>
+      </div>
+      <div class="billing-history-scroll">
+        <table>
+          <caption class="billing-sr">Riwayat tagihan langganan akun ini</caption>
+          <thead><tr><th>Tanggal</th><th>Paket</th><th>Nominal</th><th>Status</th><th>Masa aktif s/d</th><th>Invoice</th></tr></thead>
+          <tbody id="billing-history-rows"><tr><td colspan="6">Memuat…</td></tr></tbody>
+        </table>
+      </div>
+      <p class="billing-note" id="billing-history-note">Pembayaran bulanan. Paket aktif otomatis setelah pembayaran terverifikasi.</p>
+    </section>
+
+    <section class="billing-session">
+      <div>
+        <h2>Butuh bantuan?</h2>
+        <p>Invoice PDF dikirim otomatis setelah pembayaran terverifikasi. Kalau butuh bantuan, hubungi <a href="mailto:billing@eva.dyena.id">billing@eva.dyena.id</a> dengan menyebutkan nomor tagihan.</p>
+      </div>
+    </section>
+    <footer class="billing-footer">EVA by DYENA · Workspace desain jaringan</footer>
+  </main>
+</body>
+</html>
